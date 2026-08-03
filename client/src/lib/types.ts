@@ -215,3 +215,58 @@ export interface CxcItem {
   fechaVencimiento: string | null;
   estado: "vigente" | "vencido" | "pagado";
 }
+
+export interface Proveedor {
+  id: number;
+  nombre: string;
+  contacto: string | null;
+  condicionesPago: string | null;
+}
+
+export type EstadoCompra = "borrador" | "enviada" | "recibida" | "cancelada";
+
+export interface CompraLinea {
+  id: number;
+  productoId: number;
+  sku: string;
+  nombre: string;
+  cantidad: number;
+  precioUnitario: number;
+  subtotal: number;
+}
+
+export interface PagoProveedor {
+  id: number;
+  monto: number;
+  metodo: string;
+  usuario: string;
+  fecha: string;
+}
+
+export interface Compra {
+  id: number;
+  folio: string;
+  proveedorId: number;
+  proveedorNombre: string;
+  estado: EstadoCompra;
+  estadoLabel: string;
+  total: number;
+  saldo: number;
+  fechaVencimiento: string | null;
+  creadaPor: number;
+  creadorNombre: string;
+  createdAt: string;
+  lineas: CompraLinea[];
+  pagos: PagoProveedor[];
+}
+
+export interface CxpItem {
+  compraId: number;
+  folio: string;
+  proveedorId: number;
+  proveedorNombre: string;
+  total: number;
+  saldo: number;
+  fechaVencimiento: string | null;
+  estado: "vigente" | "vencido" | "pagado";
+}

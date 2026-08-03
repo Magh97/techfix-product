@@ -57,6 +57,20 @@ async function main() {
     );
   }
 
+  const proveedores = [
+    { nombre: "Distribuidora Tecno Mayorista", contacto: "ventas@tecnomayorista.mx", condicionesPago: "Crédito 30 días" },
+    { nombre: "Importadora de Componentes MX", contacto: "Carlos (55) 4444-5555", condicionesPago: "Contado / transferencia" },
+  ];
+  for (const pr of proveedores) {
+    const exists = await pool.query("SELECT 1 FROM proveedores WHERE nombre = $1", [pr.nombre]);
+    if (!exists.rowCount) {
+      await pool.query(
+        "INSERT INTO proveedores (nombre, contacto, condiciones_pago) VALUES ($1,$2,$3)",
+        [pr.nombre, pr.contacto, pr.condicionesPago]
+      );
+    }
+  }
+
   console.log("Seed completado. Usuarios: admin/admin1234 · vendedor/vendedor1234");
   await pool.end();
 }
