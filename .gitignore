@@ -8,10 +8,17 @@ __pycache__/
 dist/
 build/
 *.tsbuildinfo
+coverage/
+*.local
+
+# pnpm
+.pnpm-store/
+pnpm-debug.log*
 
 # Secrets
 .env
 .env.local
+.env.*.local
 *.pem
 *.key
 
