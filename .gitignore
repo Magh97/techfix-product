@@ -1,0 +1,29 @@
+# Dependencias
+node_modules/
+__pycache__/
+.venv/
+*.pyc
+
+# Build
+dist/
+build/
+*.tsbuildinfo
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
