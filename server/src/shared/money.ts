@@ -5,11 +5,9 @@ export interface MoneyResult {
   total: number;
 }
 
-const IVA_RATE = 0.16;
-
-export function calcMoney(subtotal: number, descuento = 0): MoneyResult {
+export function calcMoney(subtotal: number, descuento = 0, ivaRate = 0.16): MoneyResult {
   const net = Math.max(0, subtotal - descuento);
-  const iva = net * IVA_RATE;
+  const iva = net * ivaRate;
   return { subtotal, descuento, iva, total: net + iva };
 }
 

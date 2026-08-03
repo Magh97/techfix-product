@@ -1,4 +1,4 @@
-import { Cpu, LayoutDashboard, LogOut, Package } from "lucide-react";
+import { ClipboardList, Cpu, LayoutDashboard, LogOut, Package } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { clearSession, getSessionUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/productos", label: "Productos", icon: Package },
+  { to: "/ordenes", label: "Órdenes", icon: ClipboardList },
 ];
 
 export default function Layout() {
