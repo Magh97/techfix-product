@@ -147,3 +147,71 @@ export interface CreateOrden {
   fechaPrometida?: string;
   tecnicoId?: number | null;
 }
+
+export interface VentaLinea {
+  descripcion: string;
+  cantidad: number;
+  precio: number;
+  productoId?: number | null;
+}
+
+export interface Venta {
+  id: number;
+  folio: string;
+  clienteId: number | null;
+  clienteNombre?: string | null;
+  vendedorNombre?: string;
+  ordenId: number | null;
+  subtotal: number;
+  iva: number;
+  total: number;
+  descuento: number;
+  tipoPago: string;
+  metodoPago: string | null;
+  fechaVencimiento: string | null;
+  estado: string;
+  cambio?: number;
+  lineas: VentaLinea[];
+}
+
+export interface CreateVenta {
+  clienteId?: number | null;
+  lineas: { tipo: "producto" | "servicio"; productoId?: number; nombre?: string; cantidad: number; precioNeto?: number }[];
+  descuento?: number;
+  motivoDescuento?: string;
+  tipoPago: "contado" | "credito";
+  metodoPago?: string;
+  plazoDias?: number | null;
+  montoRecibido?: number | null;
+}
+
+export interface Caja {
+  id: number;
+  usuarioId: number;
+  fecha: string;
+  estado: string;
+  efectivoFisico: number | null;
+  diferencia: number | null;
+  apertura: string;
+  cierre: string | null;
+}
+
+export interface Corte {
+  caja: Caja | null;
+  ingresosPorMetodo: Record<string, number>;
+  egresosPorMetodo: Record<string, number>;
+  ingresos: number;
+  egresos: number;
+  esperadoEfectivo: number;
+}
+
+export interface CxcItem {
+  ventaId: number;
+  folio: string;
+  clienteId: number;
+  clienteNombre: string;
+  total: number;
+  saldo: number;
+  fechaVencimiento: string | null;
+  estado: "vigente" | "vencido" | "pagado";
+}
