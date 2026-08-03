@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TechStore — Sistema de Administración para Tiendas de Cómputo</title>
+  <meta name="description" content="Sistema de administración para negocios de mantenimiento, reparación, ensamblado y venta de equipo de cómputo. Inventario, órdenes de servicio, punto de venta y finanzas en un solo lugar." />
+  <link rel="stylesheet" href="css/landing.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+
+  <!-- Navbar -->
+  <header class="l-nav" id="nav">
+    <div class="container l-nav-inner">
+      <a class="l-logo" href="#top" aria-label="TechStore inicio">
+        <span class="l-logo-icon"><i class="luc" data-icon="cpu"></i></span>
+        <span class="l-logo-text"><strong>TechStore</strong><small>Sistema de Administración</small></span>
+      </a>
+      <nav class="l-nav-links" id="navLinks" aria-label="Secciones">
+        <a href="#funcionalidades">Funcionalidades</a>
+        <a href="#vistas">Vistas</a>
+        <a href="#comparacion">Comparación</a>
+        <a href="#precios">Precios</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="l-nav-cta">
+        <a class="btn btn-primary" href="../app/index.html"><i class="luc" data-icon="arrow-right"></i> Acceder al sistema</a>
+        <button class="btn btn-icon nav-menu" id="menuBtn" aria-label="Abrir menú" aria-expanded="false"><i class="luc" data-icon="menu"></i></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="l-hero" id="top">
+      <div class="hero-glow glow-1"></div>
+      <div class="hero-glow glow-2"></div>
+      <div class="container l-hero-grid">
+        <div class="l-hero-copy">
+          <span class="pill"><i class="luc" data-icon="store"></i> Hecho para tiendas de cómputo</span>
+          <h1>Tu tienda, <span class="grad">bajo control</span> en un solo lugar</h1>
+          <p class="l-hero-sub">Reparaciones, inventario y ventas sin libretas ni hojas de Excel. Todo lo que pasa en tu tienda queda registrado, y tú lo ves en un solo pantallazo.</p>
+          <div class="l-hero-actions">
+            <a class="btn btn-primary btn-lg" href="../app/index.html"><i class="luc" data-icon="arrow-right"></i> Probar el sistema</a>
+            <a class="btn btn-ghost btn-lg" href="#precios">Ver planes</a>
+          </div>
+          <ul class="l-hero-trust">
+            <li><i class="luc" data-icon="shield"></i> Tus datos, en tu equipo</li>
+            <li><i class="luc" data-icon="printer"></i> Imprime tickets 80mm</li>
+            <li><i class="luc" data-icon="message"></i> WhatsApp automático</li>
+          </ul>
+        </div>
+        <div class="l-hero-visual" aria-hidden="true">
+          <div class="browser">
+            <div class="browser-bar"><span class="bdot"></span><span class="bdot"></span><span class="bdot"></span><div class="browser-url">techstore.local/panel</div></div>
+            <div class="browser-body">
+              <div class="mock-sidebar">
+                <div class="mock-logo"><i class="luc" data-icon="cpu"></i><span>TechStore</span></div>
+                <div class="mock-nav"><span class="active"><i class="luc" data-icon="dashboard"></i></span><span><i class="luc" data-icon="cart"></i></span><span><i class="luc" data-icon="clipboard"></i></span><span><i class="luc" data-icon="users"></i></span><span><i class="luc" data-icon="package"></i></span><span><i class="luc" data-icon="chart"></i></span></div>
+              </div>
+              <div class="mock-main">
+                <div class="mock-kpis">
+                  <div class="mock-kpi"><b>$6,461</b><small>Ventas hoy</small></div>
+                  <div class="mock-kpi"><b>3</b><small>Órdenes activas</small></div>
+                  <div class="mock-kpi hot"><b>1</b><small>Retrasadas</small></div>
+                  <div class="mock-kpi"><b>4</b><small>Stock bajo</small></div>
+                </div>
+                <div class="mock-charts">
+                  <div class="mock-line">
+                    <div class="mock-line-head"></div>
+                    <svg viewBox="0 0 200 60" preserveAspectRatio="none"><polyline points="0,48 28,40 56,44 84,30 112,34 140,20 168,24 200,10" fill="none" stroke="var(--primary)" stroke-width="2.5"/><polyline points="0,48 28,40 56,44 84,30 112,34 140,20 168,24 200,10" fill="var(--primary)" fill-opacity="0.10" stroke="none"/></svg>
+                  </div>
+                  <div class="mock-donut"><div class="donut"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="hero-float hero-float-1"><i class="luc" data-icon="check-circle"></i> Orden 2026-0005 lista</div>
+          <div class="hero-float hero-float-2"><i class="luc" data-icon="message"></i> WhatsApp enviado (NOT-01)</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Métricas -->
+    <section class="l-metrics" id="metricas">
+      <div class="container l-metrics-grid">
+        <div class="metric"><span class="metric-num" data-count="100">0</span><span class="metric-suffix">k+</span><small>productos sin problema</small></div>
+        <div class="metric"><span class="metric-num" data-count="50">0</span><span class="metric-suffix">k+</span><small>órdenes de servicio</small></div>
+        <div class="metric"><span class="metric-num" data-count="99">0</span><span class="metric-suffix">%</span><small>disponible en horario</small></div>
+        <div class="metric"><span class="metric-num" data-count="2">0</span><span class="metric-suffix">s</span><small>para cada consulta</small></div>
+      </div>
+    </section>
+
+    <!-- Funcionalidades -->
+    <section class="l-section" id="funcionalidades">
+      <div class="container">
+        <div class="l-head">
+          <span class="kicker">Funcionalidades</span>
+          <h2>Todo lo que tu tienda necesita, sin complicarte</h2>
+          <p class="l-head-sub">Ocho módulos que se entienden solos: del equipo en recepción hasta el corte de caja del día.</p>
+        </div>
+        <div class="l-features">
+          <article class="f-card">
+            <span class="f-icon"><i class="luc" data-icon="package"></i></span>
+            <h3>Inventario y stock</h3>
+            <p>Productos, componentes y equipos usados con alertas de stock mínimo y reserva de piezas para cada reparación.</p>
+          </article>
+          <article class="f-card">
+            <span class="f-icon"><i class="luc" data-icon="wrench"></i></span>
+            <h3>Órdenes de servicio</h3>
+            <p>De la recepción a la entrega: diagnóstico, cotización, aprobación, consumo de piezas y firma de recepción.</p>
+          </article>
+          <article class="f-card">
+            <span class="f-icon"><i class="luc" data-icon="cart"></i></span>
+            <h3>Punto de venta</h3>
+            <p>Vende con lector de código de barras, descuentos por rol, ventas a crédito y ticket térmico 80mm.</p>
+          </article>
+          <article class="f-card">
+            <span class="f-icon"><i class="luc" data-icon="users"></i></span>
+            <h3>Clientes</h3>
+            <p>Historial de servicios y compras, cuentas por cobrar y el canal preferido de contacto de cada cliente.</p>
+          </article>
+          <article class="f-card">
+            <span class="f-icon"><i class="luc" data-icon="truck"></i></span>
+            <h3>Compras</h3>
+            <p>Proveedores, órdenes de compra y entrada de mercancía que actualiza el inventario al recibir.</p>
+          </article>
+          <article class="f-card">
+            <span class="f-icon"><i class="luc" data-icon="banknote"></i></span>
+            <h3>Finanzas y caja</h3>
+            <p>Corte y cierre de caja con arqueo, ingresos y egresos, y cuentas por cobrar y por pagar al día.</p>
+          </article>
+          <article class="f-card">
+            <span class="f-icon"><i class="luc" data-icon="chart"></i></span>
+            <h3>Reportes</h3>
+            <p>Ventas, servicios, rentabilidad, clientes y stock bajo, exportables a Excel y PDF.</p>
+          </article>
+          <article class="f-card">
+            <span class="f-icon"><i class="luc" data-icon="message"></i></span>
+            <h3>Notificaciones</h3>
+            <p>Retrasos, equipos listos y garantías por WhatsApp y correo, con envío automático y plantillas editables.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Vistas del sistema -->
+    <section class="l-section l-section-alt" id="vistas">
+      <div class="container">
+        <div class="l-head">
+          <span class="kicker">Así se ve por dentro</span>
+          <h2>Ponle cara al sistema</h2>
+          <p class="l-head-sub">El prototipo navegable incluye punto de venta, órdenes, clientes, inventario, caja, finanzas, reportes y configuración.</p>
+        </div>
+        <div class="l-shots">
+          <div class="shot">
+            <div class="shot-frame">
+              <div class="shot-bar"><span class="bdot"></span><span class="bdot"></span><span class="bdot"></span></div>
+              <div class="shot-body shot-pos">
+                <div class="shot-side"><div class="shot-line w70"></div><div class="shot-line"></div><div class="shot-line w50"></div><div class="shot-line"></div></div>
+                <div class="shot-main">
+                  <div class="shot-cart">
+                    <div class="shot-row"><span class="chip-mini">CPU i5-12400</span><b>$3,688</b></div>
+                    <div class="shot-row"><span class="chip-mini">RAM 16GB</span><b>$1,369</b></div>
+                    <div class="shot-total"><span>Total con IVA</span><b>$5,057</b></div>
+                    <div class="shot-btn">Cobrar</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="shot-cap"><span class="f-icon sm"><i class="luc" data-icon="cart"></i></span><div><h3>Punto de venta</h3><p>Escáner, carrito y ticket térmico.</p></div></div>
+          </div>
+          <div class="shot">
+            <div class="shot-frame">
+              <div class="shot-bar"><span class="bdot"></span><span class="bdot"></span><span class="bdot"></span></div>
+              <div class="shot-body shot-dash">
+                <div class="shot-kpi-row">
+                  <div class="mini-kpi"><b>$6,461</b><small>Hoy</small></div>
+                  <div class="mini-kpi"><b>3</b><small>Activas</small></div>
+                  <div class="mini-kpi hot"><b>1</b><small>Retraso</small></div>
+                </div>
+                <svg viewBox="0 0 200 60" preserveAspectRatio="none"><polyline points="0,46 30,38 60,42 90,28 120,32 150,18 200,12" fill="none" stroke="var(--accent)" stroke-width="2.5"/></svg>
+              </div>
+            </div>
+            <div class="shot-cap"><span class="f-icon sm"><i class="luc" data-icon="dashboard"></i></span><div><h3>Dashboard</h3><p>Ventas y alertas del día.</p></div></div>
+          </div>
+          <div class="shot">
+            <div class="shot-frame">
+              <div class="shot-bar"><span class="bdot"></span><span class="bdot"></span><span class="bdot"></span></div>
+              <div class="shot-body shot-orders">
+                <div class="ord-row"><span class="badge-mini">Listo</span><span class="shot-line w40"></span></div>
+                <div class="ord-row"><span class="badge-mini hot">Retrasada</span><span class="shot-line w30"></span></div>
+                <div class="ord-row"><span class="badge-mini">Diagnóstico</span><span class="shot-line w45"></span></div>
+                <div class="ord-row"><span class="badge-mini">Cotizado</span><span class="shot-line w35"></span></div>
+              </div>
+            </div>
+            <div class="shot-cap"><span class="f-icon sm"><i class="luc" data-icon="clipboard"></i></span><div><h3>Órdenes</h3><p>Estados y seguimiento por folio.</p></div></div>
+          </div>
+        </div>
+        <div class="l-center"><a class="btn btn-primary btn-lg" href="../app/index.html"><i class="luc" data-icon="arrow-right"></i> Probar el prototipo</a></div>
+      </div>
+    </section>
+
+    <!-- Comparación -->
+    <section class="l-section" id="comparacion">
+      <div class="container">
+        <div class="l-head">
+          <span class="kicker">Comparación</span>
+          <h2>De la libreta al control total</h2>
+          <p class="l-head-sub">Si hoy usas hojas sueltas o Excel, esto es lo que ganas.</p>
+        </div>
+        <div class="l-compare">
+          <table class="comp-tbl">
+            <thead>
+              <tr>
+                <th scope="col"></th>
+                <th scope="col">Libreta / Excel</th>
+                <th scope="col" class="comp-yes">TechStore <span class="tag">recomendado</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">Stock en tiempo real</th><td><i class="luc no" data-icon="x"></i> A mano, se pierde</td><td class="comp-yes"><i class="luc yes" data-icon="check"></i> Siempre al día</td></tr>
+              <tr><th scope="row">Reservar piezas para reparaciones</th><td><i class="luc no" data-icon="x"></i> Casi imposible</td><td class="comp-yes"><i class="luc yes" data-icon="check"></i> Automático</td></tr>
+              <tr><th scope="row">Ticket con folio y garantía</th><td><i class="luc no" data-icon="x"></i> Notas sueltas</td><td class="comp-yes"><i class="luc yes" data-icon="check"></i> Térmico 80mm</td></tr>
+              <tr><th scope="row">Avisar al cliente por WhatsApp</th><td><i class="luc no" data-icon="x"></i> Llamada manual</td><td class="comp-yes"><i class="luc yes" data-icon="check"></i> Automático</td></tr>
+              <tr><th scope="row">Corte de caja que cuadre</th><td><i class="luc no" data-icon="x"></i> Cuentas al final</td><td class="comp-yes"><i class="luc yes" data-icon="check"></i> Por método y vendedor</td></tr>
+              <tr><th scope="row">Saber quién debe y cuánto</th><td><i class="luc no" data-icon="x"></i> De memoria</td><td class="comp-yes"><i class="luc yes" data-icon="check"></i> CxC con vencimiento</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Testimonios -->
+    <section class="l-section l-section-alt" id="testimonios">
+      <div class="container">
+        <div class="l-head">
+          <span class="kicker">Testimonios</span>
+          <h2>Quienes ya lo usan</h2>
+        </div>
+        <div class="l-testimonials">
+          <figure class="t-card">
+            <div class="t-stars"><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i></div>
+            <blockquote>"Antes llevaba el stock en una libreta. Ahora sé qué pieza está reservada para cada reparación y qué falta por comprar."</blockquote>
+            <figcaption><span class="avatar">LM</span><span><strong>Laura M.</strong><small>Dueña de tienda de cómputo</small></span></figcaption>
+          </figure>
+          <figure class="t-card">
+            <div class="t-stars"><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i></div>
+            <blockquote>"El corte de caja dejó de ser un dolor de cabeza. Todo cuadra por vendedor y por método de pago al final del día."</blockquote>
+            <figcaption><span class="avatar">RG</span><span><strong>Ricardo G.</strong><small>Administrador</small></span></figcaption>
+          </figure>
+          <figure class="t-card">
+            <div class="t-stars"><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i><i class="luc" data-icon="star"></i></div>
+            <blockquote>"Los clientes agradecen que les avisemos por WhatsApp cuando su equipo está listo o cuando se retrasa la entrega."</blockquote>
+            <figcaption><span class="avatar">AT</span><span><strong>Ana T.</strong><small>Recepcionista</small></span></figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Precios -->
+    <section class="l-section" id="precios">
+      <div class="container">
+        <div class="l-head">
+          <span class="kicker">Precios</span>
+          <h2>Planes sencillos, sin sorpresas</h2>
+          <p class="l-head-sub">Instalación en tu propio servidor o VPS. Pagas una vez, sin cuotas por usuario.</p>
+        </div>
+        <div class="l-pricing">
+          <div class="plan">
+            <h3>Básico</h3>
+            <div class="plan-price"><span class="amount">$3,500</span><span class="per">instalación única</span></div>
+            <ul>
+              <li><i class="luc yes" data-icon="check"></i> Hasta 2 usuarios</li>
+              <li><i class="luc yes" data-icon="check"></i> Inventario y punto de venta</li>
+              <li><i class="luc yes" data-icon="check"></i> Órdenes de servicio</li>
+              <li><i class="luc yes" data-icon="check"></i> Corte de caja</li>
+              <li><i class="luc yes" data-icon="check"></i> Soporte por correo</li>
+            </ul>
+            <a class="btn btn-ghost btn-block" href="#contacto">Solicitar</a>
+          </div>
+          <div class="plan plan-popular">
+            <span class="plan-tag">Más popular</span>
+            <h3>Profesional</h3>
+            <div class="plan-price"><span class="amount">$6,500</span><span class="per">instalación única</span></div>
+            <ul>
+              <li><i class="luc yes" data-icon="check"></i> Hasta 8 usuarios y 3 roles</li>
+              <li><i class="luc yes" data-icon="check"></i> Todo lo de Básico</li>
+              <li><i class="luc yes" data-icon="check"></i> Compras y proveedores</li>
+              <li><i class="luc yes" data-icon="check"></i> CxC y CxP</li>
+              <li><i class="luc yes" data-icon="check"></i> Notificaciones WhatsApp</li>
+              <li><i class="luc yes" data-icon="check"></i> Reportes y exportación</li>
+              <li><i class="luc yes" data-icon="check"></i> Soporte prioritario</li>
+            </ul>
+            <a class="btn btn-primary btn-block" href="#contacto">Solicitar</a>
+          </div>
+          <div class="plan">
+            <h3>Multi-sucursal</h3>
+            <div class="plan-price"><span class="amount">A la medida</span><span class="per">varias tiendas</span></div>
+            <ul>
+              <li><i class="luc yes" data-icon="check"></i> Todo lo de Profesional</li>
+              <li><i class="luc yes" data-icon="check"></i> Inventario por sucursal</li>
+              <li><i class="luc yes" data-icon="check"></i> Usuarios y roles ilimitados</li>
+              <li><i class="luc yes" data-icon="check"></i> Reportes consolidados</li>
+              <li><i class="luc yes" data-icon="check"></i> Capacitación presencial</li>
+            </ul>
+            <a class="btn btn-ghost btn-block" href="#contacto">Cotizar</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="l-section l-section-alt" id="faq">
+      <div class="container l-faq-wrap">
+        <div class="l-head">
+          <span class="kicker">Preguntas frecuentes</span>
+          <h2>Lo que nos preguntan antes de instalar</h2>
+        </div>
+        <div class="l-faq" id="faqList">
+          <details>
+            <summary><span>¿El sistema necesita internet?</span><i class="luc" data-icon="chevron-down"></i></summary>
+            <div class="faq-body"><p>No. Los datos viven en una base local (PostgreSQL) en tu servidor o VPS. La tienda sigue operando aunque se caiga la conexión.</p></div>
+          </details>
+          <details>
+            <summary><span>¿Funciona con mi impresora de tickets?</span><i class="luc" data-icon="chevron-down"></i></summary>
+            <div class="faq-body"><p>Sí. Imprime en impresoras térmicas de 58mm y 80mm compatibles con ESC/POS (por ejemplo, Epson TM-T20).</p></div>
+          </details>
+          <details>
+            <summary><span>¿Cómo se envían las notificaciones de WhatsApp?</span><i class="luc" data-icon="chevron-down"></i></summary>
+            <div class="faq-body"><p>Con la API de Twilio: retrasos, equipos listos, cotizaciones y recordatorios de garantía se envían automáticamente con plantillas aprobadas.</p></div>
+          </details>
+          <details>
+            <summary><span>¿Pueden trabajar varios vendedores y técnicos a la vez?</span><i class="luc" data-icon="chevron-down"></i></summary>
+            <div class="faq-body"><p>Sí. Incluye roles de administrador, vendedor y técnico con permisos por rol, y caja independiente por usuario.</p></div>
+          </details>
+          <details>
+            <summary><span>¿Quién tiene mis datos?</span><i class="luc" data-icon="chevron-down"></i></summary>
+            <div class="faq-body"><p>Tú. El sistema se instala en tu servidor o VPS mediante Docker; no dependes de cuotas ni de que una nube se caiga.</p></div>
+          </details>
+          <details>
+            <summary><span>¿Se hacen respaldos?</span><i class="luc" data-icon="chevron-down"></i></summary>
+            <div class="faq-body"><p>Sí. Respaldos automáticos diarios y conservación de todo el historial de órdenes, ventas y garantías.</p></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- Contacto -->
+    <section class="l-section" id="contacto">
+      <div class="container l-contact-grid">
+        <div class="l-contact-info">
+          <span class="kicker">Contacto</span>
+          <h2>Hablemos de tu tienda</h2>
+          <p class="l-head-sub">Cuéntanos cómo trabajas hoy y te decimos si el sistema te queda bien (spoiler: casi siempre sí).</p>
+          <ul class="l-contact-list">
+            <li><span class="c-icon"><i class="luc" data-icon="message"></i></span><div><strong>WhatsApp</strong><small>55 0000 0000</small></div></li>
+            <li><span class="c-icon"><i class="luc" data-icon="mail"></i></span><div><strong>Correo</strong><small>hola@techstore.mx</small></div></li>
+            <li><span class="c-icon"><i class="luc" data-icon="clock"></i></span><div><strong>Horario</strong><small>Lun–Vie 9:00–19:00 · Sáb 9:00–14:00</small></div></li>
+            <li><span class="c-icon"><i class="luc" data-icon="map-pin"></i></span><div><strong>Ubicación</strong><small>Av. Tecnológica 123, CDMX</small></div></li>
+          </ul>
+        </div>
+        <form class="l-contact-form card" id="contactForm" novalidate>
+          <div class="form-row">
+            <div class="field"><label class="label" for="cfNombre">Nombre <span class="req">*</span></label><input class="input" id="cfNombre" required /></div>
+            <div class="field"><label class="label" for="cfTel">Teléfono / WhatsApp <span class="req">*</span></label><input class="input" id="cfTel" required /></div>
+          </div>
+          <div class="field"><label class="label" for="cfCorreo">Correo</label><input class="input" id="cfCorreo" type="email" /></div>
+          <div class="field"><label class="label" for="cfMsg">¿Qué necesitas? <span class="req">*</span></label><textarea class="textarea" id="cfMsg" required placeholder="Ej. Estoy por abrir mi tienda y quiero llevar el inventario y las reparaciones…"></textarea></div>
+          <button class="btn btn-primary btn-block" type="submit" id="cfSubmit"><i class="luc" data-icon="arrow-right"></i> Enviar mensaje</button>
+          <p class="hint">Prototipo: el mensaje no se envía realmente.</p>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="l-footer">
+    <div class="container l-footer-grid">
+      <div class="f-col">
+        <a class="l-logo" href="#top"><span class="l-logo-icon"><i class="luc" data-icon="cpu"></i></span><span class="l-logo-text"><strong>TechStore</strong><small>Sistema de Administración</small></span></a>
+        <p>Sistema de administración para negocios de mantenimiento, reparación, ensamblado y venta de equipo de cómputo.</p>
+      </div>
+      <div class="f-col">
+        <h4>Producto</h4>
+        <ul>
+          <li><a href="#funcionalidades">Funcionalidades</a></li>
+          <li><a href="#precios">Precios</a></li>
+          <li><a href="../app/index.html">Sistema (prototipo)</a></li>
+        </ul>
+      </div>
+      <div class="f-col">
+        <h4>Ayuda</h4>
+        <ul>
+          <li><a href="#faq">Preguntas frecuentes</a></li>
+          <li><a href="#contacto">Contacto</a></li>
+          <li><a href="#comparacion">Comparación</a></li>
+        </ul>
+      </div>
+      <div class="f-col">
+        <h4>Contacto</h4>
+        <ul>
+          <li><i class="luc" data-icon="phone"></i> 55 0000 0000</li>
+          <li><i class="luc" data-icon="mail"></i> hola@techstore.mx</li>
+          <li><i class="luc" data-icon="map-pin"></i> Av. Tecnológica 123, CDMX</li>
+        </ul>
+      </div>
+    </div>
+    <div class="container f-bottom">© 2026 TechStore · Sistema de Administración · Wireframe</div>
+  </footer>
+
+  <div class="toast-root" id="toastRoot" aria-live="polite"></div>
+  <script src="js/landing.js"></script>
+</body>
+</html>
