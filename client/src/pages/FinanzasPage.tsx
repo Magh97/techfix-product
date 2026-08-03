@@ -10,25 +10,35 @@ import { Label } from "@/components/ui/label";
 import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { getSessionUser } from "@/lib/auth";
-import { finanzasApi, ventasApi } from "@/lib/api";
+import { comprasApi, finanzasApi, ventasApi } from "@/lib/api";
 import { fechaCorta, mxn } from "@/lib/utils";
 
 export default function FinanzasPage() {
   const toast = useToast();
   const qc = useQueryClient();
   const rol = getSessionUser()?.rol;
-  const [tab, setTab] = useState<"cxc" | "egresos">("cxc");
+  const [tab, setTab] = useState<"cxc" | "cxp" | "egresos">("cxc");
   const [nuevoEgreso, setNuevoEgreso] = useState(false);
   const [egreso, setEgreso] = useState({ concepto: "", categoria: "Operativo", monto: "", metodo: "efectivo" });
   const [abono, setAbono] = useState<{ ventaId: number; folio: string; saldo: number } | null>(null);
   const [monto, setMonto] = useState("0");
+  const [pagoProv, setPagoProv] = useState<{ compraId: number; folio: string; saldo: number } | null>(null);
+  const [montoProv, setMontoProv] = useState("0");
+  const [metodoProv, setMetodoProv] = useState("transferencia");
 
   const { data: cxc } = useQuery({ queryKey: ["finanzas-cxc"], queryFn: finanzasApi.cxc });
+  const { data: cxp } = useQuery({ queryKey: ["finanzas-cxp"], queryFn: comprasApi.cxp });
   const { data: egresos } = useQuery({ queryKey: ["finanzas-egresos"], queryFn: finanzasApi.egresos });
 
   const pagar = useMutation({
     mutationFn: () => ventasApi.pagar(abono!.ventaId, { monto: Number(monto), metodo: "efectivo" }),
     onSuccess: () => { toast.success("Abono registrado"); setAbono(null); qc.invalidateQueries({ queryKey: ["finanzas-cxc"] }); },
+    onError: (e) => toast.error("Error", e instanceof Error ? e.message : ""),
+  });
+
+  const pagarProveedor = useMutation({
+    mutationFn: () => comprasApi.pagar(pagoProv!.compraId, { monto: Number(montoProv), metodo: metodoProv }),
+    onSuccess: () => { toast.success("Pago a proveedor registrado"); setPagoProv(null); qc.invalidateQueries({ queryKey: ["finanzas-cxp"] }); },
     onError: (e) => toast.error("Error", e instanceof Error ? e.message : ""),
   });
 
@@ -44,11 +54,41 @@ export default function FinanzasPage() {
 
       <div className="flex gap-2">
         <Button variant={tab === "cxc" ? "accent" : "outline"} size="sm" onClick={() => setTab("cxc")}>Cuentas por cobrar</Button>
+        <Button variant={tab === "cxp" ? "accent" : "outline"} size="sm" onClick={() => setTab("cxp")}>Cuentas por pagar</Button>
         <Button variant={tab === "egresos" ? "accent" : "outline"} size="sm" onClick={() => setTab("egresos")}>Egresos</Button>
         {rol === "admin" && tab === "egresos" && (
           <Button size="sm" className="ml-auto" onClick={() => setNuevoEgreso(true)}><Plus className="h-4 w-4" /> Nuevo</Button>
         )}
       </div>
+
+      {tab === "cxp" && (
+        <Card>
+          <CardBody className="p-0">
+            <Table>
+              <THead>
+                <TR><TH>Folio</TH><TH>Proveedor</TH><TH className="text-right">Total</TH><TH className="text-right">Saldo</TH><TH>Vence</TH><TH>Estado</TH><TH /></TR>
+              </THead>
+              <tbody>
+                {cxp?.data.map((i) => (
+                  <TR key={i.compraId}>
+                    <TD className="font-mono text-xs">{i.folio}</TD>
+                    <TD>{i.proveedorNombre}</TD>
+                    <TD className="text-right">{mxn(i.total)}</TD>
+                    <TD className="text-right">{mxn(i.saldo)}</TD>
+                    <TD className="text-muted">{i.fechaVencimiento ? fechaCorta(i.fechaVencimiento) : "—"}</TD>
+                    <TD>
+                      <Badge variant={i.estado === "vencido" ? "danger" : i.estado === "pagado" ? "success" : "warning"}>{i.estado}</Badge>
+                    </TD>
+                    <TD className="text-right">
+                      {rol === "admin" && i.saldo > 0 && <Button size="sm" variant="outline" onClick={() => { setPagoProv({ compraId: i.compraId, folio: i.folio, saldo: i.saldo }); setMontoProv(String(i.saldo)); }}>Pagar</Button>}
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          </CardBody>
+        </Card>
+      )}
 
       {tab === "cxc" && (
         <Card>
@@ -106,6 +146,25 @@ export default function FinanzasPage() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setAbono(null)}>Cancelar</Button>
             <Button disabled={pagar.isPending} onClick={() => pagar.mutate()}>Abonar</Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <Dialog open={!!pagoProv} onClose={() => setPagoProv(null)} title={`Pagar proveedor · ${pagoProv?.folio ?? ""}`}>
+        <div className="space-y-3">
+          <div><Label>Monto</Label><Input type="number" min={0.01} max={pagoProv?.saldo} value={montoProv} onChange={(e) => setMontoProv(e.target.value)} /></div>
+          <div>
+            <Label>Método</Label>
+            <select value={metodoProv} onChange={(e) => setMetodoProv(e.target.value)} className="h-10 w-full rounded-md border border-border-line bg-surface px-2 text-sm">
+              <option value="transferencia">Transferencia</option>
+              <option value="efectivo">Efectivo</option>
+              <option value="deposito">Depósito</option>
+            </select>
+          </div>
+          <p className="text-xs text-muted">Saldo: {pagoProv ? mxn(pagoProv.saldo) : ""}</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPagoProv(null)}>Cancelar</Button>
+            <Button disabled={pagarProveedor.isPending} onClick={() => pagarProveedor.mutate()}>Pagar</Button>
           </div>
         </div>
       </Dialog>

@@ -1,16 +1,19 @@
 import type {
   Caja,
   Cliente,
+  Compra,
   Corte,
   CreateOrden,
   CreateProducto,
   CreateVenta,
   CxcItem,
+  CxpItem,
   EstadoOrden,
   LoginResponse,
   OrdenServicio,
   Paginated,
   Producto,
+  Proveedor,
   Venta,
 } from "./types";
 
@@ -113,6 +116,48 @@ export const finanzasApi = {
   registrarEgreso: (input: { concepto: string; categoria: string; monto: number; metodo: string }) =>
     api<{ data: unknown }>("/finanzas/egresos", { method: "POST", body: JSON.stringify(input) }),
   cxc: () => api<{ data: CxcItem[] }>("/finanzas/cxc"),
+};
+
+export const proveedoresApi = {
+  list: (params?: { q?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.q) qs.set("q", params.q);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<Proveedor>>(`/proveedores${s ? `?${s}` : ""}`);
+  },
+  create: (input: { nombre: string; contacto?: string | null; condicionesPago?: string | null }) =>
+    api<{ data: Proveedor }>("/proveedores", { method: "POST", body: JSON.stringify(input) }),
+  get: (id: number) => api<{ data: Proveedor }>(`/proveedores/${id}`),
+  update: (id: number, input: { nombre?: string; contacto?: string | null; condicionesPago?: string | null }) =>
+    api<{ data: Proveedor }>(`/proveedores/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  remove: (id: number) => api<{ data: { id: number } }>(`/proveedores/${id}`, { method: "DELETE" }),
+};
+
+export const comprasApi = {
+  list: (params?: { proveedorId?: number; estado?: string; folio?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.proveedorId) qs.set("proveedorId", String(params.proveedorId));
+    if (params?.estado) qs.set("estado", params.estado);
+    if (params?.folio) qs.set("folio", params.folio);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<Compra>>(`/compras${s ? `?${s}` : ""}`);
+  },
+  get: (id: number) => api<{ data: Compra }>(`/compras/${id}`),
+  create: (input: { proveedorId: number; fechaVencimiento?: string | null; lineas: { productoId: number; cantidad: number; precioUnitario: number }[] }) =>
+    api<{ data: Compra }>("/compras", { method: "POST", body: JSON.stringify(input) }),
+  enviar: (id: number) => api<{ data: Compra }>(`/compras/${id}/enviar`, { method: "POST" }),
+  recibir: (id: number) => api<{ data: Compra }>(`/compras/${id}/recibir`, { method: "POST" }),
+  cancelar: (id: number) => api<{ data: Compra }>(`/compras/${id}/cancelar`, { method: "POST" }),
+  pagar: (id: number, input: { monto: number; metodo: string }) =>
+    api<{ data: { compraId: number; monto: number; saldoPendiente: number } }>(`/compras/${id}/pagos`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  cxp: () => api<{ data: CxpItem[] }>("/compras/cxp"),
 };
 
 export const ordenesApi = {
