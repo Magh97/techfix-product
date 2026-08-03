@@ -1,0 +1,896 @@
+openapi: 3.1.0
+info:
+  title: Sistema de Administración — Tienda de Cómputo API
+  version: "1.0.0"
+  description: >-
+    API REST de gestión de inventario, órdenes de servicio, CRM, punto de venta,
+    compras, finanzas, reportes y notificaciones. Reglas de negocio en
+    docs/03-business-rules.md.
+
+servers:
+  - url: https://tienda.example.com/api/v1
+    description: Producción
+  - url: http://localhost:3000/api/v1
+    description: Desarrollo
+
+tags:
+  - name: Auth
+  - name: Productos
+  - name: Categorias
+  - name: Clientes
+  - name: Ordenes
+  - name: Ventas
+  - name: Compras
+  - name: Finanzas
+  - name: Notificaciones
+  - name: Reportes
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Iniciar sesión
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [usuario, password]
+              properties:
+                usuario: { type: string }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Token emitido
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [token, refreshToken, usuario]
+                    properties:
+                      token: { type: string }
+                      refreshToken: { type: string }
+                      usuario:
+                        $ref: "#/components/schemas/Usuario"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /productos:
+    get:
+      tags: [Productos]
+      summary: Listar productos (paginado)
+      operationId: listProductos
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: q
+          in: query
+          description: Búsqueda por nombre/marca/modelo
+          schema: { type: string }
+        - name: categoria
+          in: query
+          schema: { type: integer }
+        - name: stockBajo
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductoListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Productos]
+      summary: Crear producto
+      operationId: createProducto
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductoRequest"
+      responses:
+        "201":
+          description: Producto creado
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Producto" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /productos/{productoId}:
+    get:
+      tags: [Productos]
+      summary: Obtener producto
+      operationId: getProducto
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/productoId"
+      responses:
+        "200":
+          description: Producto encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Producto" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Productos]
+      summary: Editar producto
+      operationId: updateProducto
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/productoId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categoriaId: { type: integer }
+                nombre: { type: string }
+                marca: { type: string }
+                modelo: { type: string }
+                precioCompra: { type: number }
+                precioVenta: { type: number }
+                stockMinimo: { type: integer }
+      responses:
+        "200":
+          description: Producto actualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Producto" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /productos/{productoId}/ajustar:
+    post:
+      tags: [Productos]
+      summary: Ajustar inventario (solo admin)
+      operationId: ajustarProducto
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/productoId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cantidad, motivo]
+              properties:
+                cantidad: { type: integer, example: -3 }
+                motivo: { type: string }
+      responses:
+        "200":
+          description: Ajuste aplicado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Movimiento" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /clientes:
+    get:
+      tags: [Clientes]
+      summary: Listar clientes
+      operationId: listClientes
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: q
+          in: query
+          description: Búsqueda por nombre o teléfono
+          schema: { type: string }
+        - name: soloDeudores
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Cliente" }
+                  meta: { $ref: "#/components/schemas/PaginationMeta" }
+    post:
+      tags: [Clientes]
+      summary: Registrar cliente
+      operationId: createCliente
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre, telefono]
+              properties:
+                nombre: { type: string }
+                telefono: { type: string }
+                correo: { type: string, format: email }
+                direccion: { type: string }
+                preferenciaContacto:
+                  type: string
+                  enum: [whatsapp, correo, llamada]
+                  default: whatsapp
+                limiteCredito: { type: number, default: 3000, description: "Default $3,000 MXN, ampliable por cliente" }
+                plazoCreditoDias: { type: integer, default: 15 }
+      responses:
+        "201":
+          description: Cliente creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Cliente" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /ordenes:
+    post:
+      tags: [Ordenes]
+      summary: Crear orden de servicio
+      operationId: createOrden
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clienteId, tipoEquipo, fallaReportada]
+              properties:
+                clienteId: { type: integer }
+                tipoEquipo:
+                  type: string
+                  enum: [laptop, desktop, all_in_one, periferico, componente, otro]
+                marca: { type: string }
+                modelo: { type: string }
+                serie: { type: string }
+                accesorios: { type: string }
+                fallaReportada: { type: string }
+                fechaPrometida: { type: string, format: date }
+                tecnicoId: { type: integer }
+      responses:
+        "201":
+          description: Orden creada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/OrdenServicio" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /ordenes/{ordenId}/estado:
+    patch:
+      tags: [Ordenes]
+      summary: Cambiar estado de la orden (transición validada)
+      operationId: cambiarEstadoOrden
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ordenId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nuevoEstado]
+              properties:
+                nuevoEstado:
+                  type: string
+                  enum: [en_diagnostico, cotizado, en_reparacion, listo, entregado, cancelado]
+                nota: { type: string }
+      responses:
+        "200":
+          description: Estado actualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/OrdenServicio" }
+        "409":
+          description: Transición no permitida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /ordenes/{ordenId}/cotizaciones:
+    post:
+      tags: [Ordenes]
+      summary: Generar cotización de servicio
+      operationId: crearCotizacion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ordenId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lineas]
+              properties:
+                lineas:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [tipoLinea]
+                    properties:
+                      tipoLinea: { type: string, enum: [refaccion, mano_obra] }
+                      productoId: { type: integer }
+                      cantidad: { type: integer, minimum: 1 }
+                      horas: { type: number }
+                      tarifaHora: { type: number }
+                      descripcion: { type: string }
+      responses:
+        "201":
+          description: Cotización creada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Cotizacion" }
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /ordenes/{ordenId}/cotizaciones/{cotizacionId}/aprobar:
+    post:
+      tags: [Ordenes]
+      summary: Aprobar cotización (reserva stock, notifica NOT-03)
+      operationId: aprobarCotizacion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ordenId"
+        - $ref: "#/components/parameters/cotizacionId"
+      responses:
+        "200":
+          description: Cotización aprobada y piezas reservadas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Cotizacion" }
+        "422":
+          description: Cotización expirada o stock insuficiente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ventas:
+    post:
+      tags: [Ventas]
+      summary: Registrar venta (POS)
+      operationId: createVenta
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVentaRequest"
+      responses:
+        "201":
+          description: Venta registrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Venta" }
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /ventas/{ventaId}/devolucion:
+    post:
+      tags: [Ventas]
+      summary: Registrar devolución (15 días con ticket)
+      operationId: crearDevolucion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ventaId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lineas]
+              properties:
+                lineas:
+                  type: array
+                  items:
+                    type: object
+                    required: [productoId, cantidad]
+                    properties:
+                      productoId: { type: integer }
+                      cantidad: { type: integer, minimum: 1 }
+                reembolsoMetodo: { type: string }
+                notaCredito: { type: boolean, default: false }
+      responses:
+        "201":
+          description: Devolución registrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object }
+        "422":
+          description: Fuera de ventana o venta cancelada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /compras:
+    post:
+      tags: [Compras]
+      summary: Crear orden de compra (admin)
+      operationId: createCompra
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proveedorId, lineas]
+              properties:
+                proveedorId: { type: integer }
+                lineas:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [productoId, cantidad, precioUnitario]
+                    properties:
+                      productoId: { type: integer }
+                      cantidad: { type: integer, minimum: 1 }
+                      precioUnitario: { type: number }
+      responses:
+        "201":
+          description: Compra creada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /compras/{compraId}/recibir:
+    post:
+      tags: [Compras]
+      summary: Registrar entrada de mercancía (inventario += , genera CxP)
+      operationId: recibirCompra
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/compraId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lineas:
+                  type: array
+                  items:
+                    type: object
+                    required: [detalleCompraId, cantidadRecibida]
+                    properties:
+                      detalleCompraId: { type: integer }
+                      cantidadRecibida: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Mercancía recibida
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object }
+
+  /caja/abrir:
+    post:
+      tags: [Finanzas]
+      summary: Abrir caja del día (vendedor/admin)
+      operationId: abrirCaja
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Caja abierta
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Caja" }
+        "409":
+          description: Ya existe caja abierta para el usuario/día
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /caja/cerrar:
+    post:
+      tags: [Finanzas]
+      summary: Cerrar caja con arqueo (admin)
+      operationId: cerrarCaja
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [efectivoFisico]
+              properties:
+                efectivoFisico: { type: number }
+      responses:
+        "200":
+          description: Caja cerrada con diferencia calculada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Caja" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /reportes/ventas:
+    get:
+      tags: [Reportes]
+      summary: Reporte de ventas (admin)
+      operationId: reporteVentas
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: desde
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: grupo
+          in: query
+          schema: { type: string, enum: [dia, producto, vendedor] }
+      responses:
+        "200":
+          description: Datos agregados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    page:
+      name: page
+      in: query
+      description: Número de página (empieza en 1)
+      schema: { type: integer, default: 1, minimum: 1 }
+    pageSize:
+      name: pageSize
+      in: query
+      description: Elementos por página (máx 100)
+      schema: { type: integer, default: 20, maximum: 100 }
+    productoId:
+      name: productoId
+      in: path
+      required: true
+      schema: { type: integer }
+    ordenId:
+      name: ordenId
+      in: path
+      required: true
+      schema: { type: integer }
+    cotizacionId:
+      name: cotizacionId
+      in: path
+      required: true
+      schema: { type: integer }
+    compraId:
+      name: compraId
+      in: path
+      required: true
+      schema: { type: integer }
+    ventaId:
+      name: ventaId
+      in: path
+      required: true
+      schema: { type: integer }
+
+  schemas:
+    Usuario:
+      type: object
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        usuario: { type: string }
+        rol: { type: string, enum: [admin, vendedor, tecnico] }
+        isActive: { type: boolean }
+
+    Producto:
+      type: object
+      properties:
+        id: { type: integer }
+        sku: { type: string }
+        codigoBarras: { type: string, nullable: true }
+        nombre: { type: string }
+        marca: { type: string, nullable: true }
+        modelo: { type: string, nullable: true }
+        precioCompra: { type: number }
+        precioVenta: { type: number }
+        stock: { type: integer }
+        stockMinimo: { type: integer }
+        isKit: { type: boolean }
+        isActive: { type: boolean }
+
+    CreateProductoRequest:
+      type: object
+      required: [categoriaId, sku, nombre, precioCompra, precioVenta]
+      properties:
+        categoriaId: { type: integer }
+        sku: { type: string }
+        codigoBarras: { type: string }
+        nombre: { type: string }
+        marca: { type: string }
+        modelo: { type: string }
+        precioCompra: { type: number, minimum: 0 }
+        precioVenta: { type: number, minimum: 0 }
+        stockMinimo: { type: integer, minimum: 0 }
+
+    ProductoListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Producto" }
+        meta: { $ref: "#/components/schemas/PaginationMeta" }
+
+    Cliente:
+      type: object
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        telefono: { type: string }
+        correo: { type: string, nullable: true }
+        preferenciaContacto: { type: string, enum: [whatsapp, correo, llamada] }
+        limiteCredito: { type: number, description: "Default $3,000 MXN al crear cliente" }
+        plazoCreditoDias: { type: integer, default: 15 }
+        etiquetas:
+          type: array
+          items: { type: string }
+        saldoPendiente: { type: number, description: "Calculado: total − pagos" }
+
+    OrdenServicio:
+      type: object
+      properties:
+        id: { type: integer }
+        folio: { type: string }
+        clienteId: { type: integer }
+        tipoEquipo: { type: string }
+        marca: { type: string, nullable: true }
+        modelo: { type: string, nullable: true }
+        serie: { type: string, nullable: true }
+        accesorios: { type: string, nullable: true }
+        fallaReportada: { type: string }
+        diagnostico: { type: string, nullable: true }
+        estado:
+          type: string
+          enum: [pendiente, en_diagnostico, cotizado, en_reparacion, listo, entregado, cancelado]
+        retrasada: { type: boolean }
+        fechaPrometida: { type: string, format: date }
+        fechaEntrega: { type: string, format: date, nullable: true }
+        tecnicoId: { type: integer, nullable: true }
+        firmaRecepcion: { type: string, nullable: true, description: "PNG base64 (canvas táctil, SER-10)" }
+
+    Cotizacion:
+      type: object
+      properties:
+        id: { type: integer }
+        folio: { type: string }
+        ordenId: { type: integer }
+        estado: { type: string, enum: [emitida, aprobada, rechazada, expirada, convertida] }
+        subtotal: { type: number }
+        iva: { type: number }
+        total: { type: number }
+        vigenciaDesde: { type: string, format: date }
+        vigenciaHasta: { type: string, format: date }
+        lineas:
+          type: array
+          items: { type: object }
+
+    CreateVentaRequest:
+      type: object
+      required: [lineas, tipoPago]
+      properties:
+        clienteId: { type: integer }
+        ordenId: { type: integer }
+        lineas:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [cantidad]
+            properties:
+              productoId: { type: integer }
+              cantidad: { type: integer, minimum: 1 }
+              precioNeto: { type: number }
+              descripcionServicio: { type: string }
+        descuento: { type: number, default: 0 }
+        motivoDescuento: { type: string }
+        tipoPago: { type: string, enum: [contado, credito] }
+        metodoPago: { type: string, enum: [efectivo, tarjeta_credito, tarjeta_debito, transferencia, deposito] }
+        plazoDias: { type: integer }
+        montoRecibido: { type: number }
+
+    Venta:
+      type: object
+      properties:
+        id: { type: integer }
+        folio: { type: string }
+        clienteId: { type: integer, nullable: true }
+        subtotal: { type: number }
+        iva: { type: number }
+        total: { type: number }
+        descuento: { type: number }
+        tipoPago: { type: string, enum: [contado, credito] }
+        estado: { type: string, enum: [completada, cancelada, devuelta, credito_pendiente] }
+        fechaVencimiento: { type: string, format: date, nullable: true }
+        lineas:
+          type: array
+          items: { type: object }
+
+    Movimiento:
+      type: object
+      properties:
+        id: { type: integer }
+        productoId: { type: integer }
+        tipo: { type: string }
+        cantidad: { type: integer }
+        referenciaTipo: { type: string, nullable: true }
+        referenciaId: { type: integer, nullable: true }
+        motivo: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    Caja:
+      type: object
+      properties:
+        id: { type: integer }
+        usuarioId: { type: integer }
+        fecha: { type: string, format: date }
+        estado: { type: string, enum: [abierta, cerrada, reabierta] }
+        efectivoFisico: { type: number, nullable: true }
+        diferencia: { type: number, nullable: true }
+        apertura: { type: string, format: date-time }
+        cierre: { type: string, format: date-time, nullable: true }
+
+    PaginationMeta:
+      type: object
+      required: [page, pageSize, totalItems, totalPages]
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalItems: { type: integer }
+        totalPages: { type: integer }
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  reason: { type: string }
+
+  responses:
+    Unauthorized:
+      description: No autenticado
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Forbidden:
+      description: Sin permisos para la acción
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ValidationError:
+      description: Validación de forma fallida
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Unprocessable:
+      description: Regla de negocio violada
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Conflict:
+      description: Conflicto de estado o duplicado
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
