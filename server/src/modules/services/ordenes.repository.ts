@@ -403,59 +403,7 @@ export function insertNotificacion(input: {
   );
 }
 
-/* --- Venta + garantía generadas en la entrega --- */
-
-export async function nextVentaFolio(): Promise<string> {
-  const r = await query<{ n: string }>("SELECT COALESCE(MAX(id), 0) + 1 AS n FROM ventas");
-  return `VEN-${String(Number(r.rows[0]?.n ?? 1)).padStart(4, "0")}`;
-}
-
-export interface InsertVentaInput {
-  folio: string;
-  clienteId: number;
-  vendedorId: number;
-  ordenId: number;
-  subtotal: number;
-  iva: number;
-  total: number;
-  metodoPago: string;
-  montoRecibido: number;
-}
-
-export function insertVenta(client: PoolClient, input: InsertVentaInput) {
-  return client.query<{ id: number }>(
-    `INSERT INTO ventas (folio, cliente_id, vendedor_id, orden_id, subtotal, iva, total, tipo_pago, metodo_pago, monto_recibido, estado)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'contado',$8,$9,'completada') RETURNING id`,
-    [
-      input.folio,
-      input.clienteId,
-      input.vendedorId,
-      input.ordenId,
-      input.subtotal,
-      input.iva,
-      input.total,
-      input.metodoPago,
-      input.montoRecibido,
-    ]
-  ).then((r) => r.rows[0]?.id);
-}
-
-export function insertDetalleVenta(
-  client: PoolClient,
-  ventaId: number,
-  lineas: { descripcion: string; cantidad: number; precio: number }[]
-) {
-  const valores: unknown[] = [];
-  const rows = lineas.map((l, i) => {
-    const base = i * 4 + 1;
-    valores.push(ventaId, l.descripcion, l.cantidad, l.precio);
-    return `($${base}, NULL, $${base + 2}, $${base + 3}, 0, $${base + 1})`;
-  });
-  return client.query(
-    `INSERT INTO detalle_venta (venta_id, producto_id, cantidad, precio_neto, descuento_linea, descripcion_servicio) VALUES ${rows.join(", ")}`,
-    valores
-  );
-}
+/* --- Garantía generada en la entrega --- */
 
 export function insertGarantia(
   client: PoolClient,
