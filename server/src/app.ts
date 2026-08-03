@@ -4,7 +4,9 @@ import helmet from "helmet";
 import { env } from "./config/env";
 import { authRouter } from "./modules/auth/auth.routes";
 import { clientesRouter } from "./modules/crm/clientes.routes";
+import { cajaRouter, finanzasRouter } from "./modules/finance/finance.routes";
 import { productsRouter } from "./modules/inventory/products.routes";
+import { ventasRouter } from "./modules/sales/ventas.routes";
 import { ordenesRouter } from "./modules/services/ordenes.routes";
 import { errorHandler, notFoundHandler } from "./shared/errors";
 import { logger } from "./shared/logger";
@@ -28,7 +30,10 @@ export function createApp() {
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1/productos", productsRouter);
   app.use("/api/v1/clientes", clientesRouter);
+  app.use("/api/v1/ventas", ventasRouter);
   app.use("/api/v1/ordenes", ordenesRouter);
+  app.use("/api/v1/caja", cajaRouter);
+  app.use("/api/v1/finanzas", finanzasRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -15,3 +15,9 @@ export const createClienteSchema = z.object({
   limiteCredito: z.number().nonnegative().optional(),
   plazoCreditoDias: z.number().int().positive().optional(),
 });
+
+export const updateClienteSchema = createClienteSchema.partial();
+
+export const clienteIdParams = z.object({ clienteId: z.coerce.number().int().positive() });
+
+export const etiquetasSchema = z.object({ etiquetas: z.array(z.string()).max(20) });

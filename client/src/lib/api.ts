@@ -1,12 +1,17 @@
 import type {
+  Caja,
   Cliente,
+  Corte,
   CreateOrden,
   CreateProducto,
+  CreateVenta,
+  CxcItem,
   EstadoOrden,
   LoginResponse,
   OrdenServicio,
   Paginated,
   Producto,
+  Venta,
 } from "./types";
 
 const API_URL: string = import.meta.env.VITE_API_URL || "/api/v1";
@@ -69,8 +74,45 @@ export const clientesApi = {
     const s = qs.toString();
     return api<Paginated<Cliente>>(`/clientes${s ? `?${s}` : ""}`);
   },
-  create: (input: { nombre: string; telefono: string; correo?: string | null }) =>
+  create: (input: { nombre: string; telefono: string; correo?: string | null; limiteCredito?: number; plazoCreditoDias?: number }) =>
     api<{ data: Cliente }>("/clientes", { method: "POST", body: JSON.stringify(input) }),
+  get: (id: number) => api<{ data: Cliente & { saldoPendiente: number } }>(`/clientes/${id}`),
+  update: (id: number, input: Partial<{ nombre: string; telefono: string; correo: string | null; limiteCredito: number; plazoCreditoDias: number }>) =>
+    api<{ data: Cliente }>(`/clientes/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  historial: (id: number) =>
+    api<{ data: { ordenes: { id: number; folio: string; estado: string; retrasada: boolean; fecha: string }[]; ventas: { id: number; folio: string; total: number; estado: string; fecha: string }[]; cotizaciones: { id: number; folio: string; total: number; estado: string }[] } }>(`/clientes/${id}/historial`),
+  cxc: (id: number) =>
+    api<{ data: { limiteCredito: number; saldoTotal: number; items: { ventaId: number; folio: string; total: number; saldo: number; fechaVencimiento: string | null; estado: string }[] } }>(`/clientes/${id}/cxc`),
+};
+
+export const ventasApi = {
+  create: (input: CreateVenta) => api<{ data: Venta }>("/ventas", { method: "POST", body: JSON.stringify(input) }),
+  list: (params?: { page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<Venta>>(`/ventas${s ? `?${s}` : ""}`);
+  },
+  get: (id: number) => api<{ data: Venta }>(`/ventas/${id}`),
+  pagar: (id: number, input: { monto: number; metodo: string }) =>
+    api<{ data: unknown }>(`/ventas/${id}/pagos`, { method: "POST", body: JSON.stringify(input) }),
+  cancelar: (id: number, motivo: string) => api<{ data: Venta }>(`/ventas/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),
+};
+
+export const cajaApi = {
+  abrir: () => api<{ data: Caja }>("/caja/abrir", { method: "POST" }),
+  actual: () => api<{ data: Caja | null }>("/caja/actual"),
+  corte: () => api<{ data: Corte }>("/caja/corte"),
+  cerrar: (efectivoFisico: number) => api<{ data: Caja & { diferencia: number } }>("/caja/cerrar", { method: "POST", body: JSON.stringify({ efectivoFisico }) }),
+};
+
+export const finanzasApi = {
+  movimientos: () => api<Paginated<{ tipo: string; folio: string; monto: number; metodo: string; fecha: string }>>("/finanzas/movimientos"),
+  egresos: () => api<Paginated<{ id: number; concepto: string; categoria: string; monto: number; metodo: string; fecha: string }>>("/finanzas/egresos"),
+  registrarEgreso: (input: { concepto: string; categoria: string; monto: number; metodo: string }) =>
+    api<{ data: unknown }>("/finanzas/egresos", { method: "POST", body: JSON.stringify(input) }),
+  cxc: () => api<{ data: CxcItem[] }>("/finanzas/cxc"),
 };
 
 export const ordenesApi = {

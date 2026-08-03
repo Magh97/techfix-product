@@ -17,6 +17,7 @@ function todayPlus(days: number): string {
 describe.skipIf(!runDb)("integración API (DB real)", () => {
   let app: Express;
   let token = "";
+  let vendedorToken = "";
   let tecnicoToken = "";
   let clienteId = 0;
 
@@ -25,6 +26,9 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
 
     const admin = await request(app).post("/api/v1/auth/login").send({ usuario: "admin", password: "admin1234" });
     token = admin.body.data.token;
+
+    const vendedor = await request(app).post("/api/v1/auth/login").send({ usuario: "vendedor", password: "vendedor1234" });
+    vendedorToken = vendedor.body.data.token;
 
     // Técnico de prueba (rol tecnico) — se crea idempotente
     const hash = await bcrypt.hash("tecnico1234", 10);
@@ -220,5 +224,180 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
 
     const stockLiberado = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [productoId]);
     expect(Number(stockLiberado.rows[0]?.stock)).toBe(1);
+  });
+
+  it("POS: venta de contado descuenta stock y asigna la caja", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    await request(app).post("/api/v1/caja/abrir").set(auth);
+
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `POS-${Date.now()}`, nombre: "Prod POS", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 2 }], tipoPago: "contado", metodoPago: "efectivo", montoRecibido: 50 });
+    expect(venta.status).toBe(201);
+    expect(venta.body.data.folio).toMatch(/^VEN-/);
+
+    const stock = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [productoId]);
+    expect(Number(stock.rows[0]?.stock)).toBe(3);
+    const caja = await pool.query<{ caja_id: number | null }>("SELECT caja_id FROM ventas WHERE id = $1", [venta.body.data.id]);
+    expect(caja.rows[0]?.caja_id).toBeTruthy();
+  });
+
+  it("POS: venta a crédito respeta el límite del cliente", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const c = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito) VALUES ('Credit Test', '5599887766', 500) RETURNING id"
+    );
+    const clienteId = c.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `CRED-${Date.now()}`, nombre: "Prod crédito", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 100 WHERE id = $1", [productoId]);
+
+    const okVenta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito" });
+    expect(okVenta.status).toBe(201);
+    expect(okVenta.body.data.fechaVencimiento).toBeTruthy();
+
+    const over = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 5 }], tipoPago: "credito" });
+    expect(over.status).toBe(422);
+    expect(over.body.error.code).toBe("CREDIT_LIMIT_EXCEEDED");
+  });
+
+  it("POS: descuento superior al 10% requiere admin", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `DESC-${Date.now()}`, nombre: "Prod descuento", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const body = { lineas: [{ tipo: "producto", productoId, cantidad: 1 }], descuento: 50, tipoPago: "contado", metodoPago: "efectivo" };
+    const resV = await request(app).post("/api/v1/ventas").set(authV).send(body);
+    expect(resV.status).toBe(403);
+    const resA = await request(app).post("/api/v1/ventas").set(auth).send(body);
+    expect(resA.status).toBe(201);
+  });
+
+  it("FINANZAS: abono reduce la CxC", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const c = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito) VALUES ('Abono Test', '5599776655', 5000) RETURNING id"
+    );
+    const clienteId = c.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `ABONO-${Date.now()}`, nombre: "Prod abono", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito" });
+    const ventaId = venta.body.data.id;
+
+    const abono = await request(app).post(`/api/v1/ventas/${ventaId}/pagos`).set(auth).send({ monto: 40, metodo: "efectivo" });
+    expect(abono.status).toBe(200);
+
+    const cxc = await request(app).get("/api/v1/finanzas/cxc").set(auth);
+    const item = cxc.body.data.find((x: { ventaId: number }) => x.ventaId === ventaId);
+    expect(item.saldo).toBeCloseTo(venta.body.data.total - 40, 2);
+  });
+
+  it("POS: cancelar venta revierte el stock", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `CANV-${Date.now()}`, nombre: "Prod cancelar venta", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 2 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const ventaId = venta.body.data.id;
+
+    const cancelada = await request(app).post(`/api/v1/ventas/${ventaId}/cancelar`).set(auth).send({ motivo: "Prueba" });
+    expect(cancelada.status).toBe(200);
+
+    const stock = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [productoId]);
+    expect(Number(stock.rows[0]?.stock)).toBe(5);
+  });
+
+  it("POS: devolución restituye el stock", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `DEV-${Date.now()}`, nombre: "Prod devolución", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 2 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const ventaId = venta.body.data.id;
+    const intermedio = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [productoId]);
+    expect(Number(intermedio.rows[0]?.stock)).toBe(3);
+
+    const dev = await request(app)
+      .post(`/api/v1/ventas/${ventaId}/devolucion`)
+      .set(auth)
+      .send({ lineas: [{ productoId, cantidad: 2 }] });
+    expect(dev.status).toBe(200);
+
+    const stock = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [productoId]);
+    expect(Number(stock.rows[0]?.stock)).toBe(5);
+  });
+
+  it("CAJA: corte y cierre con arqueo", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const actual = await request(app).get("/api/v1/caja/actual").set(auth);
+    if (!actual.body.data) {
+      await request(app).post("/api/v1/caja/abrir").set(auth);
+    }
+
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `CAJA-${Date.now()}`, nombre: "Prod caja", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+    await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo", montoRecibido: 100 });
+
+    const corte = await request(app).get("/api/v1/caja/corte").set(auth);
+    expect(corte.status).toBe(200);
+    expect(corte.body.data.ingresos).toBeGreaterThan(0);
+
+    const cerrada = await request(app)
+      .post("/api/v1/caja/cerrar")
+      .set(auth)
+      .send({ efectivoFisico: corte.body.data.esperadoEfectivo });
+    expect(cerrada.status).toBe(200);
+    expect(Math.abs(cerrada.body.data.diferencia)).toBeLessThan(0.001);
   });
 });

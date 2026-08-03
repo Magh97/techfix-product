@@ -5,6 +5,7 @@ import { calcMoney } from "../../shared/money";
 import { ESTADO_LABEL, validarTransicion } from "./estados";
 import type { EstadoOrden, Rol, TipoEquipo } from "./ordenes.types";
 import * as repo from "./ordenes.repository";
+import * as ventasService from "../sales/ventas.service";
 
 const DIAS_GARANTIA_SERVICIO = 30;
 const TOLERANCIA_RETRASO_DIAS = 1; // 1 día calendario (incluye domingo) — BR-RET
@@ -465,39 +466,34 @@ export async function entregar(
   const cot = cotizaciones.find((c) => c.estado === "aprobada");
   if (!cot) throw AppError.business("QUOTE_NOT_FOUND", "No hay cotización aprobada");
 
-  const folio = await repo.nextVentaFolio();
-  let ventaId: number | undefined;
+  const lineasCot = await repo.listCotizacionLineas(cot.id);
+  let ventaFolio = "";
 
   await withTransaction(async (client) => {
-    const subtotal = Number(cot.subtotal);
-    const iva = Number(cot.iva);
-    const total = Number(cot.total);
-    ventaId = await repo.insertVenta(client, {
-      folio,
-      clienteId: orden.cliente_id,
-      vendedorId: user.id,
-      ordenId: orden.id,
-      subtotal,
-      iva,
-      total,
-      metodoPago: input.metodoPago ?? "efectivo",
-      montoRecibido: total,
-    });
-    if (!ventaId) throw AppError.business("INTERNAL_ERROR", "No se pudo registrar la venta");
-    const lineas = await repo.listCotizacionLineas(cot.id);
-    await repo.insertDetalleVenta(
-      client,
-      ventaId,
-      lineas.map((l) => ({
-        descripcion: l.nombre_producto ?? l.descripcion_mano_obra ?? "Servicio",
-        cantidad: l.cantidad ?? 1,
-        precio: Number(l.precio_neto),
-      }))
+    const venta = await ventasService.registrarVenta(
+      {
+        clienteId: orden.cliente_id,
+        vendedorId: user.id,
+        ordenId: orden.id,
+        lineas: lineasCot.map((l) => ({
+          tipo: "servicio" as const,
+          nombre: l.nombre_producto ?? l.descripcion_mano_obra ?? "Servicio",
+          cantidad: l.cantidad ?? 1,
+          precioNeto: Number(l.precio_neto) / (l.cantidad ?? 1),
+        })),
+        descuento: 0,
+        tipoPago: "contado",
+        metodoPago: input.metodoPago ?? "efectivo",
+        montoRecibido: Number(cot.total),
+      },
+      user,
+      client
     );
+    ventaFolio = venta.folio;
     await repo.updateOrdenEntrega(client, orden.id, input.firma);
     await repo.updateCotizacionEstado(cot.id, "convertida");
     await repo.insertGarantia(client, {
-      ventaId,
+      ventaId: venta.id,
       ordenId: orden.id,
       clienteId: orden.cliente_id,
       tipo: "servicio",
@@ -506,8 +502,8 @@ export async function entregar(
     });
   });
 
-  await repo.insertHistorial(ordenId, "entregado", user.id, `Entregado y cobrado · venta ${folio}`);
-  return { orden: await getById(ordenId), ventaFolio: folio };
+  await repo.insertHistorial(ordenId, "entregado", user.id, `Entregado y cobrado · venta ${ventaFolio}`);
+  return { orden: await getById(ordenId), ventaFolio };
 }
 
 export async function cancelar(id: number, motivo: string, user: { id: number; rol: Rol }) {
