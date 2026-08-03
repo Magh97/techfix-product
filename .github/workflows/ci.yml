@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://test:test@localhost:5432/test
+      JWT_SECRET: ci_secret_min_16_chars_long
+      JWT_REFRESH_SECRET: ci_refresh_secret_min_16
+      CORS_ORIGIN: http://localhost:5173
+      RUN_DB_TESTS: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Migrate (test DB)
+        run: pnpm --filter @techstore/server db:migrate
+
+      - name: Seed (test DB)
+        run: pnpm --filter @techstore/server db:seed
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
