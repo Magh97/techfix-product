@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tienda de Cómputo — Sistema de Administración (Wireframe)</title>
+  <meta name="description" content="Wireframe funcional del Sistema de Administración para negocio de mantenimiento, reparación y venta de equipo de cómputo. HTML + CSS + JS, 100% offline." />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#view">Saltar al contenido</a>
+
+  <div class="app" id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-logo" id="brandLogo"></span>
+        <div class="brand-text">
+          <strong>TechStore</strong>
+          <small>Sistema de Administración</small>
+        </div>
+      </div>
+      <nav class="sidebar-nav" id="sidebarNav" aria-label="Navegación principal"></nav>
+      <div class="sidebar-footer">
+        <div class="sidebar-user">
+          <span class="avatar" id="sideAvatar"></span>
+          <div class="sidebar-user-text">
+            <strong id="sideUserName">—</strong>
+            <small id="sideUserRole">—</small>
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-block" data-action="logout">
+          Cerrar sesión
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main">
+      <header class="header" id="header">
+        <button class="btn btn-ghost btn-icon header-toggle" id="sidebarToggle" aria-label="Abrir menú"></button>
+        <div class="header-search">
+          <label class="input-icon" for="headerSearch"></label>
+          <input type="search" id="headerSearch" placeholder="Buscar cliente o folio…" aria-label="Buscar cliente o folio" />
+        </div>
+        <div class="header-actions">
+          <span class="chip chip-caja" id="cajaChip" title="Caja del día"></span>
+          <div class="theme-toggle" role="group" aria-label="Tema">
+            <button class="btn btn-ghost btn-icon" id="themeToggle" aria-label="Cambiar tema"></button>
+          </div>
+          <div class="role-switch" id="roleSwitch" role="group" aria-label="Cambiar rol (demo)"></div>
+          <span class="chip chip-user" id="headerUser"></span>
+        </div>
+      </header>
+
+      <main class="content" id="view" tabindex="-1" aria-live="polite"></main>
+    </div>
+  </div>
+
+  <div class="modal-root" id="modalRoot" hidden></div>
+  <div class="toast-root" id="toastRoot" aria-live="polite"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
