@@ -1,0 +1,27 @@
+import { z } from "zod";
+
+export const listProductsQuery = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+  q: z.string().optional(),
+  categoria: z.string().optional(),
+  stockBajo: z.enum(["true", "false"]).optional(),
+});
+
+export const createProductSchema = z.object({
+  categoriaId: z.number().int().positive(),
+  sku: z.string().min(1),
+  codigoBarras: z.string().optional().nullable(),
+  nombre: z.string().min(1),
+  marca: z.string().optional().nullable(),
+  modelo: z.string().optional().nullable(),
+  precioCompra: z.number().nonnegative(),
+  precioVenta: z.number().nonnegative(),
+  stockMinimo: z.number().int().nonnegative().default(0),
+});
+
+export const updateProductSchema = createProductSchema.partial();
+
+export const productIdParams = z.object({
+  productoId: z.coerce.number().int().positive(),
+});
