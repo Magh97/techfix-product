@@ -1,24 +1,66 @@
 # TechStore — Sistema de Administración (Tienda de Cómputo)
 
-Diseño y prototipado del sistema de administración para un negocio de mantenimiento, reparación, ensamblado y venta de equipo de cómputo.
+Sistema de administración para un negocio de mantenimiento, reparación, ensamblado y venta de equipo de cómputo: inventario, órdenes de servicio, punto de venta, compras, finanzas, reportes y notificaciones.
 
-## Contenido
+## Stack
 
-| Ruta | Descripción |
-|------|-------------|
-| `docs/` | Documentación: planeación, arquitectura, modelo de datos, API, reglas de negocio, UI/UX y agent-docs |
-| `docs/wireframe/app/` | Prototipo navegable del sistema (SPA en HTML/CSS/JS, 100% offline) |
-| `docs/wireframe/landing-page/` | Landing page del sistema (HTML/CSS/JS, 100% offline) |
+| Capa | Tech |
+|------|------|
+| Frontend | React 19 · Vite · Tailwind CSS 4 · shadcn-style UI · TanStack Query |
+| Backend | Node 22+ · Express 5 · TypeScript strict · Zod · pg (SQL nativo) |
+| Base de datos | PostgreSQL 16 · migraciones SQL propias |
+| Tests | Vitest (unit + integración con DB real) |
+| Infra | pnpm workspaces · Docker Compose · GitHub Actions |
 
-## Stack objetivo
+## Estructura
 
-React (Vite) · Node.js/Express · PostgreSQL 16.
+```
+├── server/   # API Express (/api/v1) con migraciones, seed y tests
+├── client/   # SPA React (Vite) con diseño del wireframe
+├── docs/     # Documentación, wireframe app y landing page
+├── docker-compose.yml
+└── .github/workflows/ci.yml
+```
 
-## Enlaces rápidos
+## Puesta en marcha
 
-- [Planeación inicial](docs/main-planning.md)
-- [Arquitectura](docs/04-architecture.md)
-- [Prototipo del sistema](docs/wireframe/app/index.html)
-- [Landing page](docs/wireframe/landing-page/index.html)
+```bash
+# 1. Dependencias
+pnpm install
 
-> Estado: fase de diseño y prototipado (sin código de producción aún).
+# 2. Base de datos (Docker)
+docker compose up -d db
+
+# 3. Migraciones y seed (usuario admin / admin1234)
+pnpm db:migrate
+pnpm db:seed
+
+# 4. Desarrollo (API :3000 + client :5173, Vite proxy /api)
+pnpm dev
+```
+
+O todo en contenedores:
+
+```bash
+cp .env.example .env   # ajusta credenciales
+docker compose up --build
+# API  http://localhost:3000/api/v1  ·  Web  http://localhost:8080
+```
+
+## Comandos
+
+| Comando | Descripción |
+|---------|-------------|
+| `pnpm dev` | API + client en dev (hot reload) |
+| `pnpm build` | Build de server (tsup) y client (vite) |
+| `pnpm lint` / `pnpm typecheck` | ESLint + Prettier / tsc |
+| `pnpm test` | Vitest (unit). Con `RUN_DB_TESTS=true` suma integración |
+| `pnpm db:migrate` / `pnpm db:seed` | Migraciones y datos iniciales |
+
+## Documentación
+
+- [Planeación](docs/main-planning.md) · [Arquitectura](docs/04-architecture.md) · [API](docs/06-api-design.md) · [Modelo de datos](docs/05-data-model.md)
+- Prototipo del sistema: `docs/wireframe/app/index.html`
+- Landing page: `docs/wireframe/landing-page/index.html`
+
+> Estado: bootstrap inicial con vertical slice (auth + productos). Los módulos restantes (órdenes, ventas, compras, finanzas, reportes, notificaciones) se construyen sobre esta base.
