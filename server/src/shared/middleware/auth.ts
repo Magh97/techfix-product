@@ -3,8 +3,10 @@ import type { Request } from "express";
 import { AppError } from "../errors";
 import { verifyAccess } from "../jwt";
 
+export type Rol = "admin" | "vendedor" | "tecnico";
+
 export interface AuthedRequest extends Request {
-  user?: { id: number; usuario: string; rol: string };
+  user?: { id: number; usuario: string; rol: Rol };
 }
 
 export function requireAuth(req: AuthedRequest, _res: Response, next: NextFunction) {
@@ -12,7 +14,7 @@ export function requireAuth(req: AuthedRequest, _res: Response, next: NextFuncti
   if (!header?.startsWith("Bearer ")) throw AppError.unauthorized();
   const token = header.slice(7);
   const payload = verifyAccess(token);
-  req.user = { id: payload.sub, usuario: payload.usuario, rol: payload.rol };
+  req.user = { id: payload.sub, usuario: payload.usuario, rol: payload.rol as Rol };
   next();
 }
 
