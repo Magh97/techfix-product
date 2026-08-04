@@ -381,3 +381,18 @@ export interface DashboardResumen {
   topProductos: { nombre: string; unidades: number; ingreso: number }[];
   topDeudores: { clienteId: number; clienteNombre: string; saldo: number }[];
 }
+
+export interface ReporteRentabilidad {
+  data: { producto: string; unidades: number; ingreso: number; margen: number; margenPct: number }[];
+  resumen: { ingresoTotal: number; margenTotal: number; margenPctPromedio: number };
+}
+
+export interface ReporteCliente {
+  data: { clienteId: number; cliente: string; ventas: number; totalCompras: number; ticketPromedio: number; saldo: number }[];
+  resumen: { totalClientes: number; totalCompras: number; saldoTotal: number };
+}
+
+export interface ReporteFinanciero {
+  data: { mes: string; ventas: number; ingresos: number; egresos: number; utilidad: number }[];
+  resumen: { totalIngresos: number; totalEgresos: number; utilidad: number };
+}

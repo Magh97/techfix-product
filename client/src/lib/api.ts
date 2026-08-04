@@ -19,7 +19,10 @@ import type {
   Paginated,
   Producto,
   Proveedor,
+  ReporteCliente,
+  ReporteFinanciero,
   ReporteInventario,
+  ReporteRentabilidad,
   ReporteVenta,
   ReporteServicios,
   Usuario,
@@ -280,7 +283,28 @@ export const reportsApi = {
     if (params.tecnicoId) qs.set("tecnicoId", String(params.tecnicoId));
     return api<{ data: ReporteServicios }>(`/reports/servicios?${qs.toString()}`);
   },
-  exportar: (tipo: "inventario" | "ventas" | "servicios", formato: "csv" | "xlsx", params?: Record<string, string | number | undefined>) =>
+  rentabilidad: (params: { desde?: string; hasta?: string }) => {
+    const qs = new URLSearchParams();
+    if (params.desde) qs.set("desde", params.desde);
+    if (params.hasta) qs.set("hasta", params.hasta);
+    const s = qs.toString();
+    return api<{ data: ReporteRentabilidad }>(`/reports/rentabilidad${s ? `?${s}` : ""}`);
+  },
+  clientes: (params: { desde?: string; hasta?: string }) => {
+    const qs = new URLSearchParams();
+    if (params.desde) qs.set("desde", params.desde);
+    if (params.hasta) qs.set("hasta", params.hasta);
+    const s = qs.toString();
+    return api<{ data: ReporteCliente }>(`/reports/clientes${s ? `?${s}` : ""}`);
+  },
+  financiero: (params: { desde?: string; hasta?: string }) => {
+    const qs = new URLSearchParams();
+    if (params.desde) qs.set("desde", params.desde);
+    if (params.hasta) qs.set("hasta", params.hasta);
+    const s = qs.toString();
+    return api<{ data: ReporteFinanciero }>(`/reports/financiero${s ? `?${s}` : ""}`);
+  },
+  exportar: (tipo: "inventario" | "ventas" | "servicios" | "rentabilidad" | "clientes" | "financiero", formato: "csv" | "xlsx", params?: Record<string, string | number | undefined>) =>
     downloadExport(`/reports/${tipo}/export`, `reporte-${tipo}.${formato}`, { ...params, formato }),
 };
 
