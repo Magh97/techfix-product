@@ -5,6 +5,7 @@ export const listProductsQuery = z.object({
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   q: z.string().optional(),
   categoria: z.string().optional(),
+  catalogoId: z.coerce.number().int().positive().optional(),
   stockBajo: z.enum(["true", "false"]).optional(),
 });
 
@@ -19,7 +20,7 @@ export const createProductSchema = z.object({
   precioVenta: z.number().nonnegative(),
   stockMinimo: z.number().int().nonnegative().default(0),
   catalogoId: z.number().int().positive().optional().nullable(),
-  especificaciones: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+  especificaciones: z.array(z.string()).optional(),
 });
 
 export const updateProductSchema = createProductSchema.partial();

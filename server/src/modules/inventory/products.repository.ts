@@ -11,7 +11,7 @@ export interface ProductRow {
   categoria_id: number;
   categoria: string;
   catalogo_id: number | null;
-  especificaciones: Record<string, unknown>;
+  especificaciones: string[];
   precio_compra: string;
   precio_venta: string;
   stock: number;
@@ -24,7 +24,7 @@ export interface ProductRow {
 
 const SELECT = `
   SELECT p.id, p.sku, p.codigo_barras, p.nombre, p.marca, p.modelo, p.categoria_id,
-         c.tipo AS categoria, p.catalogo_id, p.especificaciones, p.precio_compra, p.precio_venta, p.stock, p.stock_minimo, p.is_kit, p.mano_obra, p.is_active,
+         cat.nombre AS categoria, p.catalogo_id, p.especificaciones, p.precio_compra, p.precio_venta, p.stock, p.stock_minimo, p.is_kit, p.mano_obra, p.is_active,
          CASE WHEN p.is_kit THEN (
            SELECT MIN(FLOOR(comp.stock / b.cantidad))
            FROM producto_bom b
@@ -32,12 +32,13 @@ const SELECT = `
            WHERE b.kit_producto_id = p.id
          ) ELSE NULL END AS kit_disponible
   FROM productos p
-  JOIN categorias c ON c.id = p.categoria_id
+  JOIN catalogos cat ON cat.id = p.categoria_id
 `;
 
 interface Filters {
   q?: string;
   categoria?: string;
+  catalogoId?: number;
   stockBajo?: boolean;
 }
 
@@ -49,7 +50,17 @@ function buildWhere(f: Filters, params: unknown[], prefix = "") {
   }
   if (f.categoria) {
     params.push(f.categoria);
-    where.push(`${prefix}c.tipo = $${params.length}`);
+    where.push(`${prefix}cat.nombre = $${params.length}`);
+  }
+  if (f.catalogoId) {
+    params.push(f.catalogoId);
+    where.push(`(${prefix}p.catalogo_id IN (
+      WITH RECURSIVE desc_cat AS (
+        SELECT id FROM catalogos WHERE id = $${params.length}
+        UNION ALL
+        SELECT c.id FROM catalogos c JOIN desc_cat d ON c.parent_id = d.id
+      ) SELECT id FROM desc_cat
+    ))`);
   }
   if (f.stockBajo) {
     where.push(`${prefix}p.stock <= ${prefix}p.stock_minimo`);
@@ -69,7 +80,7 @@ export function listProducts(f: Filters & { limit: number; offset: number }) {
 export function countProducts(f: Filters) {
   const params: unknown[] = [];
   const where = buildWhere(f, params);
-  return query<{ count: string }>(`SELECT COUNT(*)::int AS count FROM productos p JOIN categorias c ON c.id = p.categoria_id WHERE ${where}`, params).then(
+  return query<{ count: string }>(`SELECT COUNT(*)::int AS count FROM productos p JOIN catalogos cat ON cat.id = p.categoria_id WHERE ${where}`, params).then(
     (r) => Number(r.rows[0]?.count ?? 0)
   );
 }
@@ -97,7 +108,7 @@ export interface CreateProductInput {
   precioVenta: number;
   stockMinimo: number;
   catalogoId?: number | null;
-  especificaciones?: Record<string, unknown>;
+  especificaciones?: string[];
 }
 
 function insertColumns(input: CreateProductInput) {
@@ -120,7 +131,7 @@ function insertColumns(input: CreateProductInput) {
   }
   if (input.especificaciones !== undefined) {
     cols.push("especificaciones");
-    vals.push(JSON.stringify(input.especificaciones ?? {}));
+    vals.push(JSON.stringify(input.especificaciones ?? []));
   }
   return { cols, vals };
 }
@@ -146,7 +157,9 @@ export function createProductWithStock(input: CreateProductInput & { stock: numb
 }
 
 export function categoriaExists(id: number) {
-  return query<{ id: number }>("SELECT id FROM categorias WHERE id = $1", [id]).then((r) => r.rows[0] !== undefined);
+  return query<{ id: number }>("SELECT id FROM catalogos WHERE id = $1 AND parent_id IS NULL", [id]).then(
+    (r) => r.rows[0] !== undefined
+  );
 }
 
 /* --- BOM / kits (ADR-0003) --- */
