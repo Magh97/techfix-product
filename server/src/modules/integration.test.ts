@@ -4,6 +4,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { pool } from "../shared/db";
+import { marcarRetrasadas } from "./services/ordenes.service";
 
 // Solo corre con RUN_DB_TESTS=true y una base migrada + seed (ver CI)
 const runDb = !!process.env.RUN_DB_TESTS;
@@ -251,6 +252,24 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     );
     expect(fallida.rows[0]?.estado).toBe("fallido");
     expect(fallida.rows[0]?.error).toBe("cliente sin correo");
+  });
+
+  it("worker: marca como retrasada una orden con fecha prometida vencida", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const creada = await request(app)
+      .post("/api/v1/ordenes")
+      .set(auth)
+      .send({ clienteId, tipoEquipo: "laptop", fallaReportada: "Ruido en ventilador", fechaPrometida: todayPlus(-3) });
+    const ordenId = creada.body.data.id;
+
+    const n = await marcarRetrasadas();
+    expect(n).toBeGreaterThan(0);
+
+    const row = await pool.query<{ retrasada: boolean }>(
+      "SELECT retrasada FROM ordenes_servicio WHERE id = $1",
+      [ordenId]
+    );
+    expect(row.rows[0]?.retrasada).toBe(true);
   });
 
   it("cancelar una orden libera las reservas de inventario", async () => {
