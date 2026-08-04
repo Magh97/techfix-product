@@ -9,6 +9,7 @@ import ClienteDetallePage from "@/pages/ClienteDetallePage";
 import ClientesPage from "@/pages/ClientesPage";
 import CompraDetallePage from "@/pages/CompraDetallePage";
 import ComprasPage from "@/pages/ComprasPage";
+import ConfiguracionPage from "@/pages/ConfiguracionPage";
 import CotizacionesPage from "@/pages/CotizacionesPage";
 import DashboardPage from "@/pages/DashboardPage";
 import FinanzasPage from "@/pages/FinanzasPage";
@@ -55,6 +56,7 @@ const router = createBrowserRouter([
       { path: "catalogos", element: <CatalogosPage /> },
       { path: "usuarios", element: <UsuariosPage /> },
       { path: "notificaciones", element: <NotificacionesPage /> },
+      { path: "configuracion", element: <ConfiguracionPage /> },
       { path: "compras", element: <ComprasPage /> },
       { path: "compras/nueva", element: <NuevaCompraPage /> },
       { path: "compras/:id", element: <CompraDetallePage /> },

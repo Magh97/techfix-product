@@ -1,4 +1,5 @@
 import { AppError } from "../../shared/errors";
+import { getConfig } from "../../shared/config";
 import * as repo from "./clientes.repository";
 
 export interface ClienteDTO {
@@ -39,7 +40,12 @@ export async function list(q?: string, page = 1, pageSize = 20) {
 }
 
 export async function create(input: repo.InsertClienteInput) {
-  const row = await repo.insertCliente(input);
+  const config = await getConfig();
+  const row = await repo.insertCliente({
+    ...input,
+    limiteCredito: input.limiteCredito ?? config.limiteCreditoDefault,
+    plazoCreditoDias: input.plazoCreditoDias ?? config.plazoCreditoDefault,
+  });
   if (!row) throw new Error("No se pudo crear el cliente");
   return mapCliente(row);
 }

@@ -108,6 +108,16 @@ export interface NotificacionHistorial {
   fecha: string;
 }
 
+export interface BusinessConfig {
+  ivaRate: number;
+  limiteCreditoDefault: number;
+  plazoCreditoDefault: number;
+  descuentoVendedorMax: number;
+  diasDevolucion: number;
+  diasGarantiaServicio: number;
+  toleranciaRetrasoDias: number;
+}
+
 export interface Cliente {
   id: number;
   nombre: string;

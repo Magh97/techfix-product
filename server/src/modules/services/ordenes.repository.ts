@@ -195,14 +195,15 @@ export function updateOrdenEstado(id: number, estado: EstadoOrden, retrasada: bo
   );
 }
 
-// BR-RET: marca retrasada si fecha_prometida + 1 día < hoy y la orden sigue abierta (US-SER-09)
-export function marcarRetrasadas() {
+// BR-RET: marca retrasada si fecha_prometida + tolerancia < hoy y la orden sigue abierta (US-SER-09)
+export function marcarRetrasadas(toleranciaDias = 1) {
   return query<{ id: number }>(
     `UPDATE ordenes_servicio SET retrasada = true
      WHERE retrasada = false
        AND estado NOT IN ('entregado', 'cancelado')
-       AND fecha_prometida < (CURRENT_DATE - INTERVAL '1 day')
-     RETURNING id`
+       AND fecha_prometida < CURRENT_DATE - ($1::int || ' days')::interval
+     RETURNING id`,
+    [toleranciaDias]
   ).then((r) => r.rows.map((x) => x.id));
 }
 
