@@ -105,6 +105,29 @@ export function createProduct(input: CreateProductInput) {
   ).then((r) => (r.rows[0] ? findProductById(Number(r.rows[0].id)) : undefined));
 }
 
+export function createProductWithStock(input: CreateProductInput & { stock: number }) {
+  return query<{ id: number }>(
+    `INSERT INTO productos (categoria_id, sku, codigo_barras, nombre, marca, modelo, precio_compra, precio_venta, stock, stock_minimo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+    [
+      input.categoriaId,
+      input.sku,
+      input.codigoBarras ?? null,
+      input.nombre,
+      input.marca ?? null,
+      input.modelo ?? null,
+      input.precioCompra,
+      input.precioVenta,
+      input.stock,
+      input.stockMinimo,
+    ]
+  ).then((r) => (r.rows[0] ? findProductById(Number(r.rows[0].id)) : undefined));
+}
+
+export function categoriaExists(id: number) {
+  return query<{ id: number }>("SELECT id FROM categorias WHERE id = $1", [id]).then((r) => r.rows[0] !== undefined);
+}
+
 export function updateProduct(id: number, fields: Record<string, unknown>) {
   const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
   if (!entries.length) return findProductById(id);
