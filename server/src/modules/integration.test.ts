@@ -947,4 +947,88 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     const cxp = await request(app).get("/api/v1/compras/cxp").set(auth);
     expect(cxp.body.data.find((x: { compraId: number }) => x.compraId === compraId)).toBeUndefined();
   });
+
+  it("DASHBOARD: resumen devuelve la estructura esperada", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const res = await request(app).get("/api/v1/dashboard/resumen").set(auth);
+    expect(res.status).toBe(200);
+    const d = res.body.data;
+    expect(typeof d.ventasHoy.total).toBe("number");
+    expect(typeof d.ventasHoy.cantidad).toBe("number");
+    expect(typeof d.ventasHoy.ticketPromedio).toBe("number");
+    expect(typeof d.ordenes.activas).toBe("number");
+    expect(typeof d.ordenes.retrasadas).toBe("number");
+    expect(typeof d.inventario.stockBajo).toBe("number");
+    expect(typeof d.cajaAbierta).toBe("boolean");
+    expect(Array.isArray(d.topProductos)).toBe(true);
+    expect(Array.isArray(d.topDeudores)).toBe(true);
+  });
+
+  it("USUARIOS: lista por rol solo para admin", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    const res = await request(app).get("/api/v1/usuarios?rol=tecnico").set(auth);
+    expect(res.status).toBe(200);
+    const encontrado = res.body.data.find((u: { usuario: string }) => u.usuario === "tecnico");
+    expect(encontrado).toBeTruthy();
+    expect(encontrado.rol).toBe("tecnico");
+    const v = await request(app).get("/api/v1/usuarios").set(authV);
+    expect(v.status).toBe(403);
+  });
+
+  it("PRODUCTOS: kit expone kitDisponible según stock de componentes", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const comp = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `KD-${Date.now()}`, nombre: "Comp kit disp", precioCompra: 5, precioVenta: 10 });
+    const compId = comp.body.data.id;
+    const kit = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `KITD-${Date.now()}`, nombre: "Kit disp", precioCompra: 5, precioVenta: 10 });
+    const kitId = kit.body.data.id;
+    await request(app).put(`/api/v1/productos/${kitId}/bom`).set(auth).send({ componentes: [{ productoId: compId, cantidad: 1 }], manoObra: 0 });
+
+    // Componente sin stock → kitDisponible 0
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [compId]);
+    const sinStock = await request(app).get(`/api/v1/productos/${kitId}`).set(auth);
+    expect(sinStock.body.data.isKit).toBe(true);
+    expect(sinStock.body.data.kitDisponible).toBe(0);
+
+    // Componente con stock 3 → kitDisponible 3
+    await pool.query("UPDATE productos SET stock = 3 WHERE id = $1", [compId]);
+    const conStock = await request(app).get(`/api/v1/productos/${kitId}`).set(auth);
+    expect(conStock.body.data.kitDisponible).toBe(3);
+  });
+
+  it("PRODUCTOS: limpiar BOM desmarca el kit y conserva el precio", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const comp = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `LKC-${Date.now()}`, nombre: "Comp limpiar kit", precioCompra: 5, precioVenta: 10 });
+    const compId = comp.body.data.id;
+    const kit = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `LKK-${Date.now()}`, nombre: "Kit limpiar", precioCompra: 5, precioVenta: 999 });
+    const kitId = kit.body.data.id;
+    await request(app).put(`/api/v1/productos/${kitId}/bom`).set(auth).send({ componentes: [{ productoId: compId, cantidad: 2 }], manoObra: 10 });
+    const comoKit = await request(app).get(`/api/v1/productos/${kitId}`).set(auth);
+    expect(comoKit.body.data.isKit).toBe(true);
+    const precioComoKit = comoKit.body.data.precioVenta;
+
+    const limpiada = await request(app).put(`/api/v1/productos/${kitId}/bom`).set(auth).send({ componentes: [], manoObra: 0 });
+    expect(limpiada.status).toBe(200);
+    expect(limpiada.body.data.componentes).toHaveLength(0);
+    expect(limpiada.body.data.precioVenta).toBe(precioComoKit);
+
+    const final = await request(app).get(`/api/v1/productos/${kitId}`).set(auth);
+    expect(final.body.data.isKit).toBe(false);
+    expect(final.body.data.kitDisponible).toBeNull();
+
+    const bomEndpoint = await request(app).get(`/api/v1/productos/${kitId}/bom`).set(auth);
+    expect(bomEndpoint.status).toBe(400);
+  });
 });
