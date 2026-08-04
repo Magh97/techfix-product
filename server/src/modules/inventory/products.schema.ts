@@ -33,7 +33,6 @@ export const exportProductosQuery = z.object({
 export const bomSchema = z.object({
   componentes: z
     .array(z.object({ productoId: z.number().int().positive(), cantidad: z.number().int().positive() }))
-    .min(1)
     .max(100),
   manoObra: z.number().nonnegative().default(0),
 });

@@ -21,6 +21,7 @@ export interface ProductDTO {
   isKit: boolean;
   manoObra: number;
   isActive: boolean;
+  kitDisponible: number | null;
 }
 
 function mapProduct(r: repo.ProductRow): ProductDTO {
@@ -41,6 +42,7 @@ function mapProduct(r: repo.ProductRow): ProductDTO {
     isKit: r.is_kit,
     manoObra: Number(r.mano_obra),
     isActive: r.is_active,
+    kitDisponible: r.is_kit ? (r.kit_disponible ?? 0) : null,
   };
 }
 
@@ -147,6 +149,23 @@ export async function setBom(
 ) {
   const kit = await repo.findProductoBasico(kitId);
   if (!kit || !kit.is_active) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
+
+  // Componentes vacíos → quitar el kit (is_kit=false), conservando el precio
+  if (!input.componentes.length) {
+    await withTransaction(async (client) => {
+      await repo.deleteBom(client, kitId);
+      await repo.clearKitConfig(client, kitId);
+    });
+    const actual = await repo.findProductoBasico(kitId);
+    return {
+      kitId,
+      nombre: kit.nombre,
+      manoObra: 0,
+      precioCompra: Number(actual?.precio_compra ?? 0),
+      precioVenta: Number(actual?.precio_venta ?? 0),
+      componentes: [],
+    };
+  }
 
   const vistos = new Set<number>();
   const componentes: { id: number; cantidad: number; precioCompra: number; precioVenta: number }[] = [];
