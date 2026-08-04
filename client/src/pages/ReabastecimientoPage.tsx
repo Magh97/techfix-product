@@ -276,7 +276,7 @@ export default function ReabastecimientoPage() {
                         <TD className="text-muted">{s.motivo ?? "—"}</TD>
                         <TD className="text-xs text-muted">{new Date(s.createdAt).toLocaleString("es-MX")}</TD>
                         <TD>
-                          <Badge variant={s.estado === "aprobada" ? "success" : s.estado === "rechazada" ? "danger" : s.estado === "pendiente" ? "warning" : "default"}>
+                          <Badge variant={s.estado === "aprobada" ? "accent" : s.estado === "entregada" ? "success" : s.estado === "rechazada" ? "danger" : s.estado === "pendiente" ? "warning" : "default"}>
                             {s.estado}
                           </Badge>
                         </TD>

@@ -35,6 +35,7 @@ import type {
   ReporteServicios,
   ReabastecimientoGrupo,
   SolicitudReabastecimiento,
+  Sustitucion,
   Sugerencias,
   Usuario,
   Venta,
@@ -440,6 +441,17 @@ export const ordenesApi = {
     api<{ data: OrdenServicio }>(`/ordenes/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),
   notificar: (id: number, tipo: "listo" | "cotizacion") =>
     api<{ data: unknown }>(`/ordenes/${id}/notificar`, { method: "POST", body: JSON.stringify({ tipo }) }),
+  sustituciones: {
+    list: (ordenId: number) => api<{ data: Sustitucion[] }>(`/ordenes/${ordenId}/sustituciones`),
+    create: (ordenId: number, input: { cotizacionId: number; lineaId: number; sustitutoId: number; justificacion?: string }) =>
+      api<{ data: Sustitucion }>(`/ordenes/${ordenId}/sustituciones`, { method: "POST", body: JSON.stringify(input) }),
+    aceptar: (ordenId: number, id: number) =>
+      api<{ data: Sustitucion }>(`/ordenes/${ordenId}/sustituciones/${id}/aceptar`, { method: "POST" }),
+    rechazar: (ordenId: number, id: number, motivo: string) =>
+      api<{ data: Sustitucion }>(`/ordenes/${ordenId}/sustituciones/${id}/rechazar`, { method: "POST", body: JSON.stringify({ motivo }) }),
+    cancelar: (ordenId: number, id: number, motivo: string) =>
+      api<{ data: Sustitucion }>(`/ordenes/${ordenId}/sustituciones/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),
+  },
 };
 
 export async function downloadExport(

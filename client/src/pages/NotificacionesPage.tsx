@@ -19,6 +19,7 @@ const TIPO_LABEL: Record<string, string> = {
   "NOT-02": "Equipo listo",
   "NOT-03": "Cotización lista",
   "NOT-05": "Solicitud de refacción",
+  "NOT-06": "Sustitución propuesta",
 };
 
 const estadoVariant: Record<string, "success" | "danger" | "warning"> = {

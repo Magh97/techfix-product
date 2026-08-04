@@ -200,6 +200,7 @@ export type EstadoOrden =
   | "en_diagnostico"
   | "cotizado"
   | "en_reparacion"
+  | "sustitucion_pendiente"
   | "listo"
   | "entregado"
   | "cancelado";
@@ -224,6 +225,32 @@ export interface CotizacionLinea {
   descripcion: string | null;
   horas: number | null;
   tarifaHora: number | null;
+  stock: number | null;
+}
+
+export interface Sustitucion {
+  id: number;
+  ordenId: number;
+  cotizacionId: number;
+  cotizacionFolio: string;
+  lineaId: number;
+  productoOriginalId: number;
+  skuOriginal: string;
+  nombreOriginal: string;
+  cantidad: number;
+  sustitutoId: number;
+  skuSustituto: string;
+  nombreSustituto: string;
+  precioSustituto: number;
+  stockSustituto: number;
+  justificacion: string | null;
+  clienteAcepta: boolean | null;
+  estado: string;
+  solicitudId: number | null;
+  creadaPor: number;
+  creadorNombre: string;
+  createdAt: string;
+  resueltoAt: string | null;
 }
 
 export interface Cotizacion {
