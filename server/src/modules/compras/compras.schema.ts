@@ -37,7 +37,7 @@ export const crearSolicitudSchema = z.object({
 });
 
 export const listSolicitudesQuery = z.object({
-  estado: z.enum(["pendiente", "aprobada", "rechazada", "cancelada"]).optional(),
+  estado: z.enum(["pendiente", "aprobada", "entregada", "rechazada", "cancelada"]).optional(),
   ordenId: z.coerce.number().int().positive().optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
