@@ -123,6 +123,45 @@ export async function deactivate(id: number) {
   return mapProduct(row);
 }
 
+/* --- Ajustes de inventario y movimientos (INV-05, INV-06) --- */
+
+export async function ajustar(id: number, input: { cantidad: number; motivo: string }, user: { id: number }) {
+  const producto = await repo.findProductById(id);
+  if (!producto) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
+  await withTransaction(async (client) => {
+    const res = await repo.ajustarStock(client, id, input.cantidad);
+    if (!res.rowCount) throw AppError.business("STOCK_NEGATIVO", "El ajuste dejaría el stock en negativo");
+    await repo.insertMovimientoAjuste(client, {
+      productoId: id,
+      cantidad: input.cantidad,
+      usuarioId: user.id,
+      motivo: input.motivo,
+    });
+  });
+  const actual = await repo.findProductById(id);
+  return mapProduct(actual!);
+}
+
+export async function movimientos(id: number, page = 1, pageSize = 20) {
+  const [rows, totalItems] = await Promise.all([
+    repo.listMovimientos(id, { limit: pageSize, offset: (page - 1) * pageSize }),
+    repo.countMovimientos(id),
+  ]);
+  return {
+    data: rows.map((m) => ({
+      id: m.id,
+      tipo: m.tipo,
+      cantidad: m.cantidad,
+      motivo: m.motivo,
+      usuario: m.usuario_nombre,
+      referenciaId: m.referencia_id,
+      referenciaTipo: m.referencia_tipo,
+      fecha: m.created_at,
+    })),
+    meta: { page, pageSize, totalItems, totalPages: Math.ceil(totalItems / pageSize) || 1 },
+  };
+}
+
 /* --- Sustitución (taxonomía) --- */
 
 interface SustitutoDTO {

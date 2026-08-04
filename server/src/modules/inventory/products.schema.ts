@@ -28,6 +28,16 @@ export const productIdParams = z.object({
   productoId: z.coerce.number().int().positive(),
 });
 
+export const ajustarStockSchema = z.object({
+  cantidad: z.number().int().refine((v) => v !== 0, { message: "La cantidad debe ser distinta de 0" }),
+  motivo: z.string().min(1),
+});
+
+export const listMovimientosQuery = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+});
+
 export const exportProductosQuery = z.object({
   formato: z.enum(["csv", "xlsx"]).default("csv"),
 });

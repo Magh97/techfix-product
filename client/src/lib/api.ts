@@ -17,6 +17,7 @@ import type {
   EstadoOrden,
   ImportResult,
   LoginResponse,
+  Movimiento,
   OrdenServicio,
   Paginated,
   Producto,
@@ -118,6 +119,15 @@ export const productsApi = {
   setBom: (id: number, input: { componentes: { productoId: number; cantidad: number }[]; manoObra?: number }) =>
     api<{ data: Bom }>(`/productos/${id}/bom`, { method: "PUT", body: JSON.stringify(input) }),
   sugerencias: (id: number) => api<{ data: Sugerencias }>(`/productos/${id}/sugerencias`),
+  ajustar: (id: number, input: { cantidad: number; motivo: string }) =>
+    api<{ data: Producto }>(`/productos/${id}/ajustar`, { method: "POST", body: JSON.stringify(input) }),
+  movimientos: (id: number, params?: { page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<Movimiento>>(`/productos/${id}/movimientos${s ? `?${s}` : ""}`);
+  },
 };
 
 export const clientesApi = {

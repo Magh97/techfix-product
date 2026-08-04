@@ -2,10 +2,10 @@ import { Router } from "express";
 import multer from "multer";
 import { created, ok, paginated } from "../../shared/http";
 import { AppError } from "../../shared/errors";
-import { requireAuth, requireRole } from "../../shared/middleware/auth";
+import { requireAuth, requireRole, type AuthedRequest } from "../../shared/middleware/auth";
 import { getValidated, validate } from "../../shared/validation";
 import type { CreateProductInput } from "./products.repository";
-import { createProductSchema, bomSchema, exportProductosQuery, listProductsQuery, productIdParams, updateProductSchema } from "./products.schema";
+import { createProductSchema, bomSchema, exportProductosQuery, listProductsQuery, productIdParams, updateProductSchema, ajustarStockSchema, listMovimientosQuery } from "./products.schema";
 import { plantillaQuerySchema } from "./import.schema";
 import * as importService from "./import.service";
 import * as service from "./products.service";
@@ -90,6 +90,29 @@ productsRouter.patch(
   async (req, res) => {
     const { productoId } = getValidated<{ productoId: number }>(req, "params");
     ok(res, await service.deactivate(productoId));
+  }
+);
+
+productsRouter.post(
+  "/:productoId/ajustar",
+  requireRole("admin"),
+  validate(productIdParams, "params"),
+  validate(ajustarStockSchema),
+  async (req: AuthedRequest, res) => {
+    const { productoId } = getValidated<{ productoId: number }>(req, "params");
+    ok(res, await service.ajustar(productoId, getValidated<never>(req, "body"), req.user!));
+  }
+);
+
+productsRouter.get(
+  "/:productoId/movimientos",
+  validate(productIdParams, "params"),
+  validate(listMovimientosQuery, "query"),
+  async (req, res) => {
+    const { productoId } = getValidated<{ productoId: number }>(req, "params");
+    const q = getValidated<{ page: number; pageSize: number }>(req, "query");
+    const result = await service.movimientos(productoId, q.page, q.pageSize);
+    paginated(res, result.data, result.meta);
   }
 );
 

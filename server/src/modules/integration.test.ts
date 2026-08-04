@@ -1308,4 +1308,71 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     const loginDes = await request(app).post("/api/v1/auth/login").send({ usuario, password: "secreto123" });
     expect(loginDes.status).toBe(422);
   });
+
+  it("INVENTARIO: ajuste cambia stock y registra movimiento AJUSTE", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `AJU-${Date.now()}`, nombre: "Prod ajuste", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+
+    // Ajuste negativo (merma)
+    const neg = await request(app)
+      .post(`/api/v1/productos/${productoId}/ajustar`)
+      .set(auth)
+      .send({ cantidad: -3, motivo: "Merma" });
+    expect(neg.status).toBe(200);
+    expect(neg.body.data.stock).toBe(7);
+
+    // Ajuste positivo (inventario físico)
+    const pos = await request(app)
+      .post(`/api/v1/productos/${productoId}/ajustar`)
+      .set(auth)
+      .send({ cantidad: 5, motivo: "Inventario físico" });
+    expect(pos.status).toBe(200);
+    expect(pos.body.data.stock).toBe(12);
+
+    // Movimiento AJUSTE registrado
+    const mov = await pool.query<{ tipo: string; cantidad: number }>(
+      "SELECT tipo, cantidad FROM movimientos_inventario WHERE producto_id = $1 AND tipo = 'AJUSTE' ORDER BY id",
+      [productoId]
+    );
+    expect(mov.rows).toHaveLength(2);
+    expect(Number(mov.rows[0]?.cantidad)).toBe(-3);
+
+    // Ajuste que deja stock negativo → 422
+    const sobre = await request(app)
+      .post(`/api/v1/productos/${productoId}/ajustar`)
+      .set(auth)
+      .send({ cantidad: -999, motivo: "Merma" });
+    expect(sobre.status).toBe(422);
+    expect(sobre.body.error.code).toBe("STOCK_NEGATIVO");
+
+    // Vendedor no puede ajustar → 403
+    const v = await request(app)
+      .post(`/api/v1/productos/${productoId}/ajustar`)
+      .set(authV)
+      .send({ cantidad: 1, motivo: "x" });
+    expect(v.status).toBe(403);
+  });
+
+  it("INVENTARIO: historial de movimientos por producto", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `MOV-${Date.now()}`, nombre: "Prod movimientos", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+    await request(app).post(`/api/v1/productos/${productoId}/ajustar`).set(auth).send({ cantidad: 2, motivo: "Físico" });
+
+    const res = await request(app).get(`/api/v1/productos/${productoId}/movimientos`).set(auth);
+    expect(res.status).toBe(200);
+    expect(res.body.meta.totalItems).toBe(1);
+    expect(res.body.data[0].tipo).toBe("AJUSTE");
+    expect(res.body.data[0].cantidad).toBe(2);
+  });
 });
