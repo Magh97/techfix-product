@@ -1,5 +1,6 @@
 import { clearSession, getRefreshToken, notifySessionExpired, setTokens } from "./auth";
 import type {
+  AuditoriaEntry,
   Bom,
   BusinessConfig,
   Caja,
@@ -355,6 +356,21 @@ export const garantiasApi = {
     if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
     const s = qs.toString();
     return api<Paginated<Garantia>>(`/garantias${s ? `?${s}` : ""}`);
+  },
+};
+
+export const auditoriaApi = {
+  list: (params?: { usuarioId?: number; entidad?: string; accion?: string; desde?: string; hasta?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.usuarioId) qs.set("usuarioId", String(params.usuarioId));
+    if (params?.entidad) qs.set("entidad", params.entidad);
+    if (params?.accion) qs.set("accion", params.accion);
+    if (params?.desde) qs.set("desde", params.desde);
+    if (params?.hasta) qs.set("hasta", params.hasta);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<AuditoriaEntry>>(`/auditoria${s ? `?${s}` : ""}`);
   },
 };
 

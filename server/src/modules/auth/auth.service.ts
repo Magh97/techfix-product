@@ -75,6 +75,11 @@ export async function refresh(refreshToken: string) {
   };
 }
 
+// Worker diario: limpia refresh tokens revocados/expirados reteniendo `diasRetencion`
+export async function limpiarRefreshTokens(diasRetencion = 30): Promise<number> {
+  return repo.eliminarRefreshTokensViejos(diasRetencion);
+}
+
 export async function logout(refreshToken: string) {
   try {
     const payload = verifyRefresh(refreshToken);

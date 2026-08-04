@@ -3,6 +3,7 @@ import express from "express";
 import helmet from "helmet";
 import { env } from "./config/env";
 import { authRouter } from "./modules/auth/auth.routes";
+import { auditoriaRouter } from "./modules/auditoria/auditoria.routes";
 import { catalogosRouter } from "./modules/catalogos/catalogos.routes";
 import { comprasRouter, proveedoresRouter } from "./modules/compras/compras.routes";
 import { configuracionRouter } from "./modules/configuracion/configuracion.routes";
@@ -56,6 +57,7 @@ export function createApp() {
   app.use("/api/v1/notificaciones", notificacionesRouter);
   app.use("/api/v1/configuracion", configuracionRouter);
   app.use("/api/v1/garantias", garantiasRouter);
+  app.use("/api/v1/auditoria", auditoriaRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

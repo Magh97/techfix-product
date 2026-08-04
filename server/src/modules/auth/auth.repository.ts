@@ -50,3 +50,16 @@ export function revokeRefreshToken(id: number) {
 export function revokeRefreshTokensByUser(usuarioId: number) {
   return query("UPDATE refresh_tokens SET revoked = true WHERE usuario_id = $1 AND revoked = false", [usuarioId]);
 }
+
+// Housekeeping: purga tokens revocados o expirados con más de `dias` de antigüedad
+export function eliminarRefreshTokensViejos(dias: number) {
+  return query<{ count: string }>(
+    `WITH borradas AS (
+       DELETE FROM refresh_tokens
+       WHERE (revoked = true OR expires_at < NOW()) AND created_at < NOW() - ($1 || ' days')::interval
+       RETURNING id
+     )
+     SELECT COUNT(*)::int AS count FROM borradas`,
+    [dias]
+  ).then((r) => Number(r.rows[0]?.count ?? 0));
+}

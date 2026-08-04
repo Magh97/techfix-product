@@ -4,6 +4,7 @@ import Layout from "@/components/layout";
 import { ToastProvider } from "@/components/ui/toast";
 import { getSessionUser } from "@/lib/auth";
 import CajaPage from "@/pages/CajaPage";
+import AuditoriaPage from "@/pages/AuditoriaPage";
 import CatalogosPage from "@/pages/CatalogosPage";
 import ClienteDetallePage from "@/pages/ClienteDetallePage";
 import ClientesPage from "@/pages/ClientesPage";
@@ -61,6 +62,7 @@ const router = createBrowserRouter([
       { path: "notificaciones", element: <NotificacionesPage /> },
       { path: "configuracion", element: <ConfiguracionPage /> },
       { path: "garantias", element: <GarantiasPage /> },
+      { path: "auditoria", element: <AuditoriaPage /> },
       { path: "compras", element: <ComprasPage /> },
       { path: "compras/nueva", element: <NuevaCompraPage /> },
       { path: "compras/:id", element: <CompraDetallePage /> },
