@@ -272,6 +272,57 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(row.rows[0]?.retrasada).toBe(true);
   });
 
+  it("reportes: inventario, ventas, servicios y exportación (solo admin)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const vendedorAuth = { Authorization: `Bearer ${vendedorToken}` };
+
+    // No-admin → 403
+    const forbidden = await request(app).get("/api/v1/reports/inventario").set(vendedorAuth);
+    expect(forbidden.status).toBe(403);
+
+    // Crear una venta para que exista data
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `REP-${Date.now()}`, nombre: "Prod reporte", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        lineas: [{ tipo: "producto", productoId, cantidad: 1 }],
+        tipoPago: "contado",
+        metodoPago: "efectivo",
+        montoRecibido: 10,
+      });
+    expect(venta.status).toBe(201);
+
+    const inv = await request(app).get("/api/v1/reports/inventario").set(auth);
+    expect(inv.status).toBe(200);
+    expect(inv.body.data.resumen.totalArticulos).toBeGreaterThan(0);
+
+    const ven = await request(app).get("/api/v1/reports/ventas?agrupar=dia").set(auth);
+    expect(ven.status).toBe(200);
+    expect(Array.isArray(ven.body.data.data)).toBe(true);
+    expect(ven.body.data.resumen.totalImporte).toBeGreaterThan(0);
+
+    const ser = await request(app).get("/api/v1/reports/servicios").set(auth);
+    expect(ser.status).toBe(200);
+    expect(ser.body.data.resumen).toHaveProperty("total");
+
+    // Export CSV
+    const csv = await request(app).get("/api/v1/reports/inventario/export?formato=csv").set(auth);
+    expect(csv.status).toBe(200);
+    expect(csv.headers["content-type"]).toContain("text/csv");
+    expect(csv.text).toContain("SKU");
+
+    // Export XLSX
+    const xlsx = await request(app).get("/api/v1/reports/ventas/export?formato=xlsx").set(auth);
+    expect(xlsx.status).toBe(200);
+    expect(xlsx.headers["content-type"]).toContain("spreadsheetml");
+  });
+
   it("cancelar una orden libera las reservas de inventario", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const authT = { Authorization: `Bearer ${tecnicoToken}` };
