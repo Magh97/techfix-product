@@ -12,7 +12,8 @@ import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { catalogosApi, productsApi } from "@/lib/api";
 import { getSessionUser } from "@/lib/auth";
-import type { CreateProducto, ImportResult, Producto, Sugerencias } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import type { CreateProducto, ImportResult, Movimiento, Producto, Sugerencias } from "@/lib/types";
 
 const CATS: Record<string, string> = {
   componente: "Componente",
@@ -39,6 +40,11 @@ export default function ProductosPage() {
   const [bomGuardando, setBomGuardando] = useState(false);
   const [sustitutos, setSustitutos] = useState<Sugerencias | null>(null);
   const [sustitutosDe, setSustitutosDe] = useState("");
+  const [ajustarProducto, setAjustarProducto] = useState<Producto | null>(null);
+  const [ajuste, setAjuste] = useState({ cantidad: "", motivo: "" });
+  const [ajustando, setAjustando] = useState(false);
+  const [movimientosProducto, setMovimientosProducto] = useState<Producto | null>(null);
+  const [movimientos, setMovimientos] = useState<Movimiento[] | null>(null);
   const [form, setForm] = useState({
     sku: "",
     nombre: "",
@@ -137,6 +143,30 @@ export default function ProductosPage() {
           toast.info("Sin sustitutos", "No hay productos compatibles con stock.");
         }
       })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : ""));
+  }
+
+  function guardarAjuste() {
+    if (!ajustarProducto) return;
+    setAjustando(true);
+    productsApi
+      .ajustar(ajustarProducto.id, { cantidad: Number(ajuste.cantidad), motivo: ajuste.motivo })
+      .then(() => {
+        toast.success("Inventario ajustado");
+        setAjustarProducto(null);
+        setAjuste({ cantidad: "", motivo: "" });
+        qc.invalidateQueries({ queryKey: ["productos"] });
+      })
+      .catch((e) => toast.error("Error al ajustar", e instanceof Error ? e.message : ""))
+      .finally(() => setAjustando(false));
+  }
+
+  function verMovimientos(p: Producto) {
+    setMovimientosProducto(p);
+    setMovimientos(null);
+    productsApi
+      .movimientos(p.id, { pageSize: 50 })
+      .then((r) => setMovimientos(r.data))
       .catch((e) => toast.error("Error", e instanceof Error ? e.message : ""));
   }
 
@@ -289,6 +319,14 @@ export default function ProductosPage() {
                     <TD className="text-right">
                       <Button size="sm" variant="outline" onClick={() => verSustitutos(p)}>
                         <RefreshCw className="h-3.5 w-3.5" /> Sustitutos
+                      </Button>
+                      {esAdmin && (
+                        <Button size="sm" variant="outline" className="ml-1" onClick={() => { setAjustarProducto(p); setAjuste({ cantidad: "", motivo: "" }); }}>
+                          Ajustar
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="ml-1" onClick={() => verMovimientos(p)}>
+                        Movimientos
                       </Button>
                       {esAdmin && (
                         <Button size="sm" variant="outline" className="ml-1" onClick={() => abrirBom(p)}>
@@ -663,6 +701,66 @@ export default function ProductosPage() {
 
           <div className="flex justify-end">
             <Button variant="outline" onClick={() => setSustitutos(null)}>Cerrar</Button>
+          </div>
+        </div>
+      </Dialog>
+      <Dialog open={!!ajustarProducto} onClose={() => setAjustarProducto(null)} title={`Ajustar inventario · ${ajustarProducto?.nombre ?? ""}`}>
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            Cantidad positiva = alta por inventario físico; negativa = merma/daño. Stock actual:{" "}
+            <strong>{ajustarProducto?.stock ?? 0}</strong>.
+          </p>
+          <div>
+            <Label>Cantidad *</Label>
+            <Input type="number" step={1} value={ajuste.cantidad} onChange={(e) => setAjuste({ ...ajuste, cantidad: e.target.value })} />
+          </div>
+          <div>
+            <Label>Motivo *</Label>
+            <Input value={ajuste.motivo} onChange={(e) => setAjuste({ ...ajuste, motivo: e.target.value })} placeholder="Ej. inventario físico / merma" />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setAjustarProducto(null)}>Cancelar</Button>
+            <Button disabled={ajustando || !ajuste.cantidad || !ajuste.motivo} onClick={guardarAjuste}>
+              {ajustando ? "Ajustando…" : "Ajustar"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <Dialog open={!!movimientosProducto} onClose={() => setMovimientosProducto(null)} title={`Movimientos · ${movimientosProducto?.nombre ?? ""}`}>
+        <div className="space-y-3">
+          {!movimientos ? (
+            <div className="grid place-items-center p-6"><Spinner /></div>
+          ) : movimientos.length === 0 ? (
+            <p className="text-sm text-muted">Sin movimientos registrados.</p>
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Fecha</TH>
+                  <TH>Tipo</TH>
+                  <TH className="text-right">Cantidad</TH>
+                  <TH>Motivo</TH>
+                  <TH>Usuario</TH>
+                </TR>
+              </THead>
+              <tbody>
+                {movimientos.map((m) => (
+                  <TR key={m.id}>
+                    <TD className="text-xs text-muted">{new Date(m.fecha).toLocaleString("es-MX")}</TD>
+                    <TD className="font-mono text-xs">{m.tipo}</TD>
+                    <TD className={cn("text-right font-semibold", m.cantidad < 0 ? "text-danger" : "text-primary")}>
+                      {m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}
+                    </TD>
+                    <TD className="text-muted">{m.motivo ?? "—"}</TD>
+                    <TD>{m.usuario}</TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          )}
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setMovimientosProducto(null)}>Cerrar</Button>
           </div>
         </div>
       </Dialog>

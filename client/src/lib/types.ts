@@ -79,6 +79,17 @@ export interface Sugerencias {
   sustitutosComponente: Sustituto[];
 }
 
+export interface Movimiento {
+  id: number;
+  tipo: string;
+  cantidad: number;
+  motivo: string | null;
+  usuario: string;
+  referenciaId: number | null;
+  referenciaTipo: string | null;
+  fecha: string;
+}
+
 export interface Cliente {
   id: number;
   nombre: string;

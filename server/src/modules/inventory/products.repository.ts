@@ -255,3 +255,51 @@ export function deactivateProduct(id: number) {
     [id]
   ).then((r) => (r.rows[0] ? findProductById(Number(r.rows[0].id)) : undefined));
 }
+
+/* --- Ajustes de inventario y movimientos (INV-05, INV-06) --- */
+
+export function ajustarStock(client: PoolClient, productoId: number, cantidad: number) {
+  return client.query(
+    "UPDATE productos SET stock = stock + $2, updated_at = NOW() WHERE id = $1 AND stock + $2 >= 0 RETURNING id",
+    [productoId, cantidad]
+  );
+}
+
+export function insertMovimientoAjuste(
+  client: PoolClient,
+  input: { productoId: number; cantidad: number; usuarioId: number; motivo: string }
+) {
+  return client.query(
+    "INSERT INTO movimientos_inventario (producto_id, tipo, cantidad, usuario_id, motivo) VALUES ($1,'AJUSTE',$2,$3,$4)",
+    [input.productoId, input.cantidad, input.usuarioId, input.motivo]
+  );
+}
+
+export interface MovimientoRow {
+  id: number;
+  producto_id: number;
+  tipo: string;
+  cantidad: number;
+  referencia_id: number | null;
+  referencia_tipo: string | null;
+  motivo: string | null;
+  usuario_id: number;
+  usuario_nombre: string;
+  created_at: string;
+}
+
+export function listMovimientos(productoId: number, f: { limit: number; offset: number }) {
+  return query<MovimientoRow>(
+    `SELECT m.*, u.nombre AS usuario_nombre
+     FROM movimientos_inventario m JOIN usuarios u ON u.id = m.usuario_id
+     WHERE m.producto_id = $1 ORDER BY m.id DESC LIMIT $2 OFFSET $3`,
+    [productoId, f.limit, f.offset]
+  ).then((r) => r.rows);
+}
+
+export function countMovimientos(productoId: number) {
+  return query<{ count: string }>(
+    "SELECT COUNT(*)::int AS count FROM movimientos_inventario WHERE producto_id = $1",
+    [productoId]
+  ).then((r) => Number(r.rows[0]?.count ?? 0));
+}
