@@ -14,6 +14,7 @@ export interface ProductDTO {
   precioVenta: number;
   stock: number;
   stockMinimo: number;
+  lowStock: boolean;
   isKit: boolean;
   isActive: boolean;
 }
@@ -32,6 +33,7 @@ function mapProduct(r: repo.ProductRow): ProductDTO {
     precioVenta: Number(r.precio_venta),
     stock: r.stock,
     stockMinimo: r.stock_minimo,
+    lowStock: r.stock <= r.stock_minimo,
     isKit: r.is_kit,
     isActive: r.is_active,
   };

@@ -117,7 +117,10 @@ export default function ProductosPage() {
                       <Badge variant="default">{CATS[p.categoria] ?? p.categoria}</Badge>
                     </TD>
                     <TD className="text-right">${mxn(p.precioVenta)}</TD>
-                    <TD className="text-right">{p.stock}</TD>
+                    <TD className="text-right">
+                      <span className={p.lowStock ? "font-semibold text-warning" : undefined}>{p.stock}</span>
+                      {p.lowStock && <Badge variant="warning" className="ml-2">bajo</Badge>}
+                    </TD>
                   </TR>
                 ))}
               </tbody>

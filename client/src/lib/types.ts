@@ -23,6 +23,7 @@ export interface Producto {
   precioVenta: number;
   stock: number;
   stockMinimo: number;
+  lowStock: boolean;
   isKit: boolean;
   isActive: boolean;
 }
