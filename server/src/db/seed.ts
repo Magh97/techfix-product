@@ -156,21 +156,21 @@ async function main() {
   }
 
   const productos = [
-    { sku: "PROC-001", codigo: "7501221234101", nombre: "Procesador Intel i5-12400", precioCompra: 2800, precioVenta: 3180, stock: 8, stockMin: 3, catalogo: "PC/Componentes/Procesador/Intel", tags: ["LGA1700", "6 núcleos", "4.4 GHz"] },
-    { sku: "RAM-001", codigo: "7501221234103", nombre: "Memoria RAM 16GB DDR4 3200", precioCompra: 900, precioVenta: 1180, stock: 12, stockMin: 5, catalogo: "PC/Componentes/RAM/DDR4", tags: ["DIMM", "16 GB", "3200 MHz", "DDR4"] },
-    { sku: "RAM-002", codigo: "7501221234110", nombre: "Memoria RAM 16GB DDR5 4800", precioCompra: 1100, precioVenta: 1450, stock: 9, stockMin: 4, catalogo: "PC/Componentes/RAM/DDR5", tags: ["SO-DIMM", "16 GB", "4800 MHz", "DDR5"] },
-    { sku: "SSD-001", codigo: "7501221234104", nombre: "SSD NVMe 1TB Gen4", precioCompra: 1100, precioVenta: 1390, stock: 6, stockMin: 3, catalogo: "PC/Componentes/Almacenamiento/SSD", tags: ["NVMe", "M.2", "1 TB"] },
-    { sku: "TEC-001", codigo: "7501221234109", nombre: "Teclado mecánico RGB", precioCompra: 600, precioVenta: 850, stock: 10, stockMin: 4, catalogo: "Perifericos/Teclado", tags: ["layout-ES", "mecánico"] },
-    { sku: "MON-001", codigo: "7501221234108", nombre: "Monitor 24\" FHD 144Hz", precioCompra: 1800, precioVenta: 2350, stock: 5, stockMin: 2, catalogo: "Perifericos/Monitor", tags: ["24 pulg", "1920x1080", "144 Hz"] },
+    { sku: "PROC-001", codigo: "7501221234101", nombre: "Procesador Intel i5-12400", precioCompra: 2800, precioVenta: 3180, stock: 8, stockMin: 3, stockMax: 8, catalogo: "PC/Componentes/Procesador/Intel", tags: ["LGA1700", "6 núcleos", "4.4 GHz"] },
+    { sku: "RAM-001", codigo: "7501221234103", nombre: "Memoria RAM 16GB DDR4 3200", precioCompra: 900, precioVenta: 1180, stock: 12, stockMin: 5, stockMax: 14, catalogo: "PC/Componentes/RAM/DDR4", tags: ["DIMM", "16 GB", "3200 MHz", "DDR4"] },
+    { sku: "RAM-002", codigo: "7501221234110", nombre: "Memoria RAM 16GB DDR5 4800", precioCompra: 1100, precioVenta: 1450, stock: 9, stockMin: 4, stockMax: 10, catalogo: "PC/Componentes/RAM/DDR5", tags: ["SO-DIMM", "16 GB", "4800 MHz", "DDR5"] },
+    { sku: "SSD-001", codigo: "7501221234104", nombre: "SSD NVMe 1TB Gen4", precioCompra: 1100, precioVenta: 1390, stock: 6, stockMin: 3, stockMax: 6, catalogo: "PC/Componentes/Almacenamiento/SSD", tags: ["NVMe", "M.2", "1 TB"] },
+    { sku: "TEC-001", codigo: "7501221234109", nombre: "Teclado mecánico RGB", precioCompra: 600, precioVenta: 850, stock: 10, stockMin: 4, stockMax: 10, catalogo: "Perifericos/Teclado", tags: ["layout-ES", "mecánico"] },
+    { sku: "MON-001", codigo: "7501221234108", nombre: "Monitor 24\" FHD 144Hz", precioCompra: 1800, precioVenta: 2350, stock: 5, stockMin: 2, stockMax: 6, catalogo: "Perifericos/Monitor", tags: ["24 pulg", "1920x1080", "144 Hz"] },
   ];
   for (const p of productos) {
     const catalogoId = catIds.get(p.catalogo);
     const rootNombre = p.catalogo.split("/")[0]!;
     const categoriaId = raizIds.get(rootNombre)!;
     await pool.query(
-      `INSERT INTO productos (categoria_id, sku, codigo_barras, nombre, precio_compra, precio_venta, stock, stock_minimo, catalogo_id, especificaciones)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb) ON CONFLICT (sku) DO NOTHING`,
-      [categoriaId, p.sku, p.codigo, p.nombre, p.precioCompra, p.precioVenta, p.stock, p.stockMin, catalogoId ?? null, JSON.stringify(p.tags)]
+      `INSERT INTO productos (categoria_id, sku, codigo_barras, nombre, precio_compra, precio_venta, stock, stock_minimo, stock_maximo, catalogo_id, especificaciones)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb) ON CONFLICT (sku) DO NOTHING`,
+      [categoriaId, p.sku, p.codigo, p.nombre, p.precioCompra, p.precioVenta, p.stock, p.stockMin, p.stockMax, catalogoId ?? null, JSON.stringify(p.tags)]
     );
   }
 
@@ -226,6 +226,15 @@ async function main() {
         [pr.nombre, pr.contacto, pr.condicionesPago]
       );
     }
+  }
+
+  // Proveedor favorito de los productos demo (para el reabastecimiento)
+  const favProv = await pool.query<{ id: number }>("SELECT id FROM proveedores ORDER BY id LIMIT 1");
+  if (favProv.rows[0]) {
+    await pool.query(
+      "UPDATE productos SET proveedor_favorito_id = $1 WHERE sku = ANY($2)",
+      [favProv.rows[0].id, ["PROC-001", "RAM-001", "RAM-002", "SSD-001"]]
+    );
   }
 
   console.log("Seed completado. Usuarios: admin/admin1234 · vendedor/vendedor1234");

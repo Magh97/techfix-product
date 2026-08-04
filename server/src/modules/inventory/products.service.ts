@@ -21,6 +21,8 @@ export interface ProductDTO {
   precioVenta: number;
   stock: number;
   stockMinimo: number;
+  stockMaximo: number;
+  proveedorFavoritoId: number | null;
   lowStock: boolean;
   isKit: boolean;
   manoObra: number;
@@ -44,6 +46,8 @@ function mapProduct(r: repo.ProductRow): ProductDTO {
     precioVenta: Number(r.precio_venta),
     stock: r.stock,
     stockMinimo: r.stock_minimo,
+    stockMaximo: r.stock_maximo,
+    proveedorFavoritoId: r.proveedor_favorito_id,
     lowStock: r.stock <= r.stock_minimo,
     isKit: r.is_kit,
     manoObra: Number(r.mano_obra),
@@ -128,6 +132,8 @@ const FIELD_MAP: Record<string, string> = {
   precioCompra: "precio_compra",
   precioVenta: "precio_venta",
   stockMinimo: "stock_minimo",
+  stockMaximo: "stock_maximo",
+  proveedorFavoritoId: "proveedor_favorito_id",
   catalogoId: "catalogo_id",
 };
 

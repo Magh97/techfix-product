@@ -28,6 +28,12 @@ export const PLANTILLAS: Record<string, Plantilla> = {
       "Hola {cliente}, la garantía de tu orden {folio} está por vencer.\n" +
       "Si presentas algún problema, acércate antes de la fecha límite.\n\nTechStore · {fecha}",
   },
+  "NOT-05": {
+    asunto: "Solicitud de refacción — TechStore",
+    cuerpo:
+      "Se registró una solicitud de refacción pendiente de aprobación.\n" +
+      "Revisa la pantalla de Reabastecimiento para gestionarla.\n\nTechStore · {fecha}",
+  },
 };
 
 export const PLANTILLA_DEFAULT: Plantilla = {

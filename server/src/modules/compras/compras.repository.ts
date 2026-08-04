@@ -212,3 +212,173 @@ export function listComprasRecibidas() {
      WHERE c.estado = 'recibida' ORDER BY c.id DESC LIMIT 200`
   ).then((r) => r.rows);
 }
+
+/* --- Reabastecimiento sugerido --- */
+
+export interface ReabastecimientoRow {
+  id: number;
+  sku: string;
+  nombre: string;
+  stock: number;
+  stock_minimo: number;
+  stock_maximo: number;
+  precio_compra: string;
+  proveedor_id: number | null;
+  proveedor_nombre: string | null;
+  es_favorito: boolean;
+  en_oc_folio: string | null;
+}
+
+export function listarReabastecimiento() {
+  return query<ReabastecimientoRow>(
+    `WITH activos_oc AS (
+       SELECT DISTINCT ON (dc.producto_id) dc.producto_id, c.folio
+       FROM detalle_compra dc
+       JOIN compras c ON c.id = dc.compra_id
+       WHERE c.estado IN ('borrador','enviada')
+       ORDER BY dc.producto_id, c.id DESC
+     ),
+     ultimo_proveedor AS (
+       SELECT DISTINCT ON (dc.producto_id) dc.producto_id, c.proveedor_id, p.nombre AS proveedor_nombre
+       FROM detalle_compra dc
+       JOIN compras c ON c.id = dc.compra_id
+       JOIN proveedores p ON p.id = c.proveedor_id
+       WHERE c.estado IN ('enviada','recibida')
+       ORDER BY dc.producto_id, c.id DESC
+     )
+     SELECT pr.id, pr.sku, pr.nombre, pr.stock, pr.stock_minimo, pr.stock_maximo, pr.precio_compra,
+            COALESCE(pr.proveedor_favorito_id, up.proveedor_id) AS proveedor_id,
+            COALESCE(pf.nombre, up.proveedor_nombre) AS proveedor_nombre,
+            (pr.proveedor_favorito_id IS NOT NULL) AS es_favorito,
+            ao.folio AS en_oc_folio
+     FROM productos pr
+     LEFT JOIN ultimo_proveedor up ON up.producto_id = pr.id
+     LEFT JOIN proveedores pf ON pf.id = pr.proveedor_favorito_id
+     LEFT JOIN activos_oc ao ON ao.producto_id = pr.id
+     WHERE pr.is_active = true AND pr.is_kit = false
+       AND pr.stock <= pr.stock_minimo
+     ORDER BY proveedor_nombre NULLS FIRST, pr.nombre`
+  ).then((r) => r.rows);
+}
+
+// Proveedor de un producto: favorito → si no, último proveedor que le vendió
+export function proveedorDeProducto(productoId: number) {
+  return query<{ proveedor_id: number | null; proveedor_nombre: string | null }>(
+    `WITH ultimo AS (
+       SELECT c.proveedor_id FROM detalle_compra dc
+       JOIN compras c ON c.id = dc.compra_id
+       WHERE dc.producto_id = $1 AND c.estado IN ('enviada','recibida')
+       ORDER BY c.id DESC LIMIT 1
+     )
+     SELECT COALESCE(p.proveedor_favorito_id, u.proveedor_id) AS proveedor_id, pr.nombre AS proveedor_nombre
+     FROM productos p
+     LEFT JOIN ultimo u ON true
+     LEFT JOIN proveedores pr ON pr.id = COALESCE(p.proveedor_favorito_id, u.proveedor_id)
+     WHERE p.id = $1`,
+    [productoId]
+  ).then((r) => r.rows[0]);
+}
+
+/* --- Solicitudes de reabastecimiento --- */
+
+export interface SolicitudRow {
+  id: number;
+  producto_id: number;
+  sku: string;
+  nombre_producto: string;
+  cantidad: number;
+  orden_id: number | null;
+  orden_folio: string | null;
+  solicitado_por: number;
+  solicitante_nombre: string;
+  motivo: string | null;
+  estado: string;
+  rechazo_motivo: string | null;
+  compra_id: number | null;
+  compra_folio: string | null;
+  resuelto_por: number | null;
+  created_at: string;
+  resuelto_at: string | null;
+}
+
+const SELECT_SOLICITUD = `
+  SELECT s.*, p.sku, p.nombre AS nombre_producto, o.folio AS orden_folio,
+         u.nombre AS solicitante_nombre, c.folio AS compra_folio
+  FROM solicitudes_reabastecimiento s
+  JOIN productos p ON p.id = s.producto_id
+  LEFT JOIN ordenes_servicio o ON o.id = s.orden_id
+  JOIN usuarios u ON u.id = s.solicitado_por
+  LEFT JOIN compras c ON c.id = s.compra_id
+`;
+
+export function insertSolicitud(input: {
+  productoId: number;
+  cantidad: number;
+  ordenId: number | null;
+  solicitadoPor: number;
+  motivo: string | null;
+}) {
+  return query<{ id: number }>(
+    `INSERT INTO solicitudes_reabastecimiento (producto_id, cantidad, orden_id, solicitado_por, motivo)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [input.productoId, input.cantidad, input.ordenId, input.solicitadoPor, input.motivo]
+  ).then((r) => r.rows[0]?.id);
+}
+
+export function findSolicitudById(id: number) {
+  return query<SolicitudRow>(`${SELECT_SOLICITUD} WHERE s.id = $1`, [id]).then((r) => r.rows[0]);
+}
+
+export function listSolicitudes(f: { estado?: string; ordenId?: number; limit: number; offset: number }) {
+  const params: unknown[] = [];
+  const where: string[] = [];
+  if (f.estado) {
+    params.push(f.estado);
+    where.push(`s.estado = $${params.length}`);
+  }
+  if (f.ordenId) {
+    params.push(f.ordenId);
+    where.push(`s.orden_id = $${params.length}`);
+  }
+  params.push(f.limit, f.offset);
+  const whereSql = where.length ? ` WHERE ${where.join(" AND ")}` : "";
+  return query<SolicitudRow>(
+    `${SELECT_SOLICITUD}${whereSql} ORDER BY s.id DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
+  ).then((r) => r.rows);
+}
+
+export function countSolicitudes(estado?: string, ordenId?: number) {
+  const params: unknown[] = [];
+  const where: string[] = [];
+  if (estado) {
+    params.push(estado);
+    where.push(`estado = $${params.length}`);
+  }
+  if (ordenId) {
+    params.push(ordenId);
+    where.push(`orden_id = $${params.length}`);
+  }
+  const whereSql = where.length ? ` WHERE ${where.join(" AND ")}` : "";
+  return query<{ count: string }>(
+    `SELECT COUNT(*)::int AS count FROM solicitudes_reabastecimiento${whereSql}`,
+    params
+  ).then((r) => Number(r.rows[0]?.count ?? 0));
+}
+
+export function resolverSolicitud(
+  id: number,
+  campos: { estado: string; rechazoMotivo?: string | null; compraId?: number | null; resueltoPor: number }
+) {
+  const sets = ["estado = $2", "resuelto_por = $3", "resuelto_at = NOW()"];
+  const vals: unknown[] = [id, campos.estado, campos.resueltoPor];
+  if (campos.rechazoMotivo !== undefined) {
+    sets.push(`rechazo_motivo = $${vals.length + 1}`);
+    vals.push(campos.rechazoMotivo);
+  }
+  if (campos.compraId !== undefined) {
+    sets.push(`compra_id = $${vals.length + 1}`);
+    vals.push(campos.compraId);
+  }
+  return query(`UPDATE solicitudes_reabastecimiento SET ${sets.join(", ")} WHERE id = $1`, vals);
+}
