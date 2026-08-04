@@ -153,6 +153,20 @@ export default function ProductosPage() {
       .finally(() => setBomGuardando(false));
   }
 
+  function limpiarBom() {
+    if (!bomProducto) return;
+    setBomGuardando(true);
+    productsApi
+      .setBom(bomProducto.id, { componentes: [], manoObra: 0 })
+      .then(() => {
+        toast.success("BOM eliminado: el producto ya no es un kit");
+        setBomProducto(null);
+        qc.invalidateQueries({ queryKey: ["productos"] });
+      })
+      .catch((e) => toast.error("Error al limpiar BOM", e instanceof Error ? e.message : ""))
+      .finally(() => setBomGuardando(false));
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -377,6 +391,18 @@ export default function ProductosPage() {
           </div>
 
           <div className="flex justify-end gap-2">
+            {bomProducto?.isKit && (
+              <Button
+                type="button"
+                variant="danger"
+                disabled={bomGuardando}
+                onClick={() => {
+                  if (confirm(`¿Quitar los componentes de ${bomProducto.nombre}?`)) limpiarBom();
+                }}
+              >
+                Limpiar BOM
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={() => setBomProducto(null)}>
               Cancelar
             </Button>

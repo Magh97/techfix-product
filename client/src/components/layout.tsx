@@ -14,12 +14,13 @@ const nav = [
   { to: "/proveedores", label: "Proveedores", icon: Building2 },
   { to: "/caja", label: "Caja", icon: Wallet },
   { to: "/finanzas", label: "Finanzas", icon: BarChart3 },
-  { to: "/reportes", label: "Reportes", icon: LineChart },
+  { to: "/reportes", label: "Reportes", icon: LineChart, adminOnly: true },
 ];
 
 export default function Layout() {
   const user = getSessionUser();
   const navigate = useNavigate();
+  const visibleNav = nav.filter((item) => !item.adminOnly || user?.rol === "admin");
 
   function logout() {
     clearSession();
@@ -39,7 +40,7 @@ export default function Layout() {
           </div>
         </div>
         <nav className="p-3">
-          {nav.map((item) => (
+          {visibleNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

@@ -19,6 +19,7 @@ interface CartItem {
   nombre: string;
   precio: number;
   qty: number;
+  maxQty?: number;
 }
 
 export default function VentaPage() {
@@ -52,11 +53,20 @@ export default function VentaPage() {
 
   const descOk = esAdmin || montos.desc <= montos.subtotal * 0.1;
 
-  function add(p: { id: number; nombre: string; precioVenta: number; isKit: boolean }) {
+  function add(p: { id: number; nombre: string; precioVenta: number; isKit: boolean; kitDisponible?: number | null }) {
+    const maxQty = p.isKit ? (p.kitDisponible ?? 0) : undefined;
+    if (maxQty !== undefined && maxQty <= 0) {
+      toast.info("Sin stock de componentes", "Este kit no se puede armar con el stock actual.");
+      return;
+    }
     setCart((c) => {
       const exist = c.find((x) => x.productoId === p.id);
-      if (exist) return c.map((x) => (x.productoId === p.id ? { ...x, qty: x.qty + 1 } : x));
-      return [...c, { productoId: p.id, nombre: p.nombre, precio: p.precioVenta, qty: 1 }];
+      if (exist) {
+        const next = exist.qty + 1;
+        if (maxQty !== undefined && next > maxQty) return c;
+        return c.map((x) => (x.productoId === p.id ? { ...x, qty: next } : x));
+      }
+      return [...c, { productoId: p.id, nombre: p.nombre, precio: p.precioVenta, qty: 1, maxQty }];
     });
   }
 
@@ -114,13 +124,13 @@ export default function VentaPage() {
                     <div>
                       <span className="font-semibold">{p.nombre}</span>
                       {p.isKit && <Badge variant="accent" className="ml-2">Kit</Badge>}
-                      <span className={cn("ml-2 text-xs", p.stock <= p.stockMinimo && !p.isKit ? "text-warning" : "text-muted")}>
-                        {p.isKit ? "se desglosa por componentes" : `stock ${p.stock}`}
+                      <span className={cn("ml-2 text-xs", p.isKit ? (p.kitDisponible ? "text-muted" : "text-danger") : p.stock <= p.stockMinimo ? "text-warning" : "text-muted")}>
+                        {p.isKit ? (p.kitDisponible ? `${p.kitDisponible} disp.` : "sin stock de componentes") : `stock ${p.stock}`}
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
                       <span>{mxn(p.precioVenta)}</span>
-                      <Button size="sm" variant="outline" disabled={!p.isKit && p.stock <= 0} onClick={() => add(p)}>
+                      <Button size="sm" variant="outline" disabled={p.isKit ? (p.kitDisponible ?? 0) <= 0 : p.stock <= 0} onClick={() => add(p)}>
                         <Plus className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -150,7 +160,17 @@ export default function VentaPage() {
                     <Minus className="h-4 w-4" />
                   </button>
                   <span className="w-6 text-center font-semibold">{c.qty}</span>
-                  <button onClick={() => setCart((cs) => cs.map((x) => (x.productoId === c.productoId ? { ...x, qty: x.qty + 1 } : x)))}>
+                  <button
+                    onClick={() =>
+                      setCart((cs) =>
+                        cs.map((x) =>
+                          x.productoId === c.productoId && (x.maxQty === undefined || x.qty < x.maxQty)
+                            ? { ...x, qty: x.qty + 1 }
+                            : x
+                        )
+                      )
+                    }
+                  >
                     <Plus className="h-4 w-4" />
                   </button>
                 </div>
