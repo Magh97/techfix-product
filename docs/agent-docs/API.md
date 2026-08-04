@@ -97,6 +97,17 @@ Error: `{ error: { code, message, details?: [{ field, reason }] } }`
 | POST | /compras/:compraId/pagos | admin | {monto, metodo} | {saldoPendiente} |
 | POST | /compras/:compraId/cancelar | admin | -- | compra |
 
+## Cotizaciones de venta
+| Method | Path | Auth | Request | Response |
+|--------|------|------|---------|----------|
+| GET | /cotizaciones-venta | JWT | ?page&pageSize&estado&clienteId&folio | lista paginada |
+| POST | /cotizaciones-venta | JWT | {clienteId, lineas[], vigenciaDias?, descuento?, motivoDescuento?} | 201 cotización |
+| GET | /cotizaciones-venta/:id | JWT | -- | detalle con líneas |
+| PATCH | /cotizaciones-venta/:id/estado | JWT | {nuevoEstado: aprobada\|rechazada\|cancelada, motivo?} | cotización |
+| POST | /cotizaciones-venta/:id/convertir | JWT | {metodoPago, tipoPago?=contado, montoRecibido?} | {cotizacionId, folioCotizacion, venta} |
+
+> **Flujo:** la cotización se crea **sin reservar stock** (solo valida disponibilidad, US-VEN-04). Al **convertir** (requiere estado `aprobada` y vigencia vigente) se revalida stock, se genera la venta (descuenta inventario) y la cotización pasa a `convertida`. Descuento regla BR-VEN-05 (vendedor ≤10%, >10% admin, motivo obligatorio si >0).
+
 ## Reportes (admin)
 | Method | Path | Request | Response |
 |--------|------|---------|----------|

@@ -12,6 +12,9 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 - Ensamblado de PCs por BOM (ADR-0003): definición de kits con componentes y mano de obra de ensamble (`PUT /productos/:id/bom`), precio recalculado como suma de componentes + ensamble, y venta de kits que desglosa líneas por componente y descuenta el stock real de cada pieza (US-SER-12, US-VEN-03).
 - Migración `0003_ensamble` (columna `productos.mano_obra`).
 - UI de gestión de BOM en el catálogo y soporte de kits en el punto de venta.
+- Cotizaciones de venta (US-VEN-04..06): folio `CV-`, vigencia configurable, sin reserva de stock al cotizar, descuentos con BR-VEN-05, y conversión a venta con validación de stock y método de pago (`/cotizaciones-venta`).
+- Migración `0004_cotizaciones_venta` (tablas `cotizaciones_venta` y `detalle_cotizacion_venta`).
+- Página de Cotizaciones en el frontend (listado, creación, aprobación y conversión a venta).
 
 ---
 

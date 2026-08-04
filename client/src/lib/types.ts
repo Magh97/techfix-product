@@ -333,3 +333,41 @@ export interface Bom {
   precioVenta: number;
   componentes: BomItem[];
 }
+
+export type EstadoCotizacionVenta = "emitida" | "aprobada" | "rechazada" | "convertida" | "cancelada" | "expirada";
+
+export interface CotizacionVentaLinea {
+  productoId: number;
+  sku: string;
+  nombre: string;
+  cantidad: number;
+  precioNeto: number;
+}
+
+export interface CotizacionVenta {
+  id: number;
+  folio: string;
+  clienteId: number;
+  clienteNombre: string;
+  estado: EstadoCotizacionVenta;
+  subtotal: number;
+  iva: number;
+  total: number;
+  descuento: number;
+  motivoDescuento: string | null;
+  vigenciaDesde: string;
+  vigenciaHasta: string;
+  expirada: boolean;
+  creadaPor: number;
+  creadorNombre: string;
+  createdAt: string;
+  lineas: CotizacionVentaLinea[];
+}
+
+export interface CreateCotizacionVenta {
+  clienteId: number;
+  lineas: { productoId: number; cantidad: number }[];
+  vigenciaDias?: number;
+  descuento?: number;
+  motivoDescuento?: string;
+}

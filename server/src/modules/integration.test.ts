@@ -487,6 +487,87 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(Number(stockB2.rows[0]?.stock)).toBe(2); // estaba en 0 → se restauran las 2 del kit
   });
 
+  it("cotizaciones de venta: ciclo emitida → aprobada → convertir, con reglas", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const vendedorAuth = { Authorization: `Bearer ${vendedorToken}` };
+
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `COT-${Date.now()}`, nombre: "Prod cotización", precioCompra: 50, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    // Descuento >10% con vendedor → 403 (BR-VEN-05)
+    const forbidden = await request(app)
+      .post("/api/v1/cotizaciones-venta")
+      .set(vendedorAuth)
+      .send({ clienteId, lineas: [{ productoId, cantidad: 1 }], descuento: 50 });
+    expect(forbidden.status).toBe(403);
+
+    // Descuento sin motivo → 400
+    const sinMotivo = await request(app)
+      .post("/api/v1/cotizaciones-venta")
+      .set(auth)
+      .send({ clienteId, lineas: [{ productoId, cantidad: 1 }], descuento: 5 });
+    expect(sinMotivo.status).toBe(400);
+
+    // Crear cotización: 1×100 → total 116 (IVA 16)
+    const creada = await request(app)
+      .post("/api/v1/cotizaciones-venta")
+      .set(auth)
+      .send({ clienteId, lineas: [{ productoId, cantidad: 1 }] });
+    expect(creada.status).toBe(201);
+    expect(creada.body.data.folio).toMatch(/^CV-/);
+    expect(creada.body.data.total).toBe(116);
+    expect(creada.body.data.estado).toBe("emitida");
+    const cotizacionId = creada.body.data.id;
+
+    // Convertir sin aprobar → 422
+    const sinAprobar = await request(app)
+      .post(`/api/v1/cotizaciones-venta/${cotizacionId}/convertir`)
+      .set(auth)
+      .send({ metodoPago: "efectivo" });
+    expect(sinAprobar.status).toBe(422);
+    expect(sinAprobar.body.error.code).toBe("QUOTE_NOT_APPROVED");
+
+    // Aprobar → convertir → venta + stock descontado + estado convertida
+    const aprobada = await request(app)
+      .patch(`/api/v1/cotizaciones-venta/${cotizacionId}/estado`)
+      .set(auth)
+      .send({ nuevoEstado: "aprobada" });
+    expect(aprobada.status).toBe(200);
+    expect(aprobada.body.data.estado).toBe("aprobada");
+
+    const convertida = await request(app)
+      .post(`/api/v1/cotizaciones-venta/${cotizacionId}/convertir`)
+      .set(auth)
+      .send({ metodoPago: "efectivo" });
+    expect(convertida.status).toBe(200);
+    expect(convertida.body.data.venta.folio).toMatch(/^VEN-/);
+    expect(convertida.body.data.venta.total).toBe(116);
+
+    const stock = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [productoId]);
+    expect(Number(stock.rows[0]?.stock)).toBe(4);
+
+    const estadoFinal = await pool.query<{ estado: string }>("SELECT estado FROM cotizaciones_venta WHERE id = $1", [cotizacionId]);
+    expect(estadoFinal.rows[0]?.estado).toBe("convertida");
+
+    // Cotización expirada → QUOTE_EXPIRED al aprobar
+    const creada2 = await request(app)
+      .post("/api/v1/cotizaciones-venta")
+      .set(auth)
+      .send({ clienteId, lineas: [{ productoId, cantidad: 1 }] });
+    const cotizacion2Id = creada2.body.data.id;
+    await pool.query("UPDATE cotizaciones_venta SET vigencia_hasta = CURRENT_DATE - 1 WHERE id = $1", [cotizacion2Id]);
+    const expirada = await request(app)
+      .patch(`/api/v1/cotizaciones-venta/${cotizacion2Id}/estado`)
+      .set(auth)
+      .send({ nuevoEstado: "aprobada" });
+    expect(expirada.status).toBe(422);
+    expect(expirada.body.error.code).toBe("QUOTE_EXPIRED");
+  });
+
   it("cancelar una orden libera las reservas de inventario", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const authT = { Authorization: `Bearer ${tecnicoToken}` };

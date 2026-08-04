@@ -123,3 +123,4 @@
 - `[NOTA]` US-VEN-09: el ticket se muestra en pantalla; la impresión ESC/POS 80mm está diferida hasta definir el hardware de impresión de la tienda.
 - `[ASSUMED]` US-VEN-09: folio de venta `VEN-XXXX` global (no por año).
 - `[NOTA]` US-SER-12 / US-VEN-03: ensamblado por BOM implementado (ADR-0003) — `PUT /productos/:id/bom`, venta con desglose de componentes + mano de obra de ensamble (migración `0003_ensamble`).
+- `[NOTA]` US-VEN-04..06: cotizaciones de venta implementadas — folio `CV-`, vigencia, sin reserva de stock al cotizar, conversión a venta con validación de stock, descuentos con BR-VEN-05 (migración `0004_cotizaciones_venta`).

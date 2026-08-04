@@ -7,6 +7,7 @@ import { comprasRouter, proveedoresRouter } from "./modules/compras/compras.rout
 import { clientesRouter } from "./modules/crm/clientes.routes";
 import { cajaRouter, finanzasRouter } from "./modules/finance/finance.routes";
 import { productsRouter } from "./modules/inventory/products.routes";
+import { quoteRouter } from "./modules/quote/quote.routes";
 import { reportsRouter } from "./modules/reports/reports.routes";
 import { ventasRouter } from "./modules/sales/ventas.routes";
 import { ordenesRouter } from "./modules/services/ordenes.routes";
@@ -38,6 +39,7 @@ export function createApp() {
   app.use("/api/v1/finanzas", finanzasRouter);
   app.use("/api/v1/proveedores", proveedoresRouter);
   app.use("/api/v1/compras", comprasRouter);
+  app.use("/api/v1/cotizaciones-venta", quoteRouter);
   app.use("/api/v1/reports", reportsRouter);
 
   app.use(notFoundHandler);

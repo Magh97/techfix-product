@@ -8,6 +8,7 @@ import ClienteDetallePage from "@/pages/ClienteDetallePage";
 import ClientesPage from "@/pages/ClientesPage";
 import CompraDetallePage from "@/pages/CompraDetallePage";
 import ComprasPage from "@/pages/ComprasPage";
+import CotizacionesPage from "@/pages/CotizacionesPage";
 import DashboardPage from "@/pages/DashboardPage";
 import FinanzasPage from "@/pages/FinanzasPage";
 import LoginPage from "@/pages/LoginPage";
@@ -39,6 +40,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "venta", element: <VentaPage /> },
+      { path: "cotizaciones", element: <CotizacionesPage /> },
       { path: "productos", element: <ProductosPage /> },
       { path: "clientes", element: <ClientesPage /> },
       { path: "clientes/:id", element: <ClienteDetallePage /> },

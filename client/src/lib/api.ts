@@ -4,6 +4,8 @@ import type {
   Cliente,
   Compra,
   Corte,
+  CotizacionVenta,
+  CreateCotizacionVenta,
   CreateOrden,
   CreateProducto,
   CreateVenta,
@@ -265,4 +267,24 @@ export const reportsApi = {
   },
   exportar: (tipo: "inventario" | "ventas" | "servicios", formato: "csv" | "xlsx", params?: Record<string, string | number | undefined>) =>
     downloadExport(`/reports/${tipo}/export`, `reporte-${tipo}.${formato}`, { ...params, formato }),
+};
+
+export const quoteApi = {
+  list: (params?: { estado?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.estado) qs.set("estado", params.estado);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<CotizacionVenta>>(`/cotizaciones-venta${s ? `?${s}` : ""}`);
+  },
+  get: (id: number) => api<{ data: CotizacionVenta }>(`/cotizaciones-venta/${id}`),
+  create: (input: CreateCotizacionVenta) => api<{ data: CotizacionVenta }>("/cotizaciones-venta", { method: "POST", body: JSON.stringify(input) }),
+  changeEstado: (id: number, nuevoEstado: "aprobada" | "rechazada" | "cancelada", motivo?: string) =>
+    api<{ data: CotizacionVenta }>(`/cotizaciones-venta/${id}/estado`, { method: "PATCH", body: JSON.stringify({ nuevoEstado, motivo }) }),
+  convertir: (id: number, input: { metodoPago: string; tipoPago?: "contado" | "credito"; montoRecibido?: number | null }) =>
+    api<{ data: { cotizacionId: number; folioCotizacion: string; venta: Venta } }>(`/cotizaciones-venta/${id}/convertir`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 };
