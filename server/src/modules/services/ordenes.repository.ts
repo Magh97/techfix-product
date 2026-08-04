@@ -390,19 +390,6 @@ export function countReservaDisponible(ordenId: number, productoId: number) {
   ).then((r) => Number(r.rows[0]?.c ?? 0));
 }
 
-export function insertNotificacion(input: {
-  clienteId: number;
-  ordenId: number;
-  tipo: string;
-  canal: string;
-  contenido?: string;
-}) {
-  return query(
-    "INSERT INTO notificaciones (cliente_id, orden_id, tipo, canal, contenido) VALUES ($1,$2,$3,$4,$5)",
-    [input.clienteId, input.ordenId, input.tipo, input.canal, input.contenido ?? null]
-  );
-}
-
 /* --- Garantía generada en la entrega --- */
 
 export function insertGarantia(

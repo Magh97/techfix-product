@@ -13,6 +13,11 @@ const schema = z.object({
   JWT_REFRESH_TTL: z.string().default("7d"),
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
   LOG_LEVEL: z.string().default("info"),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().default("no-reply@techstore.local"),
 });
 
 const parsed = schema.safeParse(process.env);
