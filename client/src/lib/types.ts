@@ -118,6 +118,17 @@ export interface BusinessConfig {
   toleranciaRetrasoDias: number;
 }
 
+export interface Garantia {
+  id: number;
+  clienteId: number;
+  clienteNombre: string;
+  folio: string | null;
+  tipo: string;
+  inicio: string;
+  fin: string;
+  estado: "vigente" | "por_vencer" | "vencida";
+}
+
 export interface Cliente {
   id: number;
   nombre: string;

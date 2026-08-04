@@ -13,6 +13,7 @@ import ConfiguracionPage from "@/pages/ConfiguracionPage";
 import CotizacionesPage from "@/pages/CotizacionesPage";
 import DashboardPage from "@/pages/DashboardPage";
 import FinanzasPage from "@/pages/FinanzasPage";
+import GarantiasPage from "@/pages/GarantiasPage";
 import LoginPage from "@/pages/LoginPage";
 import NuevaCompraPage from "@/pages/NuevaCompraPage";
 import NotificacionesPage from "@/pages/NotificacionesPage";
@@ -57,6 +58,7 @@ const router = createBrowserRouter([
       { path: "usuarios", element: <UsuariosPage /> },
       { path: "notificaciones", element: <NotificacionesPage /> },
       { path: "configuracion", element: <ConfiguracionPage /> },
+      { path: "garantias", element: <GarantiasPage /> },
       { path: "compras", element: <ComprasPage /> },
       { path: "compras/nueva", element: <NuevaCompraPage /> },
       { path: "compras/:id", element: <CompraDetallePage /> },
