@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
-import { authApi } from "@/lib/api";
+import { authApi, agendarAutoRefresh } from "@/lib/api";
 import { saveSession } from "@/lib/auth";
 
 export default function LoginPage() {
@@ -19,6 +19,7 @@ export default function LoginPage() {
     mutationFn: () => authApi.login(usuario, password),
     onSuccess: (res) => {
       saveSession(res.data);
+      agendarAutoRefresh(res.data.expiresIn);
       toast.success("Bienvenido", res.data.usuario.nombre);
       navigate("/");
     },
