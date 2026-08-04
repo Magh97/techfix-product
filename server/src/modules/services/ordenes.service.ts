@@ -1,5 +1,6 @@
 import { withTransaction } from "../../shared/db";
 import { AppError } from "../../shared/errors";
+import { getConfig } from "../../shared/config";
 import { getIvaRate } from "../../shared/config";
 import { calcMoney } from "../../shared/money";
 import { ESTADO_LABEL, validarTransicion } from "./estados";
@@ -8,8 +9,6 @@ import * as repo from "./ordenes.repository";
 import * as ventasService from "../sales/ventas.service";
 import * as notifications from "../notifications/notifications.service";
 
-const DIAS_GARANTIA_SERVICIO = 30;
-const TOLERANCIA_RETRASO_DIAS = 1; // 1 día calendario (incluye domingo) — BR-RET
 const DIAS_VIGENCIA_COTIZACION = 7;
 
 function addDays(date: string | Date, days: number): string {
@@ -23,9 +22,10 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function esRetrasada(estado: EstadoOrden, fechaPrometida: string): boolean {
+function esRetrasada(estado: EstadoOrden, fechaPrometida: string, toleranciaDias = 1): boolean {
   if (estado === "entregado" || estado === "cancelado") return false;
-  return addDays(fechaPrometida, TOLERANCIA_RETRASO_DIAS) < today();
+  // BR-RET: retraso tras fecha_prometida + tolerancia (1 día calendario por default)
+  return addDays(fechaPrometida, toleranciaDias) < today();
 }
 
 export interface OrdenDTO {
@@ -51,7 +51,7 @@ export interface OrdenDTO {
   createdAt: string;
 }
 
-function mapOrden(r: repo.OrdenRow): OrdenDTO {
+function mapOrden(r: repo.OrdenRow, toleranciaDias = 1): OrdenDTO {
   return {
     id: r.id,
     folio: r.folio,
@@ -66,7 +66,7 @@ function mapOrden(r: repo.OrdenRow): OrdenDTO {
     fallaReportada: r.falla_reportada,
     diagnostico: r.diagnostico,
     estado: r.estado,
-    retrasada: esRetrasada(r.estado, r.fecha_prometida),
+    retrasada: esRetrasada(r.estado, r.fecha_prometida, toleranciaDias),
     fechaPrometida: addDays(r.fecha_prometida, 0),
     fechaEntrega: r.fecha_entrega ? addDays(r.fecha_entrega, 0) : null,
     tecnicoId: r.tecnico_id,
@@ -114,12 +114,13 @@ export async function list(f: ListFilters) {
   const limit = f.pageSize;
   const offset = (f.page - 1) * limit;
   const filtros = { estado: f.estado, retrasadas: f.retrasadas, folio: f.folio, clienteId: f.clienteId };
-  const [rows, totalItems] = await Promise.all([
+  const [rows, totalItems, config] = await Promise.all([
     repo.listOrdenes({ ...filtros, limit, offset }),
     repo.countOrdenes(filtros),
+    getConfig(),
   ]);
   return {
-    data: rows.map(mapOrden),
+    data: rows.map((r) => mapOrden(r, config.toleranciaRetrasoDias)),
     meta: { page: f.page, pageSize: limit, totalItems, totalPages: Math.ceil(totalItems / limit) || 1 },
   };
 }
@@ -127,16 +128,17 @@ export async function list(f: ListFilters) {
 export async function getById(id: number) {
   const orden = await repo.findOrdenById(id);
   if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
-  const [historial, cotizacionesRows] = await Promise.all([
+  const [historial, cotizacionesRows, config] = await Promise.all([
     repo.listHistorial(id),
     repo.listCotizaciones(id),
+    getConfig(),
   ]);
   const cotizaciones = await Promise.all(
     cotizacionesRows.map(async (c) => mapCotizacion(c, await repo.listCotizacionLineas(c.id)))
   );
   const detalle = await repo.listDetalleOrden(id);
   return {
-    ...mapOrden(orden),
+    ...mapOrden(orden, config.toleranciaRetrasoDias),
     historial: historial.map((h) => ({
       id: h.id,
       estado: h.estado,
@@ -203,6 +205,7 @@ export async function cambiarEstado(id: number, nuevoEstado: EstadoOrden, nota: 
   const cotizaciones = await repo.listCotizaciones(id);
   const cotizacionAprobada = cotizaciones.some((c) => c.estado === "aprobada");
   validarTransicion(orden.estado, nuevoEstado, user.rol, cotizacionAprobada);
+  const config = await getConfig();
 
   await withTransaction(async (client) => {
     if (nuevoEstado === "listo") {
@@ -232,7 +235,7 @@ export async function cambiarEstado(id: number, nuevoEstado: EstadoOrden, nota: 
       }
       await repo.liberarReservas(client, id);
     }
-    await repo.updateOrdenEstado(id, nuevoEstado, esRetrasada(nuevoEstado, orden.fecha_prometida));
+    await repo.updateOrdenEstado(id, nuevoEstado, esRetrasada(nuevoEstado, orden.fecha_prometida, config.toleranciaRetrasoDias));
   });
 
   await repo.insertHistorial(id, nuevoEstado, user.id, nota ?? ESTADO_LABEL[nuevoEstado]);
@@ -467,6 +470,7 @@ export async function entregar(
   const cot = cotizaciones.find((c) => c.estado === "aprobada");
   if (!cot) throw AppError.business("QUOTE_NOT_FOUND", "No hay cotización aprobada");
 
+  const config = await getConfig();
   const lineasCot = await repo.listCotizacionLineas(cot.id);
   let ventaFolio = "";
 
@@ -499,7 +503,7 @@ export async function entregar(
       clienteId: orden.cliente_id,
       tipo: "servicio",
       inicio: today(),
-      fin: addDays(today(), DIAS_GARANTIA_SERVICIO),
+      fin: addDays(today(), config.diasGarantiaServicio),
     });
   });
 
@@ -521,7 +525,8 @@ export async function notificar(
 
 // US-SER-09: job horario que marca las órdenes retrasadas y dispara NOT-01
 export async function marcarRetrasadas() {
-  const ids = await repo.marcarRetrasadas();
+  const config = await getConfig();
+  const ids = await repo.marcarRetrasadas(config.toleranciaRetrasoDias);
   for (const id of ids) {
     try {
       await notifications.notificarRetraso(id);

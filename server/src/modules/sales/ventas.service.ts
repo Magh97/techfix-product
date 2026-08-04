@@ -1,12 +1,9 @@
 import type { PoolClient } from "pg";
 import { withTransaction } from "../../shared/db";
 import { AppError } from "../../shared/errors";
-import { getIvaRate } from "../../shared/config";
+import { getConfig } from "../../shared/config";
 import { calcMoney } from "../../shared/money";
 import * as repo from "./ventas.repository";
-
-const DESCUENTO_MAX_VENDEDOR = 0.1; // BR-VEN-05
-const DIAS_DEVOLUCION = 15; // BR-VEN-08
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -45,7 +42,6 @@ export async function registrarVenta(
   const run = async (c: PoolClient): Promise<VentaDTO> => {
     const lineasDetalle: { descripcion: string; cantidad: number; precio: number; productoId?: number | null }[] = [];
     let subtotal = 0;
-
     for (const l of input.lineas) {
       if (l.tipo === "producto") {
         if (!l.productoId || !l.cantidad || l.cantidad <= 0) {
@@ -119,14 +115,14 @@ export async function registrarVenta(
 
     if (!lineasDetalle.length) throw AppError.badRequest("VALIDATION_ERROR", "La venta requiere al menos una línea");
 
+    const config = await getConfig();
     const descuento = Math.max(0, input.descuento ?? 0);
     if (descuento > subtotal) throw AppError.badRequest("VALIDATION_ERROR", "El descuento no puede superar el subtotal");
-    if (user.rol !== "admin" && descuento > subtotal * DESCUENTO_MAX_VENDEDOR) {
-      throw AppError.forbidden("Descuento superior al 10% requiere rol admin (BR-VEN-05)");
+    if (user.rol !== "admin" && descuento > subtotal * config.descuentoVendedorMax) {
+      throw AppError.forbidden("Descuento superior al máximo autorizado para vendedor (BR-VEN-05)");
     }
 
-    const ivaRate = await getIvaRate();
-    const mon = calcMoney(subtotal, descuento, ivaRate);
+    const mon = calcMoney(subtotal, descuento, config.ivaRate);
 
     let fechaVencimiento: string | null = null;
     let plazoDias: number | null = null;
@@ -312,9 +308,10 @@ export async function devolucion(
   if (venta.estado === "devuelta" || venta.estado === "cancelada") {
     throw AppError.conflict("SALE_ALREADY_PROCESSED", "La venta ya fue devuelta o cancelada");
   }
-  const ventana = addDays(venta.created_at, DIAS_DEVOLUCION);
+  const config = await getConfig();
+  const ventana = addDays(venta.created_at, config.diasDevolucion);
   if (ventana < today()) {
-    throw AppError.business("REFUND_WINDOW_EXPIRED", `Solo se aceptan devoluciones dentro de ${DIAS_DEVOLUCION} días (BR-VEN-08)`);
+    throw AppError.business("REFUND_WINDOW_EXPIRED", `Solo se aceptan devoluciones dentro de ${config.diasDevolucion} días (BR-VEN-08)`);
   }
 
   await withTransaction(async (c) => {

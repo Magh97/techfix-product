@@ -5,6 +5,7 @@ import { env } from "./config/env";
 import { authRouter } from "./modules/auth/auth.routes";
 import { catalogosRouter } from "./modules/catalogos/catalogos.routes";
 import { comprasRouter, proveedoresRouter } from "./modules/compras/compras.routes";
+import { configuracionRouter } from "./modules/configuracion/configuracion.routes";
 import { clientesRouter } from "./modules/crm/clientes.routes";
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes";
 import { cajaRouter, finanzasRouter } from "./modules/finance/finance.routes";
@@ -49,6 +50,7 @@ export function createApp() {
   app.use("/api/v1/dashboard", dashboardRouter);
   app.use("/api/v1/catalogos", catalogosRouter);
   app.use("/api/v1/notificaciones", notificacionesRouter);
+  app.use("/api/v1/configuracion", configuracionRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
