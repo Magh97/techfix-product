@@ -3,7 +3,13 @@ interface Plantilla {
   cuerpo: string;
 }
 
-const PLANTILLAS: Record<string, Plantilla> = {
+export const PLANTILLAS: Record<string, Plantilla> = {
+  "NOT-01": {
+    asunto: "Retraso en tu orden — TechStore",
+    cuerpo:
+      "Hola {cliente}, lamentamos informarte que tu equipo con folio {folio} presenta un retraso.\n" +
+      "Estamos trabajando en ello y te avisaremos en cuanto esté listo.\n\nTechStore · {fecha}",
+  },
   "NOT-02": {
     asunto: "Tu equipo ya está listo — TechStore",
     cuerpo:
@@ -18,7 +24,7 @@ const PLANTILLAS: Record<string, Plantilla> = {
   },
 };
 
-const PLANTILLA_DEFAULT: Plantilla = {
+export const PLANTILLA_DEFAULT: Plantilla = {
   asunto: "Notificación TechStore",
   cuerpo: "Hola {cliente}, tu orden {folio} está en proceso. TechStore · {fecha}",
 };
@@ -35,6 +41,6 @@ export function renderPlantilla(
   };
 }
 
-export function tipoNotificacion(input: "listo" | "cotizacion"): string {
-  return input === "listo" ? "NOT-02" : "NOT-03";
+export function tipoNotificacion(input: "listo" | "cotizacion" | "retraso"): string {
+  return input === "listo" ? "NOT-02" : input === "cotizacion" ? "NOT-03" : "NOT-01";
 }

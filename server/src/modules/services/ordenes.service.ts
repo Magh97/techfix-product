@@ -519,7 +519,15 @@ export async function notificar(
   return notifications.notificar(ordenId, input);
 }
 
-// US-SER-09: job horario que marca las órdenes retrasadas
-export function marcarRetrasadas() {
-  return repo.marcarRetrasadas();
+// US-SER-09: job horario que marca las órdenes retrasadas y dispara NOT-01
+export async function marcarRetrasadas() {
+  const ids = await repo.marcarRetrasadas();
+  for (const id of ids) {
+    try {
+      await notifications.notificarRetraso(id);
+    } catch (err) {
+      console.error(`[notif:retraso] orden ${id}:`, err);
+    }
+  }
+  return ids.length;
 }

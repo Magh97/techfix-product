@@ -63,3 +63,50 @@ export function insertNotificacion(input: InsertNotificacionInput) {
     ]
   );
 }
+
+/* --- Plantillas (NOT-05) y historial (NOT-06) --- */
+
+export function listPlantillas() {
+  return query<{ tipo: string; asunto: string | null; cuerpo: string | null }>(
+    "SELECT tipo, asunto, cuerpo FROM plantillas_notificacion ORDER BY tipo"
+  ).then((r) => r.rows);
+}
+
+export function upsertPlantilla(tipo: string, asunto: string | null, cuerpo: string) {
+  return query(
+    `INSERT INTO plantillas_notificacion (tipo, asunto, cuerpo) VALUES ($1,$2,$3)
+     ON CONFLICT (tipo) DO UPDATE SET asunto = EXCLUDED.asunto, cuerpo = EXCLUDED.cuerpo`,
+    [tipo, asunto, cuerpo]
+  );
+}
+
+export interface NotifRow {
+  id: number;
+  tipo: string;
+  canal: string;
+  estado: string;
+  contenido: string | null;
+  error: string | null;
+  cliente_id: number | null;
+  cliente_nombre: string | null;
+  orden_id: number | null;
+  orden_folio: string | null;
+  created_at: string;
+}
+
+export function listNotificaciones(f: { limit: number; offset: number }) {
+  return query<NotifRow>(
+    `SELECT n.*, c.nombre AS cliente_nombre, o.folio AS orden_folio
+     FROM notificaciones n
+     LEFT JOIN clientes c ON c.id = n.cliente_id
+     LEFT JOIN ordenes_servicio o ON o.id = n.orden_id
+     ORDER BY n.id DESC LIMIT $1 OFFSET $2`,
+    [f.limit, f.offset]
+  ).then((r) => r.rows);
+}
+
+export function countNotificaciones() {
+  return query<{ count: string }>("SELECT COUNT(*)::int AS count FROM notificaciones").then(
+    (r) => Number(r.rows[0]?.count ?? 0)
+  );
+}

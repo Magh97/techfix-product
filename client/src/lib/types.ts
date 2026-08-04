@@ -90,6 +90,24 @@ export interface Movimiento {
   fecha: string;
 }
 
+export interface PlantillaInfo {
+  tipo: string;
+  asunto: string;
+  cuerpo: string;
+}
+
+export interface NotificacionHistorial {
+  id: number;
+  tipo: string;
+  canal: string;
+  estado: string;
+  contenido: string | null;
+  error: string | null;
+  clienteNombre: string | null;
+  ordenFolio: string | null;
+  fecha: string;
+}
+
 export interface Cliente {
   id: number;
   nombre: string;

@@ -9,6 +9,7 @@ import { clientesRouter } from "./modules/crm/clientes.routes";
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes";
 import { cajaRouter, finanzasRouter } from "./modules/finance/finance.routes";
 import { productsRouter } from "./modules/inventory/products.routes";
+import { notificacionesRouter } from "./modules/notifications/notifications.routes";
 import { quoteRouter } from "./modules/quote/quote.routes";
 import { reportsRouter } from "./modules/reports/reports.routes";
 import { ventasRouter } from "./modules/sales/ventas.routes";
@@ -47,6 +48,7 @@ export function createApp() {
   app.use("/api/v1/usuarios", usuariosRouter);
   app.use("/api/v1/dashboard", dashboardRouter);
   app.use("/api/v1/catalogos", catalogosRouter);
+  app.use("/api/v1/notificaciones", notificacionesRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

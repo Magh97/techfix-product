@@ -1375,4 +1375,51 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(res.body.data[0].tipo).toBe("AJUSTE");
     expect(res.body.data[0].cantidad).toBe(2);
   });
+
+  it("NOTIFICACIONES: worker dispara NOT-01 (retraso) por correo simulado", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const c = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, correo) VALUES ('Cliente Retraso', '5522113344', 'retraso@correo.test') RETURNING id"
+    );
+    const clienteId = c.rows[0]!.id;
+    const orden = await request(app)
+      .post("/api/v1/ordenes")
+      .set(auth)
+      .send({ clienteId, tipoEquipo: "laptop", fallaReportada: "Sobrecalienta", fechaPrometida: todayPlus(-4) });
+    const ordenId = orden.body.data.id;
+
+    await marcarRetrasadas();
+
+    const notif = await pool.query<{ tipo: string; estado: string; canal: string }>(
+      "SELECT tipo, estado, canal FROM notificaciones WHERE orden_id = $1 ORDER BY id DESC LIMIT 1",
+      [ordenId]
+    );
+    expect(notif.rows[0]?.tipo).toBe("NOT-01");
+    expect(notif.rows[0]?.canal).toBe("correo");
+    expect(notif.rows[0]?.estado).toBe("enviado");
+  });
+
+  it("NOTIFICACIONES: plantillas y historial con RBAC", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+
+    // Solo admin
+    expect((await request(app).get("/api/v1/notificaciones/plantillas").set(authV)).status).toBe(403);
+
+    const put = await request(app)
+      .put("/api/v1/notificaciones/plantillas/NOT-01")
+      .set(auth)
+      .send({ asunto: "Retraso custom", cuerpo: "Hola {cliente}, tu orden {folio} se retrasa." });
+    expect(put.status).toBe(200);
+
+    const list = await request(app).get("/api/v1/notificaciones/plantillas").set(auth);
+    expect(list.status).toBe(200);
+    const not1 = list.body.data.find((p: { tipo: string }) => p.tipo === "NOT-01");
+    expect(not1.asunto).toBe("Retraso custom");
+    expect(not1.cuerpo).toContain("{folio}");
+
+    const hist = await request(app).get("/api/v1/notificaciones/historial").set(auth);
+    expect(hist.status).toBe(200);
+    expect(Array.isArray(hist.body.data)).toBe(true);
+  });
 });

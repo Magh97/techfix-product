@@ -18,8 +18,10 @@ import type {
   ImportResult,
   LoginResponse,
   Movimiento,
+  NotificacionHistorial,
   OrdenServicio,
   Paginated,
+  PlantillaInfo,
   Producto,
   Proveedor,
   ReporteCliente,
@@ -220,6 +222,22 @@ export const comprasApi = {
       body: JSON.stringify(input),
     }),
   cxp: () => api<{ data: CxpItem[] }>("/compras/cxp"),
+};
+
+export const notificacionesApi = {
+  plantillas: () => api<{ data: PlantillaInfo[] }>("/notificaciones/plantillas"),
+  guardarPlantilla: (tipo: string, input: { asunto?: string | null; cuerpo: string }) =>
+    api<{ data: { tipo: string; asunto: string | null; cuerpo: string } }>(`/notificaciones/plantillas/${tipo}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  historial: (params?: { page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<NotificacionHistorial>>(`/notificaciones/historial${s ? `?${s}` : ""}`);
+  },
 };
 
 export const ordenesApi = {

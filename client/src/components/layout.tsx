@@ -1,4 +1,4 @@
-import { BarChart3, Building2, ClipboardList, Cpu, FileText, FolderTree, LayoutDashboard, LineChart, LogOut, Package, ShoppingCart, Truck, UserCog, Users, Wallet } from "lucide-react";
+import { BarChart3, Bell, Building2, ClipboardList, Cpu, FileText, FolderTree, LayoutDashboard, LineChart, LogOut, Package, ShoppingCart, Truck, UserCog, Users, Wallet } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { clearSession, getSessionUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ const nav = [
   { to: "/proveedores", label: "Proveedores", icon: Building2 },
   { to: "/catalogos", label: "Catálogos", icon: FolderTree, adminOnly: true },
   { to: "/usuarios", label: "Usuarios", icon: UserCog, adminOnly: true },
+  { to: "/notificaciones", label: "Notificaciones", icon: Bell, adminOnly: true },
   { to: "/caja", label: "Caja", icon: Wallet },
   { to: "/finanzas", label: "Finanzas", icon: BarChart3 },
   { to: "/reportes", label: "Reportes", icon: LineChart, adminOnly: true },
