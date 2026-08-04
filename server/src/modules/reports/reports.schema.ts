@@ -21,7 +21,7 @@ export const exportQuerySchema = z.object({
 });
 
 export const tipoReporteParams = z.object({
-  tipo: z.enum(["inventario", "ventas", "servicios"]),
+  tipo: z.enum(["inventario", "ventas", "servicios", "rentabilidad", "clientes", "financiero"]),
 });
 
 export const tipoProductoExport = z.object({

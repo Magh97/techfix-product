@@ -1031,4 +1031,87 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     const bomEndpoint = await request(app).get(`/api/v1/productos/${kitId}/bom`).set(auth);
     expect(bomEndpoint.status).toBe(400);
   });
+
+  it("REPORTES: rentabilidad calcula margen correcto con una venta conocida", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `RENT-${Date.now()}`, nombre: "Prod rentabilidad", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 100 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 2 }], tipoPago: "contado", metodoPago: "efectivo" });
+    expect(venta.status).toBe(201);
+
+    const res = await request(app).get("/api/v1/reports/rentabilidad").set(auth);
+    expect(res.status).toBe(200);
+    const fila = res.body.data.data.find((x: { producto: string }) => x.producto === "Prod rentabilidad");
+    expect(fila).toBeTruthy();
+    expect(fila.unidades).toBe(2);
+    expect(fila.ingreso).toBeCloseTo(20, 2);
+    expect(fila.margen).toBeCloseTo(10, 2);
+  });
+
+  it("REPORTES: clientes muestra total compras y saldo pendiente", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const c = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito) VALUES ('Reporte Cliente', '5599001122', 10000) RETURNING id"
+    );
+    const clienteId = c.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `CLI-${Date.now()}`, nombre: "Prod reporte cliente", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 100 WHERE id = $1", [productoId]);
+
+    await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito" });
+    await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito" });
+
+    const res = await request(app).get("/api/v1/reports/clientes").set(auth);
+    expect(res.status).toBe(200);
+    const fila = res.body.data.data.find((x: { clienteId: number }) => x.clienteId === clienteId);
+    expect(fila).toBeTruthy();
+    expect(fila.ventas).toBe(2);
+    expect(fila.totalCompras).toBeGreaterThan(0);
+    expect(fila.saldo).toBeCloseTo(fila.totalCompras, 2);
+  });
+
+  it("REPORTES: financiero refleja egresos e ingresos", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `FIN-${Date.now()}`, nombre: "Prod financiero", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 100 WHERE id = $1", [productoId]);
+    await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    await request(app).post("/api/v1/finanzas/egresos").set(auth).send({ concepto: "Renta", categoria: "Operativo", monto: 50, metodo: "efectivo" });
+
+    const res = await request(app).get("/api/v1/reports/financiero").set(auth);
+    expect(res.status).toBe(200);
+    expect(res.body.data.resumen.totalIngresos).toBeGreaterThan(0);
+    expect(res.body.data.resumen.totalEgresos).toBeGreaterThanOrEqual(50);
+    expect(res.body.data.resumen.utilidad).toBeCloseTo(res.body.data.resumen.totalIngresos - res.body.data.resumen.totalEgresos, 2);
+  });
+
+  it("REPORTES: export devuelve archivo con Content-Disposition", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const res = await request(app).get("/api/v1/reports/ventas/export?formato=csv").set(auth);
+    expect(res.status).toBe(200);
+    expect(res.headers["content-disposition"]).toBeTruthy();
+  });
 });
