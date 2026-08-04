@@ -17,11 +17,18 @@ export interface ProductRow {
   is_kit: boolean;
   mano_obra: string;
   is_active: boolean;
+  kit_disponible: number | null;
 }
 
 const SELECT = `
   SELECT p.id, p.sku, p.codigo_barras, p.nombre, p.marca, p.modelo, p.categoria_id,
-         c.tipo AS categoria, p.precio_compra, p.precio_venta, p.stock, p.stock_minimo, p.is_kit, p.mano_obra, p.is_active
+         c.tipo AS categoria, p.precio_compra, p.precio_venta, p.stock, p.stock_minimo, p.is_kit, p.mano_obra, p.is_active,
+         CASE WHEN p.is_kit THEN (
+           SELECT MIN(FLOOR(comp.stock / b.cantidad))
+           FROM producto_bom b
+           JOIN productos comp ON comp.id = b.componente_id
+           WHERE b.kit_producto_id = p.id
+         ) ELSE NULL END AS kit_disponible
   FROM productos p
   JOIN categorias c ON c.id = p.categoria_id
 `;
@@ -201,6 +208,13 @@ export function updateKitConfig(
   return client.query(
     `UPDATE productos SET is_kit = true, mano_obra = $2, precio_compra = $3, precio_venta = $4, updated_at = NOW() WHERE id = $1`,
     [kitId, data.manoObra, data.precioCompra, data.precioVenta]
+  );
+}
+
+export function clearKitConfig(client: PoolClient, kitId: number) {
+  return client.query(
+    `UPDATE productos SET is_kit = false, mano_obra = 0, updated_at = NOW() WHERE id = $1`,
+    [kitId]
   );
 }
 

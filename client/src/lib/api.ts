@@ -11,6 +11,7 @@ import type {
   CreateVenta,
   CxcItem,
   CxpItem,
+  DashboardResumen,
   EstadoOrden,
   ImportResult,
   LoginResponse,
@@ -21,6 +22,7 @@ import type {
   ReporteInventario,
   ReporteVenta,
   ReporteServicios,
+  Usuario,
   Venta,
 } from "./types";
 
@@ -61,6 +63,19 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 export const authApi = {
   login: (usuario: string, password: string) =>
     api<{ data: LoginResponse }>("/auth/login", { method: "POST", body: JSON.stringify({ usuario, password }) }),
+};
+
+export const usuariosApi = {
+  list: (params?: { rol?: "admin" | "vendedor" | "tecnico" }) => {
+    const qs = new URLSearchParams();
+    if (params?.rol) qs.set("rol", params.rol);
+    const s = qs.toString();
+    return api<{ data: Usuario[] }>(`/usuarios${s ? `?${s}` : ""}`);
+  },
+};
+
+export const dashboardApi = {
+  resumen: () => api<{ data: DashboardResumen }>("/dashboard/resumen"),
 };
 
 export const productsApi = {

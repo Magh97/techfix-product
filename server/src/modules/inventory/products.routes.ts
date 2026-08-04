@@ -53,6 +53,11 @@ productsRouter.get("/plantilla", validate(plantillaQuerySchema, "query"), async 
   await importService.descargarPlantilla(res, formato);
 });
 
+productsRouter.get("/:productoId", validate(productIdParams, "params"), async (req, res) => {
+  const { productoId } = getValidated<{ productoId: number }>(req, "params");
+  ok(res, await service.getById(productoId));
+});
+
 productsRouter.post("/importar", requireRole("admin"), upload.single("archivo"), async (req, res) => {
   if (!req.file) throw AppError.badRequest("ARCHIVO_REQUERIDO", "Se requiere un archivo CSV o XLSX");
   ok(res, await importService.importarProductos(req.file.buffer, req.file.originalname));

@@ -26,6 +26,7 @@ export interface Producto {
   isKit: boolean;
   manoObra: number;
   isActive: boolean;
+  kitDisponible: number | null;
 }
 
 export interface Paginated<T> {
@@ -370,4 +371,13 @@ export interface CreateCotizacionVenta {
   vigenciaDias?: number;
   descuento?: number;
   motivoDescuento?: string;
+}
+
+export interface DashboardResumen {
+  ventasHoy: { cantidad: number; total: number; ticketPromedio: number };
+  ordenes: { activas: number; retrasadas: number };
+  inventario: { stockBajo: number; totalProductos: number };
+  cajaAbierta: boolean;
+  topProductos: { nombre: string; unidades: number; ingreso: number }[];
+  topDeudores: { clienteId: number; clienteNombre: string; saldo: number }[];
 }

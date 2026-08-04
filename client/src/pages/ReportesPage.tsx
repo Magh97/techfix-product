@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
-import { reportsApi } from "@/lib/api";
+import { reportsApi, usuariosApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const mxn = (n: number | undefined) => (n ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -65,6 +65,12 @@ export default function ReportesPage() {
         estado: estado || undefined,
         tecnicoId: tecnicoId ? Number(tecnicoId) : undefined,
       }),
+    enabled: tab === "servicios",
+  });
+
+  const tecnicos = useQuery({
+    queryKey: ["usuarios", "tecnicos"],
+    queryFn: () => usuariosApi.list({ rol: "tecnico" }),
     enabled: tab === "servicios",
   });
 
@@ -161,15 +167,18 @@ export default function ReportesPage() {
             </div>
           )}
           <div>
-            <Label>{tab === "ventas" ? "Filtros" : "Técnico (ID)"}</Label>
+            <Label>{tab === "ventas" ? "Filtros" : "Técnico"}</Label>
             {tab === "servicios" ? (
-              <Input
-                type="number"
-                min={1}
-                placeholder="Técnico ID"
+              <select
                 value={tecnicoId}
                 onChange={(e) => setTecnicoId(e.target.value)}
-              />
+                className="h-10 w-full rounded-md border border-border-line bg-surface px-3 text-sm"
+              >
+                <option value="">Todos</option>
+                {tecnicos.data?.data.map((t) => (
+                  <option key={t.id} value={t.id}>{t.nombre}</option>
+                ))}
+              </select>
             ) : (
               <p className="h-10 text-sm text-muted">Rango de fechas</p>
             )}
