@@ -14,6 +14,7 @@ const nav = [
   { to: "/clientes", label: "Clientes", icon: Users },
   { to: "/productos", label: "Productos", icon: Package },
   { to: "/compras", label: "Compras", icon: Truck },
+  { to: "/reabastecimiento", label: "Reabastecimiento", icon: Package, adminOnly: true },
   { to: "/proveedores", label: "Proveedores", icon: Building2 },
   { to: "/catalogos", label: "Catálogos", icon: FolderTree, adminOnly: true },
   { to: "/usuarios", label: "Usuarios", icon: UserCog, adminOnly: true },
