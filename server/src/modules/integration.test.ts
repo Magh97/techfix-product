@@ -187,6 +187,72 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(folioProducto).toBeTruthy();
   });
 
+  it("notificaciones: valida estado, envía por correo y registra fallo sin contacto", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+
+    const cli = await pool.query<{ id: number }>(
+      `INSERT INTO clientes (nombre, telefono, correo) VALUES ('Cliente Correo', '5522001199', 'cliente@correo.test') RETURNING id`
+    );
+    const cCorreo = cli.rows[0]!.id;
+
+    const creada = await request(app)
+      .post("/api/v1/ordenes")
+      .set(auth)
+      .send({ clienteId: cCorreo, tipoEquipo: "laptop", fallaReportada: "Batería", fechaPrometida: todayPlus(2) });
+    const ordenId = creada.body.data.id;
+
+    // Notificar "listo" sobre una orden que no está en listo → 422
+    const rechazo = await request(app)
+      .post(`/api/v1/ordenes/${ordenId}/notificar`)
+      .set(auth)
+      .send({ tipo: "listo" });
+    expect(rechazo.status).toBe(422);
+    expect(rechazo.body.error.code).toBe("ORDER_NOT_READY");
+
+    // Poner la orden en listo (directo en BD para aislar el flujo de notificación)
+    await pool.query("UPDATE ordenes_servicio SET estado = 'listo' WHERE id = $1", [ordenId]);
+
+    // Envío por correo (simulado: sin SMTP en tests)
+    const envio = await request(app)
+      .post(`/api/v1/ordenes/${ordenId}/notificar`)
+      .set(auth)
+      .send({ tipo: "listo", canal: "correo" });
+    expect(envio.status).toBe(200);
+    expect(envio.body.data.enviado).toBe(true);
+    expect(envio.body.data.simulated).toBe(true);
+
+    const row = await pool.query<{ estado: string; tipo: string; canal: string }>(
+      "SELECT estado, tipo, canal FROM notificaciones WHERE orden_id = $1 ORDER BY id DESC LIMIT 1",
+      [ordenId]
+    );
+    expect(row.rows[0]?.estado).toBe("enviado");
+    expect(row.rows[0]?.tipo).toBe("NOT-02");
+    expect(row.rows[0]?.canal).toBe("correo");
+
+    // Cliente sin correo → se registra fallido y no lanza error
+    const sinCorreo = await request(app)
+      .post("/api/v1/ordenes")
+      .set(auth)
+      .send({ clienteId, tipoEquipo: "desktop", fallaReportada: "Pantalla", fechaPrometida: todayPlus(2) });
+    const ordenSinCorreo = sinCorreo.body.data.id;
+    await pool.query("UPDATE ordenes_servicio SET estado = 'listo' WHERE id = $1", [ordenSinCorreo]);
+
+    const resSinCorreo = await request(app)
+      .post(`/api/v1/ordenes/${ordenSinCorreo}/notificar`)
+      .set(auth)
+      .send({ tipo: "listo" });
+    expect(resSinCorreo.status).toBe(200);
+    expect(resSinCorreo.body.data.enviado).toBe(false);
+    expect(resSinCorreo.body.data.motivo).toBe("SIN_CORREO");
+
+    const fallida = await pool.query<{ estado: string; error: string }>(
+      "SELECT estado, error FROM notificaciones WHERE orden_id = $1 ORDER BY id DESC LIMIT 1",
+      [ordenSinCorreo]
+    );
+    expect(fallida.rows[0]?.estado).toBe("fallido");
+    expect(fallida.rows[0]?.error).toBe("cliente sin correo");
+  });
+
   it("cancelar una orden libera las reservas de inventario", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const authT = { Authorization: `Bearer ${tecnicoToken}` };
