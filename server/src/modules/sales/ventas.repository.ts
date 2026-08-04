@@ -27,15 +27,38 @@ export interface ProductoVentaRow {
   nombre: string;
   precio_venta: string;
   stock: number;
+  is_kit: boolean;
+  mano_obra: string;
 }
 
 export function findProductoParaVenta(client: PoolClient, id: number) {
   return client
     .query<ProductoVentaRow>(
-      "SELECT id, nombre, precio_venta, stock FROM productos WHERE id = $1 AND is_active = true FOR UPDATE",
+      "SELECT id, nombre, precio_venta, stock, is_kit, mano_obra FROM productos WHERE id = $1 AND is_active = true FOR UPDATE",
       [id]
     )
     .then((r) => r.rows[0]);
+}
+
+export interface BomVentaRow {
+  componente_id: number;
+  nombre: string;
+  cantidad: number;
+  precio_venta: string;
+  stock: number;
+}
+
+export function listBomParaVenta(client: PoolClient, kitId: number) {
+  return client
+    .query<BomVentaRow>(
+      `SELECT b.componente_id, p.nombre, b.cantidad, p.precio_venta, p.stock
+       FROM producto_bom b
+       JOIN productos p ON p.id = b.componente_id AND p.is_active = true
+       WHERE b.kit_producto_id = $1
+       ORDER BY b.id`,
+      [kitId]
+    )
+    .then((r) => r.rows);
 }
 
 export function decrementStock(client: PoolClient, productoId: number, cantidad: number) {
