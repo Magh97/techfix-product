@@ -1,5 +1,6 @@
 import type {
   Bom,
+  BusinessConfig,
   Caja,
   Catalogo,
   Cliente,
@@ -238,6 +239,27 @@ export const notificacionesApi = {
     const s = qs.toString();
     return api<Paginated<NotificacionHistorial>>(`/notificaciones/historial${s ? `?${s}` : ""}`);
   },
+};
+
+export const CONFIG_CLAVES = [
+  "iva.rate",
+  "credito.limite_default",
+  "credito.plazo_default",
+  "ventas.descuento_vendedor_max",
+  "ventas.dias_devolucion",
+  "servicios.dias_garantia",
+  "ordenes.tolerancia_retraso_dias",
+] as const;
+
+export type ConfigClave = (typeof CONFIG_CLAVES)[number];
+
+export const configuracionApi = {
+  get: () => api<{ data: BusinessConfig }>("/configuracion"),
+  update: (clave: ConfigClave, valor: number) =>
+    api<{ data: { clave: string; valor: number } }>("/configuracion", {
+      method: "PUT",
+      body: JSON.stringify({ clave, valor }),
+    }),
 };
 
 export const ordenesApi = {
