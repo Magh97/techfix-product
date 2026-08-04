@@ -969,7 +969,7 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
   it("USUARIOS: lista por rol solo para admin", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const authV = { Authorization: `Bearer ${vendedorToken}` };
-    const res = await request(app).get("/api/v1/usuarios?rol=tecnico").set(auth);
+    const res = await request(app).get("/api/v1/usuarios?rol=tecnico&pageSize=100").set(auth);
     expect(res.status).toBe(200);
     const encontrado = res.body.data.find((u: { usuario: string }) => u.usuario === "tecnico");
     expect(encontrado).toBeTruthy();
@@ -1132,11 +1132,8 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     const ram = await request(app).post("/api/v1/catalogos").set(auth).send({
       nombre: `RAM-${suf}`,
       parentId: rootId,
-      camposEspecificacion: [
-        { clave: "tipo_memoria", etiqueta: "Tipo de memoria" },
-        { clave: "capacidad", etiqueta: "Capacidad" },
-      ],
-      clavesCompatibilidad: ["tipo_memoria"],
+      tagsSugeridas: ["SO-DIMM", "Capacidad", "Velocidad"],
+      tagsCompatibilidad: ["DDR4", "DDR5"],
     });
     expect(ram.status).toBe(201);
     const ramId = ram.body.data.id;
@@ -1168,26 +1165,23 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     const ram = await request(app).post("/api/v1/catalogos").set(auth).send({
       nombre: `RAM-Tax-${suf}`,
       parentId: root.body.data.id,
-      camposEspecificacion: [
-        { clave: "tipo_memoria", etiqueta: "Tipo de memoria" },
-        { clave: "capacidad", etiqueta: "Capacidad" },
-      ],
-      clavesCompatibilidad: ["tipo_memoria"],
+      tagsSugeridas: ["SO-DIMM", "Capacidad"],
+      tagsCompatibilidad: ["DDR4", "DDR5"],
     });
     const ramId = ram.body.data.id;
 
-    async function crearRam(sku: string, specs: Record<string, unknown>, stock: number) {
+    async function crearRam(sku: string, tags: string[], stock: number) {
       const r = await request(app)
         .post("/api/v1/productos")
         .set(auth)
-        .send({ categoriaId: 1, sku, nombre: `RAM ${sku}`, precioCompra: 5, precioVenta: 10, catalogoId: ramId, especificaciones: specs, stockMinimo: 1 });
+        .send({ categoriaId: 1, sku, nombre: `RAM ${sku}`, precioCompra: 5, precioVenta: 10, catalogoId: ramId, especificaciones: tags, stockMinimo: 1 });
       await pool.query("UPDATE productos SET stock = $2 WHERE id = $1", [r.body.data.id, stock]);
       return r.body.data.id;
     }
 
-    const a = await crearRam(`A32-${suf}`, { tipo_memoria: "DDR5", capacidad: "32GB" }, 5);
-    const b = await crearRam(`B16-${suf}`, { tipo_memoria: "DDR5", capacidad: "16GB" }, 3);
-    const c = await crearRam(`C-DDR4-${suf}`, { tipo_memoria: "DDR4", capacidad: "16GB" }, 3);
+    const a = await crearRam(`A32-${suf}`, ["DDR5", "32GB"], 5);
+    const b = await crearRam(`B16-${suf}`, ["DDR5", "16GB"], 3);
+    const c = await crearRam(`C-DDR4-${suf}`, ["DDR4", "16GB"], 3);
 
     const res = await request(app).get(`/api/v1/productos/${a}/sugerencias`).set(auth);
     expect(res.status).toBe(200);
@@ -1204,22 +1198,22 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     const ram = await request(app).post("/api/v1/catalogos").set(auth).send({
       nombre: `RAM-Kit-${suf}`,
       parentId: root.body.data.id,
-      camposEspecificacion: [{ clave: "tipo_memoria", etiqueta: "Tipo" }],
-      clavesCompatibilidad: ["tipo_memoria"],
+      tagsSugeridas: ["SO-DIMM"],
+      tagsCompatibilidad: ["DDR5"],
     });
     const ramId = ram.body.data.id;
 
-    async function crearRam(sku: string, specs: Record<string, unknown>, stock: number) {
+    async function crearRam(sku: string, tags: string[], stock: number) {
       const r = await request(app)
         .post("/api/v1/productos")
         .set(auth)
-        .send({ categoriaId: 1, sku, nombre: `RAM ${sku}`, precioCompra: 5, precioVenta: 10, catalogoId: ramId, especificaciones: specs });
+        .send({ categoriaId: 1, sku, nombre: `RAM ${sku}`, precioCompra: 5, precioVenta: 10, catalogoId: ramId, especificaciones: tags });
       await pool.query("UPDATE productos SET stock = $2 WHERE id = $1", [r.body.data.id, stock]);
       return r.body.data.id;
     }
 
-    const corto = await crearRam(`Corto-${suf}`, { tipo_memoria: "DDR5" }, 0);
-    const sustituto = await crearRam(`Sust-${suf}`, { tipo_memoria: "DDR5" }, 4);
+    const corto = await crearRam(`Corto-${suf}`, ["DDR5"], 0);
+    const sustituto = await crearRam(`Sust-${suf}`, ["DDR5"], 4);
 
     const kit = await request(app)
       .post("/api/v1/productos")
@@ -1242,13 +1236,13 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     const imp = await request(app).post("/api/v1/catalogos").set(auth).send({
       nombre: `RAM-Imp-${suf}`,
       parentId: root.body.data.id,
-      camposEspecificacion: [{ clave: "tipo_memoria", etiqueta: "Tipo" }],
-      clavesCompatibilidad: [],
+      tagsSugeridas: ["SO-DIMM"],
+      tagsCompatibilidad: [],
     });
     const catalogoNombre = imp.body.data.nombre;
 
     const csv = `SKU,CodigoBarras,Nombre,Marca,Modelo,CategoriaId,Catalogo,Especificaciones,PrecioCompra,PrecioVenta,StockMinimo,Stock\n` +
-      `IMP-${suf},,RAM Importada,,,1,${catalogoNombre},{"tipo_memoria":"DDR5"},500,800,1,10\n`;
+      `IMP-${suf},,RAM Importada,,,1,${catalogoNombre},["DDR5"],500,800,1,10\n`;
     const res = await request(app)
       .post("/api/v1/productos/importar")
       .set(auth)
@@ -1256,12 +1250,99 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(res.status).toBe(200);
     expect(res.body.data.importados).toBe(1);
 
-    const prod = await pool.query<{ catalogo_id: number | null; especificaciones: Record<string, unknown> }>(
+    const prod = await pool.query<{ catalogo_id: number | null; especificaciones: string[] }>(
       "SELECT catalogo_id, especificaciones FROM productos WHERE sku = $1",
       [`IMP-${suf}`]
     );
     expect(prod.rows[0]?.catalogo_id).toBe(imp.body.data.id);
-    expect(prod.rows[0]?.especificaciones?.tipo_memoria).toBe("DDR5");
+    expect(prod.rows[0]?.especificaciones).toContain("DDR5");
+  });
+
+  it("TAXONOMÍA: la categoría debe ser una raíz y se deriva del catálogo", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+
+    const root = await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `RootCat-${suf}` });
+    const child = await request(app)
+      .post("/api/v1/catalogos")
+      .set(auth)
+      .send({ nombre: `Child-${suf}`, parentId: root.body.data.id });
+    const childId = child.body.data.id;
+
+    // categoriaId no puede ser un catálogo hijo
+    const noRaiz = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: childId, sku: `NORAIZ-${suf}`, nombre: "No raíz", precioCompra: 5, precioVenta: 10 });
+    expect(noRaiz.status).toBe(400);
+    expect(noRaiz.body.error.code).toBe("CATEGORIA_INVALIDA");
+
+    // La categoría se deriva automáticamente a la raíz del catálogo
+    const auto = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `AUTO-${suf}`, nombre: "Auto raíz", precioCompra: 5, precioVenta: 10, catalogoId: childId });
+    expect(auto.status).toBe(201);
+    expect(auto.body.data.categoriaId).toBe(root.body.data.id);
+  });
+
+  it("TAXONOMÍA: filtro por catálogo incluye descendientes", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+
+    const root = await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `RootFiltro-${suf}` });
+    const rootId = root.body.data.id;
+    const child = await request(app)
+      .post("/api/v1/catalogos")
+      .set(auth)
+      .send({ nombre: `ChildFiltro-${suf}`, parentId: rootId });
+    const childId = child.body.data.id;
+    const leaf = await request(app)
+      .post("/api/v1/catalogos")
+      .set(auth)
+      .send({ nombre: `LeafFiltro-${suf}`, parentId: childId });
+    const leafId = leaf.body.data.id;
+
+    async function crear(sku: string, catalogoId: number) {
+      const r = await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: rootId, sku, nombre: sku, precioCompra: 5, precioVenta: 10, catalogoId });
+      return r.body.data.id;
+    }
+    const enChild = await crear(`FILCHILD-${suf}`, childId);
+    const enLeaf = await crear(`FILLEAF-${suf}`, leafId);
+
+    const porRaiz = await request(app).get(`/api/v1/productos?catalogoId=${rootId}`).set(auth);
+    const idsRaiz = porRaiz.body.data.map((p: { id: number }) => p.id);
+    expect(idsRaiz).toContain(enChild);
+    expect(idsRaiz).toContain(enLeaf);
+
+    const porChild = await request(app).get(`/api/v1/productos?catalogoId=${childId}`).set(auth);
+    const idsChild = porChild.body.data.map((p: { id: number }) => p.id);
+    expect(idsChild).toContain(enChild);
+    expect(idsChild).toContain(enLeaf);
+
+    const porLeaf = await request(app).get(`/api/v1/productos?catalogoId=${leafId}`).set(auth);
+    const idsLeaf = porLeaf.body.data.map((p: { id: number }) => p.id);
+    expect(idsLeaf).toContain(enLeaf);
+    expect(idsLeaf).not.toContain(enChild);
+  });
+
+  it("TAXONOMÍA: límite de profundidad de 4 niveles", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+
+    const n1 = (await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `N1-${suf}` })).body.data.id;
+    const n2 = (await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `N2-${suf}`, parentId: n1 })).body.data.id;
+    const n3 = (await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `N3-${suf}`, parentId: n2 })).body.data.id;
+    const n4 = await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `N4-${suf}`, parentId: n3 });
+    expect(n4.status).toBe(201);
+    expect(n4.body.data.id).toBeTruthy();
+
+    const n5 = await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `N5-${suf}`, parentId: n4.body.data.id });
+    expect(n5.status).toBe(400);
+    expect(n5.body.error.code).toBe("PROFUNDIDAD_MAXIMA");
   });
 
   it("USUARIOS: alta, login, edición, desactivación y RBAC", async () => {
