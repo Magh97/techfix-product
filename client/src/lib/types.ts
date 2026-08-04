@@ -37,6 +37,18 @@ export interface Paginated<T> {
   meta: { page: number; pageSize: number; totalItems: number; totalPages: number };
 }
 
+export interface AuditoriaEntry {
+  id: number;
+  usuarioId: number;
+  usuarioNombre: string;
+  accion: string;
+  entidad: string;
+  entidadId: number | null;
+  antes: Record<string, unknown> | null;
+  despues: Record<string, unknown> | null;
+  fecha: string;
+}
+
 export interface CreateProducto {
   categoriaId: number;
   sku: string;

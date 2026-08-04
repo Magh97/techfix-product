@@ -5,6 +5,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { pool } from "../shared/db";
+import { limpiarRefreshTokens } from "./auth/auth.service";
 import { marcarRetrasadas } from "./services/ordenes.service";
 import { marcarGarantiasPorVencer } from "./garantias/garantias.service";
 
@@ -1620,6 +1621,49 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
       [compraId]
     );
     expect(auditCompra.rows[0]?.accion).toBe("CREAR");
+  });
+
+  it("AUDITORÍA: GET /auditoria lista con filtros (admin) y RBAC (vendedor → 403)", async () => {
+    // Hay al menos una venta auditada del test anterior
+    const lista = await request(app).get("/api/v1/auditoria").set("Authorization", `Bearer ${token}`);
+    expect(lista.status).toBe(200);
+    expect(lista.body.data.length).toBeGreaterThan(0);
+    expect(lista.body.meta.totalItems).toBeGreaterThan(0);
+    expect(lista.body.data[0]).toHaveProperty("usuarioNombre");
+    expect(lista.body.data[0]).toHaveProperty("fecha");
+
+    const porEntidad = await request(app)
+      .get("/api/v1/auditoria?entidad=venta")
+      .set("Authorization", `Bearer ${token}`);
+    expect(porEntidad.status).toBe(200);
+    expect(porEntidad.body.data.every((r: { entidad: string }) => r.entidad === "venta")).toBe(true);
+
+    // RBAC: vendedor no puede consultar auditoría
+    const sinPermiso = await request(app).get("/api/v1/auditoria").set("Authorization", `Bearer ${vendedorToken}`);
+    expect(sinPermiso.status).toBe(403);
+  });
+
+  it("AUTH: housekeeping de refresh tokens respeta retención", async () => {
+    const usuarioId = (await pool.query<{ id: number }>("SELECT id FROM usuarios WHERE usuario = 'admin'")).rows[0]!.id;
+
+    const viejo = await pool.query<{ id: number }>(
+      `INSERT INTO refresh_tokens (usuario_id, jti, token_hash, expires_at, revoked, created_at)
+       VALUES ($1, gen_random_uuid(), 'x', NOW() - interval '1 day', true, NOW() - interval '60 days') RETURNING id`,
+      [usuarioId]
+    );
+    const reciente = await pool.query<{ id: number }>(
+      `INSERT INTO refresh_tokens (usuario_id, jti, token_hash, expires_at, revoked)
+       VALUES ($1, gen_random_uuid(), 'x', NOW() - interval '1 day', true) RETURNING id`,
+      [usuarioId]
+    );
+
+    const borradas = await limpiarRefreshTokens(30);
+    expect(borradas).toBeGreaterThanOrEqual(1);
+
+    const sigueViejo = await pool.query("SELECT 1 FROM refresh_tokens WHERE id = $1", [viejo.rows[0]!.id]);
+    const sigueReciente = await pool.query("SELECT 1 FROM refresh_tokens WHERE id = $1", [reciente.rows[0]!.id]);
+    expect(sigueViejo.rowCount).toBe(0);
+    expect(sigueReciente.rowCount).toBe(1);
   });
 
   it("AUTH: login y refresh exponen expiresIn", async () => {
