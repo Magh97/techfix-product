@@ -33,6 +33,8 @@ import type {
   ReporteRentabilidad,
   ReporteVenta,
   ReporteServicios,
+  ReabastecimientoGrupo,
+  SolicitudReabastecimiento,
   Sugerencias,
   Usuario,
   Venta,
@@ -309,6 +311,35 @@ export const comprasApi = {
       body: JSON.stringify(input),
     }),
   cxp: () => api<{ data: CxpItem[] }>("/compras/cxp"),
+  reabastecimiento: () => api<{ data: { grupos: ReabastecimientoGrupo[] } }>("/compras/reabastecimiento"),
+  solicitudes: {
+    list: (params?: { estado?: string; ordenId?: number; page?: number; pageSize?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.estado) qs.set("estado", params.estado);
+      if (params?.ordenId) qs.set("ordenId", String(params.ordenId));
+      if (params?.page) qs.set("page", String(params.page));
+      if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+      const s = qs.toString();
+      return api<Paginated<SolicitudReabastecimiento>>(`/compras/solicitudes${s ? `?${s}` : ""}`);
+    },
+    create: (input: { productoId: number; cantidad: number; ordenId?: number | null; motivo?: string }) =>
+      api<{ data: SolicitudReabastecimiento }>("/compras/solicitudes", { method: "POST", body: JSON.stringify(input) }),
+    aprobar: (solicitudes: number[]) =>
+      api<{ data: { compras: { id: number; folio: string; proveedorId: number; proveedorNombre: string; lineas: number }[]; sinProveedor: number[]; noPendientes: number[] } }>("/compras/solicitudes/aprobar", {
+        method: "POST",
+        body: JSON.stringify({ solicitudes }),
+      }),
+    rechazar: (id: number, motivo: string) =>
+      api<{ data: SolicitudReabastecimiento }>(`/compras/solicitudes/${id}/rechazar`, {
+        method: "POST",
+        body: JSON.stringify({ motivo }),
+      }),
+    cancelar: (id: number, motivo: string) =>
+      api<{ data: SolicitudReabastecimiento }>(`/compras/solicitudes/${id}/cancelar`, {
+        method: "POST",
+        body: JSON.stringify({ motivo }),
+      }),
+  },
 };
 
 export const notificacionesApi = {
