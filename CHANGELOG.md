@@ -6,6 +6,15 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 
 ---
 
+## [Unreleased]
+
+### Added
+- Ensamblado de PCs por BOM (ADR-0003): definición de kits con componentes y mano de obra de ensamble (`PUT /productos/:id/bom`), precio recalculado como suma de componentes + ensamble, y venta de kits que desglosa líneas por componente y descuenta el stock real de cada pieza (US-SER-12, US-VEN-03).
+- Migración `0003_ensamble` (columna `productos.mano_obra`).
+- UI de gestión de BOM en el catálogo y soporte de kits en el punto de venta.
+
+---
+
 ## [0.1.0] — 2026-08-03
 
 ### Added

@@ -122,3 +122,4 @@
 - `[NOTA]` US-SER-09: el worker horario que marca retrasadas está implementado (no dispara NOT-01, que es P1 y queda pendiente del ADR-0007/Twilio).
 - `[NOTA]` US-VEN-09: el ticket se muestra en pantalla; la impresión ESC/POS 80mm está diferida hasta definir el hardware de impresión de la tienda.
 - `[ASSUMED]` US-VEN-09: folio de venta `VEN-XXXX` global (no por año).
+- `[NOTA]` US-SER-12 / US-VEN-03: ensamblado por BOM implementado (ADR-0003) — `PUT /productos/:id/bom`, venta con desglose de componentes + mano de obra de ensamble (migración `0003_ensamble`).

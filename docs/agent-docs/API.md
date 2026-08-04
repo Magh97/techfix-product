@@ -22,6 +22,8 @@ Error: `{ error: { code, message, details?: [{ field, reason }] } }`
 | POST | /productos/importar | admin | multipart `archivo` (.csv/.xlsx) | `{ importados, omitidos[], errores[] }` |
 | PUT | /productos/:productoId | admin | campos | producto |
 | PATCH | /productos/:productoId/desactivar | admin | -- | producto |
+| GET | /productos/:productoId/bom | admin | -- | kit + componentes con precio/stock |
+| PUT | /productos/:productoId/bom | admin | `{ componentes: [{productoId, cantidad}], manoObra? }` | kit con precio recalculado (Σ componentes + ensamble) |
 
 ## Clientes
 | Method | Path | Auth | Request | Response |
@@ -57,6 +59,8 @@ Error: `{ error: { code, message, details?: [{ field, reason }] } }`
 |--------|------|------|---------|----------|
 | GET | /ventas | JWT | ?page&pageSize&desde&hasta&vendedorId | lista |
 | POST | /ventas | JWT | {clienteId?, lineas[], tipoPago, metodoPago?, descuento?} | 201 venta + ticket |
+
+> **Kits (ADR-0003):** una línea `tipo:"producto"` cuyo producto tenga `is_kit` se desglosa en una línea por componente (descontando stock real de cada pieza) + una línea de "Mano de obra de ensamble". El precio se calcula en el servidor; el kit no descuenta su propio stock.
 | GET | /ventas/por-folio/:folio | JWT | -- | venta |
 | GET | /ventas/:ventaId | JWT | -- | venta |
 | POST | /ventas/:ventaId/pagos | JWT | {monto, metodo} | pago |
