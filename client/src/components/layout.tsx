@@ -1,11 +1,12 @@
-import { BarChart3, Bell, Building2, ClipboardList, Cpu, FileText, FolderTree, LayoutDashboard, LineChart, LogOut, Package, Settings, ShieldCheck, ShoppingCart, Truck, UserCog, Users, Wallet } from "lucide-react";
+import { BarChart3, Bell, Building2, ClipboardList, Cpu, FileText, FolderTree, LayoutDashboard, LineChart, LogOut, Package, Receipt, Settings, ShieldCheck, ShoppingCart, Truck, UserCog, Users, Wallet } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { clearSession, getSessionUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/venta", label: "Ventas", icon: ShoppingCart },
+  { to: "/venta", label: "Punto de Venta", icon: ShoppingCart },
+  { to: "/ventas", label: "Ventas", icon: Receipt },
   { to: "/cotizaciones", label: "Cotizaciones", icon: FileText },
   { to: "/ordenes", label: "Órdenes", icon: ClipboardList },
   { to: "/clientes", label: "Clientes", icon: Users },

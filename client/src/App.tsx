@@ -23,6 +23,7 @@ import ProductosPage from "@/pages/ProductosPage";
 import ProveedoresPage from "@/pages/ProveedoresPage";
 import ReportesPage from "@/pages/ReportesPage";
 import UsuariosPage from "@/pages/UsuariosPage";
+import VentasPage from "@/pages/VentasPage";
 import VentaPage from "@/pages/VentaPage";
 import type { ReactNode } from "react";
 
@@ -45,6 +46,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "venta", element: <VentaPage /> },
+      { path: "ventas", element: <VentasPage /> },
       { path: "cotizaciones", element: <CotizacionesPage /> },
       { path: "productos", element: <ProductosPage /> },
       { path: "clientes", element: <ClientesPage /> },

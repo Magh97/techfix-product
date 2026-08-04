@@ -123,6 +123,7 @@ export const productsApi = {
   setBom: (id: number, input: { componentes: { productoId: number; cantidad: number }[]; manoObra?: number }) =>
     api<{ data: Bom }>(`/productos/${id}/bom`, { method: "PUT", body: JSON.stringify(input) }),
   sugerencias: (id: number) => api<{ data: Sugerencias }>(`/productos/${id}/sugerencias`),
+  porCodigo: (codigo: string) => api<{ data: Producto }>(`/productos/por-codigo/${encodeURIComponent(codigo)}`),
   ajustar: (id: number, input: { cantidad: number; motivo: string }) =>
     api<{ data: Producto }>(`/productos/${id}/ajustar`, { method: "POST", body: JSON.stringify(input) }),
   movimientos: (id: number, params?: { page?: number; pageSize?: number }) => {
@@ -164,6 +165,7 @@ export const ventasApi = {
     return api<Paginated<Venta>>(`/ventas${s ? `?${s}` : ""}`);
   },
   get: (id: number) => api<{ data: Venta }>(`/ventas/${id}`),
+  getByFolio: (folio: string) => api<{ data: Venta }>(`/ventas/por-folio/${encodeURIComponent(folio)}`),
   pagar: (id: number, input: { monto: number; metodo: string }) =>
     api<{ data: unknown }>(`/ventas/${id}/pagos`, { method: "POST", body: JSON.stringify(input) }),
   cancelar: (id: number, motivo: string) => api<{ data: Venta }>(`/ventas/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),

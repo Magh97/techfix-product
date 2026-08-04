@@ -256,6 +256,7 @@ export interface Venta {
   fechaVencimiento: string | null;
   estado: string;
   cambio?: number;
+  createdAt?: string;
   lineas: VentaLinea[];
 }
 
