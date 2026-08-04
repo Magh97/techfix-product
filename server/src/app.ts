@@ -19,6 +19,7 @@ import { ordenesRouter } from "./modules/services/ordenes.routes";
 import { usuariosRouter } from "./modules/usuarios/usuarios.routes";
 import { errorHandler, notFoundHandler } from "./shared/errors";
 import { logger } from "./shared/logger";
+import { apiLimiter, authLimiter } from "./shared/rateLimit";
 
 export function createApp() {
   const app = express();
@@ -36,6 +37,8 @@ export function createApp() {
     res.json({ data: { status: "ok", uptime: process.uptime() } });
   });
 
+  app.use("/api/v1", apiLimiter);
+  app.use("/api/v1/auth/login", authLimiter);
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1/productos", productsRouter);
   app.use("/api/v1/clientes", clientesRouter);

@@ -11,6 +11,7 @@ export interface AccessPayload {
 export interface RefreshPayload {
   sub: number;
   tipo: "refresh";
+  jti: string;
 }
 
 export function signAccess(payload: AccessPayload) {
@@ -33,8 +34,8 @@ export function verifyAccess(token: string): AccessPayload {
 export function verifyRefresh(token: string): RefreshPayload {
   try {
     const decoded = jwt.verify(token, env.JWT_REFRESH_SECRET) as jwt.JwtPayload;
-    if (decoded.tipo !== "refresh") throw new Error("bad token type");
-    return { sub: Number(decoded.sub), tipo: "refresh" };
+    if (decoded.tipo !== "refresh" || typeof decoded.jti !== "string") throw new Error("bad refresh token");
+    return { sub: Number(decoded.sub), tipo: "refresh", jti: decoded.jti };
   } catch {
     throw AppError.unauthorized("Refresh token inválido o expirado");
   }

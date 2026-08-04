@@ -11,9 +11,10 @@ describe("jwt", () => {
   });
 
   it("firma y verifica un refresh token", () => {
-    const token = signRefresh({ sub: 7, tipo: "refresh" });
+    const token = signRefresh({ sub: 7, tipo: "refresh", jti: "test-jti" });
     const payload = verifyRefresh(token);
     expect(payload.sub).toBe(7);
     expect(payload.tipo).toBe("refresh");
+    expect(payload.jti).toBe("test-jti");
   });
 });
