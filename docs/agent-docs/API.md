@@ -1,6 +1,6 @@
 # API
 
-Base: `https://<host>/api/v1` · Auth: `Authorization: Bearer <jwt>` (salvo `/auth/login`).
+Base: `http://localhost:3000/api/v1` · Auth: `Authorization: Bearer <jwt>` (salvo `/auth/login`).
 
 Response: `{ data: T }` o `{ data: T[], meta: { page, pageSize, totalItems, totalPages } }`
 Error: `{ error: { code, message, details?: [{ field, reason }] } }`
@@ -10,108 +10,112 @@ Error: `{ error: { code, message, details?: [{ field, reason }] } }`
 |--------|------|------|---------|----------|
 | POST | /auth/login | -- | {usuario, password} | {token, refreshToken, usuario} |
 | POST | /auth/refresh | -- | {refreshToken} | {token, refreshToken} |
-| POST | /auth/logout | JWT | -- | 204 |
 
 ## Productos
 | Method | Path | Auth | Request | Response |
 |--------|------|------|---------|----------|
-| GET | /productos | JWT | ?page&pageSize&q&categoria&stockBajo | lista paginada |
-| GET | /productos/por-codigo/:codigo | vendedor | -- | producto |
+| GET | /productos | JWT | ?page&pageSize&q&categoria&stockBajo | lista paginada (con `lowStock`) |
+| GET | /productos/por-codigo/:codigo | JWT | -- | producto |
+| GET | /productos/exportar | JWT | ?formato=csv\|xlsx | archivo `catalogo-productos` |
+| GET | /productos/plantilla | JWT | ?formato=csv\|xlsx | plantilla de importación (con fila de ejemplo) |
 | POST | /productos | admin | CreateProducto | 201 |
-| PUT | /productos/:id | admin | campos | producto |
-| PATCH | /productos/:id/desactivar | admin | {motivo?} | 204 |
-| GET | /productos/:id/movimientos | admin | ?page | lista |
-| POST | /productos/:id/ajustar | admin | {cantidad, motivo} | movimiento |
-| POST | /productos/:id/bom | admin | {componentes[]} | 201 |
+| POST | /productos/importar | admin | multipart `archivo` (.csv/.xlsx) | `{ importados, omitidos[], errores[] }` |
+| PUT | /productos/:productoId | admin | campos | producto |
+| PATCH | /productos/:productoId/desactivar | admin | -- | producto |
 
 ## Clientes
 | Method | Path | Auth | Request | Response |
 |--------|------|------|---------|----------|
-| GET | /clientes | JWT | ?page&q&soloDeudores | lista |
-| GET | /clientes/:id | JWT | -- | cliente + saldo |
-| POST | /clientes | vendedor | {nombre, telefono, ...} | 201 |
-| PUT | /clientes/:id | vendedor | campos | cliente |
-| GET | /clientes/:id/historial | vendedor | ?page | {ordenes, ventas, cotizaciones, saldo} |
-| GET | /clientes/:id/cxc | vendedor | -- | {saldo, vencidas, limite} |
+| GET | /clientes | JWT | ?page&pageSize&q | lista |
+| GET | /clientes/:clienteId | JWT | -- | cliente + saldoPendiente |
+| POST | /clientes | JWT | {nombre, telefono, correo?, ...} | 201 |
+| PUT | /clientes/:clienteId | JWT | campos | cliente |
+| PATCH | /clientes/:clienteId/etiquetas | JWT | {etiquetas[]} | cliente |
+| GET | /clientes/:clienteId/historial | JWT | -- | {ordenes, ventas, cotizaciones} |
+| GET | /clientes/:clienteId/cxc | JWT | -- | {limiteCredito, saldoTotal, items} |
 
-## Órdenes
+## Órdenes de servicio
 | Method | Path | Auth | Request | Response |
 |--------|------|------|---------|----------|
-| POST | /ordenes | vendedor | {clienteId, tipoEquipo, fallaReportada, ...} | 201 orden |
-| GET | /ordenes | JWT | ?page&estado&folio&retrasadas | lista |
+| GET | /ordenes | JWT | ?page&pageSize&estado&retrasadas&folio&clienteId | lista |
+| POST | /ordenes | JWT | {clienteId, tipoEquipo, fallaReportada, ...} | 201 orden |
 | GET | /ordenes/por-folio/:folio | JWT | -- | orden |
-| PATCH | /ordenes/:id/estado | según transición | {nuevoEstado, nota?} | orden |
-| PUT | /ordenes/:id/diagnostico | tecnico | {diagnostico} | orden |
+| GET | /ordenes/:id | JWT | -- | orden |
+| PATCH | /ordenes/:id/estado | según máquina de estados | {nuevoEstado, nota?} | orden |
+| POST | /ordenes/:id/diagnostico | tecnico | {diagnostico} | orden |
 | POST | /ordenes/:id/cotizaciones | tecnico | {lineas[]} | 201 cotización |
-| POST | /ordenes/:id/cotizaciones/:cid/aprobar | vendedor | -- | cotización (reserva stock) |
-| POST | /ordenes/:id/cotizaciones/:cid/rechazar | vendedor | {motivo} | cotización |
-| POST | /ordenes/:id/consumo | tecnico | {piezas[]} | consumo |
-| POST | /ordenes/:id/mano-obra | tecnico | {horas, tarifaHora} | 201 |
-| POST | /ordenes/:id/entregar | vendedor | {firma?, ventaId?} | orden + garantía |
-| POST | /ordenes/:id/notificar | vendedor | {tipo, canal?} | notificación |
+| POST | /ordenes/:id/cotizaciones/:cid/aprobar | vendedor/admin | -- | reserva stock |
+| POST | /ordenes/:id/cotizaciones/:cid/rechazar | vendedor/admin | {motivo} | -- |
+| POST | /ordenes/:id/consumo | tecnico | {piezas[]} | orden |
+| POST | /ordenes/:id/mano-obra | tecnico | {horas, tarifaHora} | orden |
+| POST | /ordenes/:id/entregar | vendedor/admin | {firma, metodoPago?} | {orden, ventaFolio} + garantía |
+| POST | /ordenes/:id/cancelar | JWT | {motivo} | orden |
+| POST | /ordenes/:id/notificar | JWT | {tipo: listo\|cotizacion, canal?} | {enviado, canal, folio, simulated?, error?} |
 
-## Ventas
+## Ventas (POS)
 | Method | Path | Auth | Request | Response |
 |--------|------|------|---------|----------|
-| POST | /ventas | vendedor | CreateVentaRequest | 201 venta + ticket |
-| GET | /ventas | JWT | ?page&fechaDesde&fechaHasta&vendedorId | lista |
-| GET | /ventas/por-folio/:folio | JWT | -- | venta (reimpresión) |
-| POST | /ventas/:id/cancelar | admin | {motivo} | venta |
-| POST | /ventas/:id/devolucion | vendedor | {lineas[], reembolsoMetodo?} | devolución |
-| POST | /ventas/:id/pagos | vendedor | {monto, metodo} | pago |
-| POST | /cotizaciones/:id/convertir | vendedor | {tipoPago, metodoPago, descuento?} | 201 venta |
+| GET | /ventas | JWT | ?page&pageSize&desde&hasta&vendedorId | lista |
+| POST | /ventas | JWT | {clienteId?, lineas[], tipoPago, metodoPago?, descuento?} | 201 venta + ticket |
+| GET | /ventas/por-folio/:folio | JWT | -- | venta |
+| GET | /ventas/:ventaId | JWT | -- | venta |
+| POST | /ventas/:ventaId/pagos | JWT | {monto, metodo} | pago |
+| POST | /ventas/:ventaId/cancelar | JWT | {motivo} | venta |
+| POST | /ventas/:ventaId/devolucion | JWT | {lineas[]} | devolución |
+
+## Caja / Finanzas
+| Method | Path | Auth | Request | Response |
+|--------|------|------|---------|----------|
+| POST | /caja/abrir | vendedor/admin | -- | caja |
+| GET | /caja/actual | JWT | -- | caja o null |
+| GET | /caja/corte | vendedor/admin | -- | corte por método |
+| POST | /caja/cerrar | admin | {efectivoFisico} | caja + diferencia |
+| GET | /finanzas/movimientos | JWT | ?page&pageSize | lista |
+| GET | /finanzas/egresos | JWT | ?page&pageSize | lista |
+| POST | /finanzas/ingresos | vendedor/admin | {concepto, monto, metodo} | -- |
+| POST | /finanzas/egresos | admin | {concepto, categoria, monto, metodo} | -- |
+| GET | /finanzas/cxc | vendedor/admin | ?estado | lista |
 
 ## Compras (admin)
 | Method | Path | Auth | Request | Response |
 |--------|------|------|---------|----------|
 | GET | /proveedores | admin | ?page&q | lista |
 | POST | /proveedores | admin | {nombre, contacto?} | 201 |
-| POST | /compras | admin | {proveedorId, lineas[]} | 201 |
-| POST | /compras/:id/enviar | admin | -- | compra |
-| POST | /compras/:id/recibir | admin | {lineas[]} | compra (ENTRADA + CxP) |
-| POST | /compras/:id/pagos | admin | {monto, metodo} | 201 |
+| GET | /proveedores/:proveedorId | admin | -- | proveedor |
+| PUT | /proveedores/:proveedorId | admin | campos | proveedor |
+| DELETE | /proveedores/:proveedorId | admin | -- | {id} |
+| GET | /compras | admin | ?page&proveedorId&estado&folio | lista |
+| POST | /compras | admin | {proveedorId, lineas[], fechaVencimiento?} | 201 |
+| GET | /compras/cxp | admin | -- | lista CxP |
+| GET | /compras/:compraId | admin | -- | compra + pagos |
+| POST | /compras/:compraId/enviar | admin | -- | compra |
+| POST | /compras/:compraId/recibir | admin | -- | compra (ENTRADA stock + CxP) |
+| POST | /compras/:compraId/pagos | admin | {monto, metodo} | {saldoPendiente} |
+| POST | /compras/:compraId/cancelar | admin | -- | compra |
 
-## Finanzas / Caja
-| Method | Path | Auth | Request | Response |
-|--------|------|------|---------|----------|
-| POST | /caja/abrir | vendedor | -- | 201 caja |
-| GET | /caja/actual | JWT | -- | caja o null |
-| GET | /caja/movimientos | JWT | ?page&tipo&desde&hasta | lista |
-| GET | /caja/corte | vendedor | ?fecha&usuarioId | resumen + porMetodo |
-| POST | /caja/cerrar | admin | {efectivoFisico} | caja + diferencia |
-| POST | /finanzas/ingresos | vendedor | {concepto, monto, metodo} | 201 |
-| POST | /finanzas/egresos | admin | {concepto, categoria, monto} | 201 |
-| GET | /finanzas/cxc | vendedor | ?estado&clienteId | lista |
-| GET | /finanzas/cxp | admin | ?estado&proveedorId | lista |
+## Reportes (admin)
+| Method | Path | Request | Response |
+|--------|------|---------|----------|
+| GET | /reports/inventario | -- | `{ data, resumen: { totalArticulos, valorTotalCosto, stockBajo } }` |
+| GET | /reports/ventas | ?desde&hasta&agrupar=dia\|producto\|vendedor\|metodo | `{ data, resumen }` |
+| GET | /reports/servicios | ?desde&hasta&estado&tecnicoId | `{ resumen, porEstado, porTecnico, porTipoEquipo }` |
+| GET | /reports/:tipo/export | ?formato=csv\|xlsx (+filtros del reporte) | archivo `reporte-<tipo>` |
 
-## Notificaciones / Reportes / Config
-| Method | Path | Auth | Request | Response |
-|--------|------|------|---------|----------|
-| GET | /notificaciones | admin | ?page&clienteId&tipo&estado | lista |
-| GET | /plantillas | admin | -- | lista |
-| PUT | /plantillas/:tipo | admin | {asunto?, cuerpo} | plantilla |
-| GET | /reportes/ventas | admin | ?desde&hasta&grupo | agregados |
-| GET | /reportes/inventario | admin | ?categoria&stockBajo | {items, valorTotal} |
-| GET | /reportes/servicios | admin | ?desde&hasta&estado | {porEstado, tiempoPromedio} |
-| GET | /reportes/rentabilidad | admin | ?desde&hasta | {porProducto, total} |
-| GET | /reportes/clientes | admin | ?desde&hasta | {frecuentes, deudores} |
-| GET | /reportes/finanzas | admin | ?desde&hasta | {ingresos, egresos, utilidad} |
-| GET | /reportes/:tipo/exportar | admin | ?formato=excel\|pdf | archivo |
-| GET | /configuracion | admin | -- | parámetros |
-| PUT | /configuracion/:clave | admin | {valor} | valor |
+## Worker
+- Cada hora marca `retrasada = true` en órdenes abiertas con `fecha_prometida < hoy - 1 día` (US-SER-09). Se ejecuta al arrancar el servidor y con `setInterval` cada 60 min.
 
 ## Error Codes (núcleo)
 | Code | HTTP | Meaning |
 |------|------|---------|
+| VALIDATION_ERROR | 400 | no pasa zod |
 | UNAUTHORIZED | 401 | token ausente/inválido |
 | FORBIDDEN | 403 | rol sin permiso |
 | NOT_FOUND | 404 | recurso inexistente |
-| VALIDATION_ERROR | 400 | no pasa zod |
-| INSUFFICIENT_STOCK | 422 | excede stock |
-| STOCK_RESERVED | 422 | no hay disponible por reservas |
-| CREDIT_LIMIT_EXCEEDED | 422 | excede límite cliente |
-| ORDER_STATE_INVALID | 409 | transición no permitida |
-| QUOTE_EXPIRED | 422 | cotización vencida |
-| DISCOUNT_NOT_AUTHORIZED | 403 | descuento >10% sin admin |
-| REFUND_WINDOW_EXPIRED | 422 | devolución >15 días |
-| NOTIFICATION_FAILED | 422 | envío falló |
+| CONFLICT | 409 | conflicto (duplicado, estado) |
+| ORDER_STATE_INVALID | 409 | transición de estado no permitida |
+| ORDER_NOT_READY | 422 | notificar "listo" en orden no lista |
+| QUOTE_NOT_APPROVED | 422 | reparación sin cotización aprobada |
+| CUSTOMER_NOT_FOUND | 404 | cliente no existe |
+| PRODUCT_NOT_FOUND | 404 | producto no existe |
+| ARCHIVO_VACIO / FORMATO_NO_SOPORTADO | 400 | importación inválida |
+| INTERNAL_ERROR | 500 | error no controlado |

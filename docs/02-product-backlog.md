@@ -18,6 +18,7 @@
 | US-INV-06 | Como **admin** quiero ver el historial de movimientos de un producto para auditar entradas/salidas. | Lista paginada de `Movimiento` por producto, tipo, fecha, usuario, referencia. | P1 |
 | US-INV-07 | Como **vendedor** quiero registrar un equipo usado recibido en parte de pago o reparación. | Alta con estado `USADO`; puede vincularse a orden de servicio; inventario propio de usados. | P1 |
 | US-INV-08 | Como **vendedor** quiero categorizar productos para organizar el catálogo. | Categorías: componentes, periféricos, equipos completos, refacciones; editable por admin. | P1 |
+| US-INV-09 | Como **admin** quiero importar productos masivamente desde un archivo CSV/Excel. | Plantilla descargable; acepta `.csv` y `.xlsx`; filas validadas con las mismas reglas del alta; duplicados por `sku`/`codigo_barras` se saltan; respuesta con `{ importados, omitidos[], errores[] }` por número de fila; solo admin. | P2 |
 
 ## Módulo: CRM
 
@@ -96,6 +97,7 @@
 | US-REP-01 | Como **admin** quiero el reporte de inventario con valoración y stock bajo. | Existencias, costo total, stock mínimo; alertas. | P1 |
 | US-REP-02 | Como **admin** quiero el reporte de ventas por período/producto/vendedor/pago. | Filtros por rango, agrupaciones; totales. | P1 |
 | US-REP-03 | Como **admin** quiero el reporte de servicios por estado/técnico/falla/tiempos. | Órdenes por estado, técnico, tipo de falla, tiempo promedio de reparación. | P1 |
+| US-REP-08 | Como **admin** quiero exportar reportes y el catálogo a CSV/Excel. | Botón de exportación fiel a los filtros aplicados en inventario, ventas y servicios; formatos CSV y XLSX. | P1 |
 | US-REP-04 | Como **admin** quiero el reporte de rentabilidad por producto/servicio/período. | Margen = venta − costo; por línea y agregado. | P2 |
 | US-REP-05 | Como **admin** quiero el reporte de clientes (frecuentes, ticket promedio, deudores). | Top clientes, ticket promedio, saldos. | P2 |
 | US-REP-06 | Como **admin** quiero el reporte financiero (ingresos vs egresos, utilidad, flujo). | Acumulados por mes; utilidad neta. | P2 |
@@ -117,3 +119,6 @@
 ## Notas de Definición de Hecho
 - Toda historia cumple: API validada con Zod, tests, migración de BD, registro en changelog.
 - `[ASSUMED]`: límite de crédito default = **$3,000 MXN** (ampliable por cliente); plazo default **15 días**; tolerancia de retraso = **1 día calendario (incluye domingo)**, se notifica el día siguiente a exceder la fecha prometida.
+- `[NOTA]` US-SER-09: el worker horario que marca retrasadas está implementado (no dispara NOT-01, que es P1 y queda pendiente del ADR-0007/Twilio).
+- `[NOTA]` US-VEN-09: el ticket se muestra en pantalla; la impresión ESC/POS 80mm está diferida hasta definir el hardware de impresión de la tienda.
+- `[ASSUMED]` US-VEN-09: folio de venta `VEN-XXXX` global (no por año).

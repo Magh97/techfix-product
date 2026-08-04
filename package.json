@@ -1,0 +1,23 @@
+{
+  "name": "techstore",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Sistema de Administración para tiendas de cómputo (TechStore)",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "format": "prettier --write .",
+    "db:migrate": "pnpm --filter @techstore/server db:migrate",
+    "db:seed": "pnpm --filter @techstore/server db:seed"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.0"
+  }
+}
