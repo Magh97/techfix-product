@@ -3,7 +3,7 @@ import { created, ok, paginated } from "../../shared/http";
 import { requireAuth, requireRole } from "../../shared/middleware/auth";
 import { getValidated, validate } from "../../shared/validation";
 import type { CreateProductInput } from "./products.repository";
-import { createProductSchema, listProductsQuery, productIdParams, updateProductSchema } from "./products.schema";
+import { createProductSchema, exportProductosQuery, listProductsQuery, productIdParams, updateProductSchema } from "./products.schema";
 import * as service from "./products.service";
 
 export const productsRouter = Router();
@@ -32,6 +32,11 @@ productsRouter.get("/", validate(listProductsQuery, "query"), async (req, res) =
 
 productsRouter.get("/por-codigo/:codigo", async (req, res) => {
   ok(res, await service.getByCode(req.params.codigo as string));
+});
+
+productsRouter.get("/exportar", validate(exportProductosQuery, "query"), async (req, res) => {
+  const { formato } = getValidated<{ formato: "csv" | "xlsx" }>(req, "query");
+  await service.exportarCatalogo(res, formato);
 });
 
 productsRouter.post("/", requireRole("admin"), validate(createProductSchema), async (req, res) => {

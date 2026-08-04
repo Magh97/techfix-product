@@ -25,3 +25,7 @@ export const updateProductSchema = createProductSchema.partial();
 export const productIdParams = z.object({
   productoId: z.coerce.number().int().positive(),
 });
+
+export const exportProductosQuery = z.object({
+  formato: z.enum(["csv", "xlsx"]).default("csv"),
+});
