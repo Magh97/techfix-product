@@ -1,5 +1,6 @@
 import { AppError } from "../../shared/errors";
 import type { Response } from "express";
+import { withTransaction } from "../../shared/db";
 import { sendExport, type ExportColumn } from "../../shared/export";
 import * as repo from "./products.repository";
 
@@ -18,6 +19,7 @@ export interface ProductDTO {
   stockMinimo: number;
   lowStock: boolean;
   isKit: boolean;
+  manoObra: number;
   isActive: boolean;
 }
 
@@ -37,6 +39,7 @@ function mapProduct(r: repo.ProductRow): ProductDTO {
     stockMinimo: r.stock_minimo,
     lowStock: r.stock <= r.stock_minimo,
     isKit: r.is_kit,
+    manoObra: Number(r.mano_obra),
     isActive: r.is_active,
   };
 }
@@ -109,6 +112,72 @@ export async function deactivate(id: number) {
   const row = await repo.deactivateProduct(id);
   if (!row) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
   return mapProduct(row);
+}
+
+/* --- BOM / kits (ADR-0003) --- */
+
+export async function getBom(kitId: number) {
+  const kit = await repo.findProductById(kitId);
+  if (!kit) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
+  if (!kit.is_kit) {
+    throw AppError.badRequest("NOT_A_KIT", "El producto no es un kit ensamblable");
+  }
+  const componentes = await repo.listBom(kitId);
+  return {
+    kitId: kit.id,
+    nombre: kit.nombre,
+    manoObra: Number(kit.mano_obra),
+    precioCompra: Number(kit.precio_compra),
+    precioVenta: Number(kit.precio_venta),
+    componentes: componentes.map((c) => ({
+      productoId: c.producto_id,
+      sku: c.sku,
+      nombre: c.nombre,
+      cantidad: c.cantidad,
+      precioCompra: Number(c.precio_compra),
+      precioVenta: Number(c.precio_venta),
+      stock: c.stock,
+    })),
+  };
+}
+
+export async function setBom(
+  kitId: number,
+  input: { componentes: { productoId: number; cantidad: number }[]; manoObra?: number }
+) {
+  const kit = await repo.findProductoBasico(kitId);
+  if (!kit || !kit.is_active) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
+
+  const vistos = new Set<number>();
+  const componentes: { id: number; cantidad: number; precioCompra: number; precioVenta: number }[] = [];
+  for (const c of input.componentes) {
+    if (c.productoId === kitId) throw AppError.badRequest("SELF_REFERENCE", "Un kit no puede incluirse a sí mismo");
+    if (vistos.has(c.productoId)) throw AppError.badRequest("DUPLICATED_COMPONENT", `Componente ${c.productoId} duplicado`);
+    vistos.add(c.productoId);
+    const comp = await repo.findProductoBasico(c.productoId);
+    if (!comp || !comp.is_active) throw AppError.notFound("COMPONENT_NOT_FOUND", `Componente ${c.productoId} no encontrado`);
+    if (comp.is_kit) throw AppError.badRequest("KIT_NESTED", `El componente ${comp.nombre} es un kit: no se permiten kits anidados`);
+    componentes.push({
+      id: comp.id,
+      cantidad: c.cantidad,
+      precioCompra: Number(comp.precio_compra),
+      precioVenta: Number(comp.precio_venta),
+    });
+  }
+
+  const manoObra = input.manoObra ?? 0;
+  const precioCompra = componentes.reduce((acc, c) => acc + c.precioCompra * c.cantidad, 0);
+  const precioVenta = componentes.reduce((acc, c) => acc + c.precioVenta * c.cantidad, 0) + manoObra;
+
+  await withTransaction(async (client) => {
+    await repo.deleteBom(client, kitId);
+    for (const c of componentes) {
+      await repo.insertBomComponente(client, kitId, c.id, c.cantidad);
+    }
+    await repo.updateKitConfig(client, kitId, { precioCompra, precioVenta, manoObra });
+  });
+
+  return getBom(kitId);
 }
 
 export async function exportarCatalogo(res: Response, formato: "csv" | "xlsx") {
