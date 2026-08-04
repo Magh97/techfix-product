@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Pagination } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
@@ -18,12 +19,14 @@ export default function ClientesPage() {
   const toast = useToast();
   const qc = useQueryClient();
   const [busqueda, setBusqueda] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [nuevo, setNuevo] = useState(false);
   const [form, setForm] = useState({ nombre: "", telefono: "", correo: "", limiteCredito: "3000" });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["clientes", busqueda],
-    queryFn: () => clientesApi.list({ q: busqueda || undefined, pageSize: 50 }),
+    queryKey: ["clientes", busqueda, page, pageSize],
+    queryFn: () => clientesApi.list({ q: busqueda || undefined, page, pageSize }),
   });
 
   const create = useMutation({
@@ -52,7 +55,15 @@ export default function ClientesPage() {
         </Button>
       </div>
 
-      <Input placeholder="Buscar por nombre o teléfono…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="max-w-sm" />
+      <Input
+        placeholder="Buscar por nombre o teléfono…"
+        value={busqueda}
+        onChange={(e) => {
+          setBusqueda(e.target.value);
+          setPage(1);
+        }}
+        className="max-w-sm"
+      />
 
       <Card>
         <CardBody className="p-0">
@@ -84,6 +95,17 @@ export default function ClientesPage() {
               </tbody>
             </Table>
           )}
+          <Pagination
+            page={page}
+            totalPages={data?.meta.totalPages ?? 1}
+            totalItems={data?.meta.totalItems}
+            pageSize={pageSize}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+            onPageChange={setPage}
+          />
         </CardBody>
       </Card>
 

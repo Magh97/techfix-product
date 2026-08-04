@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardBody } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
@@ -15,10 +16,12 @@ const estadoVariant: Record<string, "success" | "warning" | "danger"> = {
 
 export default function GarantiasPage() {
   const [estado, setEstado] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["garantias", estado],
-    queryFn: () => garantiasApi.list({ estado: estado || undefined, pageSize: 100 }),
+    queryKey: ["garantias", estado, page, pageSize],
+    queryFn: () => garantiasApi.list({ estado: estado || undefined, page, pageSize }),
   });
 
   return (
@@ -27,7 +30,10 @@ export default function GarantiasPage() {
         <h1 className="text-2xl font-bold">Garantías</h1>
         <select
           value={estado}
-          onChange={(e) => setEstado(e.target.value)}
+          onChange={(e) => {
+            setEstado(e.target.value);
+            setPage(1);
+          }}
           className="h-10 rounded-md border border-border-line bg-surface px-2 text-sm"
         >
           <option value="">Todas</option>
@@ -67,6 +73,17 @@ export default function GarantiasPage() {
               </tbody>
             </Table>
           )}
+          <Pagination
+            page={page}
+            totalPages={data?.meta.totalPages ?? 1}
+            totalItems={data?.meta.totalItems}
+            pageSize={pageSize}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+            onPageChange={setPage}
+          />
         </CardBody>
       </Card>
     </div>

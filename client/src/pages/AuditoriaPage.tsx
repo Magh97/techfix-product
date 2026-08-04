@@ -119,7 +119,13 @@ export default function AuditoriaPage() {
               </tbody>
             </Table>
           )}
-          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={data?.meta.totalItems}
+            pageSize={20}
+            onPageChange={setPage}
+          />
         </CardBody>
       </Card>
     </div>
