@@ -22,6 +22,7 @@ import OrdenDetallePage from "@/pages/OrdenDetallePage";
 import OrdenesPage from "@/pages/OrdenesPage";
 import ProductosPage from "@/pages/ProductosPage";
 import ProveedoresPage from "@/pages/ProveedoresPage";
+import ReabastecimientoPage from "@/pages/ReabastecimientoPage";
 import ReportesPage from "@/pages/ReportesPage";
 import UsuariosPage from "@/pages/UsuariosPage";
 import VentasPage from "@/pages/VentasPage";
@@ -66,6 +67,7 @@ const router = createBrowserRouter([
       { path: "compras", element: <ComprasPage /> },
       { path: "compras/nueva", element: <NuevaCompraPage /> },
       { path: "compras/:id", element: <CompraDetallePage /> },
+      { path: "reabastecimiento", element: <ReabastecimientoPage /> },
       { path: "reportes", element: <ReportesPage /> },
     ],
   },

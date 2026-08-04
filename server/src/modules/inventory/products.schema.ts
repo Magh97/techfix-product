@@ -19,6 +19,8 @@ export const createProductSchema = z.object({
   precioCompra: z.number().nonnegative(),
   precioVenta: z.number().nonnegative(),
   stockMinimo: z.number().int().nonnegative().default(0),
+  stockMaximo: z.number().int().nonnegative().default(0),
+  proveedorFavoritoId: z.number().int().positive().optional().nullable(),
   catalogoId: z.number().int().positive().optional().nullable(),
   especificaciones: z.array(z.string()).optional(),
 });

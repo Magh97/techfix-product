@@ -1,6 +1,8 @@
 import { withTransaction } from "../../shared/db";
 import { AppError } from "../../shared/errors";
 import { registrarAuditoria } from "../../shared/auditoria";
+import { insertNotificacion } from "../notifications/notifications.repository";
+import { findProductById } from "../inventory/products.repository";
 import * as repo from "./compras.repository";
 import { findProveedorById } from "./proveedores.repository";
 import { ESTADO_COMPRA_LABEL, validarTransicionCompra, type Rol } from "./estadosCompra";
@@ -196,4 +198,197 @@ export async function cxp(estado?: string) {
     });
   }
   return items;
+}
+
+/* --- Reabastecimiento sugerido --- */
+
+interface LineaReabastecimiento {
+  productoId: number;
+  sku: string;
+  nombre: string;
+  stock: number;
+  stockMinimo: number;
+  stockMaximo: number;
+  sugerido: number;
+  precio: number;
+  subtotal: number;
+  esFavorito: boolean;
+  enOC: boolean;
+  folioOC: string | null;
+}
+
+export async function reabastecimiento() {
+  const rows = await repo.listarReabastecimiento();
+  const grupos = new Map<
+    number | null,
+    { proveedorId: number | null; proveedorNombre: string; totalEstimado: number; lineas: LineaReabastecimiento[] }
+  >();
+  for (const r of rows) {
+    const sugerido = Math.max(0, (r.stock_maximo > 0 ? r.stock_maximo : r.stock_minimo * 2) - r.stock);
+    if (sugerido <= 0) continue;
+    const precio = toNum(r.precio_compra);
+    const key = r.proveedor_id;
+    let g = grupos.get(key);
+    if (!g) {
+      g = { proveedorId: key, proveedorNombre: r.proveedor_nombre ?? "Sin proveedor", totalEstimado: 0, lineas: [] };
+      grupos.set(key, g);
+    }
+    g.lineas.push({
+      productoId: r.id,
+      sku: r.sku,
+      nombre: r.nombre,
+      stock: r.stock,
+      stockMinimo: r.stock_minimo,
+      stockMaximo: r.stock_maximo,
+      sugerido,
+      precio,
+      subtotal: sugerido * precio,
+      esFavorito: r.es_favorito,
+      enOC: !!r.en_oc_folio,
+      folioOC: r.en_oc_folio,
+    });
+    g.totalEstimado += sugerido * precio;
+  }
+  return { grupos: [...grupos.values()] };
+}
+
+/* --- Solicitudes de reabastecimiento --- */
+
+function mapSolicitud(s: repo.SolicitudRow) {
+  return {
+    id: s.id,
+    productoId: s.producto_id,
+    sku: s.sku,
+    productoNombre: s.nombre_producto,
+    cantidad: s.cantidad,
+    ordenId: s.orden_id,
+    ordenFolio: s.orden_folio,
+    solicitadoPor: s.solicitado_por,
+    solicitanteNombre: s.solicitante_nombre,
+    motivo: s.motivo,
+    estado: s.estado,
+    rechazoMotivo: s.rechazo_motivo,
+    compraId: s.compra_id,
+    compraFolio: s.compra_folio,
+    resueltoPor: s.resuelto_por,
+    createdAt: s.created_at,
+    resueltoAt: s.resuelto_at,
+  };
+}
+
+export async function crearSolicitud(
+  input: { productoId: number; cantidad: number; ordenId?: number | null; motivo?: string },
+  user: { id: number }
+) {
+  const producto = await findProductById(input.productoId);
+  if (!producto) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
+  if (producto.stock >= input.cantidad) {
+    throw AppError.business(
+      "STOCK_SUFICIENTE",
+      "Hay stock suficiente para esa cantidad; no se requiere reabastecimiento"
+    );
+  }
+  const id = await repo.insertSolicitud({
+    productoId: input.productoId,
+    cantidad: input.cantidad,
+    ordenId: input.ordenId ?? null,
+    solicitadoPor: user.id,
+    motivo: input.motivo ?? null,
+  });
+  await insertNotificacion({
+    clienteId: null,
+    ordenId: input.ordenId ?? null,
+    tipo: "NOT-05",
+    canal: "app",
+    estado: "enviado",
+    contenido: `Solicitud de refacción: ${input.cantidad} × ${producto.nombre} (${producto.sku})`,
+  });
+  const row = await repo.findSolicitudById(id!);
+  return mapSolicitud(row!);
+}
+
+export async function listarSolicitudes(f: { estado?: string; ordenId?: number; page: number; pageSize: number }) {
+  const limit = f.pageSize;
+  const offset = (f.page - 1) * limit;
+  const [rows, totalItems] = await Promise.all([
+    repo.listSolicitudes({ estado: f.estado, ordenId: f.ordenId, limit, offset }),
+    repo.countSolicitudes(f.estado, f.ordenId),
+  ]);
+  return {
+    data: rows.map(mapSolicitud),
+    meta: { page: f.page, pageSize: limit, totalItems, totalPages: Math.ceil(totalItems / limit) || 1 },
+  };
+}
+
+export async function aprobarSolicitudes(solicitudes: number[], user: { id: number }) {
+  const compras: { id: number; folio: string; proveedorId: number; proveedorNombre: string; lineas: number }[] = [];
+  const sinProveedor: number[] = [];
+  const noPendientes: number[] = [];
+  const porProveedor = new Map<number, { productoId: number; cantidad: number; precio: number; solicitudId: number }[]>();
+
+  for (const id of solicitudes) {
+    const s = await repo.findSolicitudById(id);
+    if (!s || s.estado !== "pendiente") {
+      noPendientes.push(id);
+      continue;
+    }
+    const prov = await repo.proveedorDeProducto(s.producto_id);
+    if (!prov?.proveedor_id) {
+      sinProveedor.push(id);
+      continue;
+    }
+    const producto = await findProductById(s.producto_id);
+    const precio = toNum(producto?.precio_compra);
+    if (!porProveedor.has(prov.proveedor_id)) porProveedor.set(prov.proveedor_id, []);
+    porProveedor.get(prov.proveedor_id)!.push({ productoId: s.producto_id, cantidad: s.cantidad, precio, solicitudId: id });
+  }
+
+  for (const [proveedorId, lineas] of porProveedor) {
+    const total = lineas.reduce((a, l) => a + l.cantidad * l.precio, 0);
+    if (total <= 0) {
+      lineas.forEach((l) => sinProveedor.push(l.solicitudId));
+      continue;
+    }
+    const compra = await crear(
+      {
+        proveedorId,
+        fechaVencimiento: null,
+        lineas: lineas.map((l) => ({ productoId: l.productoId, cantidad: l.cantidad, precioUnitario: l.precio })),
+      },
+      user
+    );
+    for (const l of lineas) {
+      await repo.resolverSolicitud(l.solicitudId, { estado: "aprobada", compraId: compra.id, resueltoPor: user.id });
+    }
+    compras.push({ id: compra.id, folio: compra.folio, proveedorId: compra.proveedorId, proveedorNombre: compra.proveedorNombre, lineas: lineas.length });
+  }
+
+  return { compras, sinProveedor, noPendientes };
+}
+
+export async function rechazarSolicitud(id: number, motivo: string, user: { id: number }) {
+  const s = await repo.findSolicitudById(id);
+  if (!s) throw AppError.notFound("SOLICITUD_NOT_FOUND", "Solicitud no encontrada");
+  if (s.estado !== "pendiente") {
+    throw AppError.conflict("SOLICITUD_NO_PENDIENTE", "Solo se pueden rechazar solicitudes pendientes");
+  }
+  await repo.resolverSolicitud(id, { estado: "rechazada", rechazoMotivo: motivo, resueltoPor: user.id });
+  return mapSolicitud((await repo.findSolicitudById(id))!);
+}
+
+export async function cancelarSolicitud(id: number, motivo: string, user: { id: number; rol: Rol }) {
+  const s = await repo.findSolicitudById(id);
+  if (!s) throw AppError.notFound("SOLICITUD_NOT_FOUND", "Solicitud no encontrada");
+  if (s.estado === "rechazada" || s.estado === "cancelada") {
+    throw AppError.conflict("SOLICITUD_CERRADA", "La solicitud ya está cerrada");
+  }
+  const esAdmin = user.rol === "admin";
+  if (!esAdmin) {
+    if (s.solicitado_por !== user.id) throw AppError.forbidden();
+    if (s.estado !== "pendiente") {
+      throw AppError.conflict("SOLICITUD_NO_PENDIENTE", "Solo puedes cancelar tu solicitud mientras esté pendiente");
+    }
+  }
+  await repo.resolverSolicitud(id, { estado: "cancelada", rechazoMotivo: motivo, resueltoPor: user.id });
+  return mapSolicitud((await repo.findSolicitudById(id))!);
 }

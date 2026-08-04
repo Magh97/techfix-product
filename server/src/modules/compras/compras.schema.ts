@@ -26,3 +26,29 @@ export const listComprasQuery = z.object({
 });
 
 export const compraIdParams = z.object({ compraId: z.coerce.number().int().positive() });
+
+/* --- Solicitudes de reabastecimiento --- */
+
+export const crearSolicitudSchema = z.object({
+  productoId: z.number().int().positive(),
+  cantidad: z.number().int().positive(),
+  ordenId: z.number().int().positive().optional().nullable(),
+  motivo: z.string().max(500).optional(),
+});
+
+export const listSolicitudesQuery = z.object({
+  estado: z.enum(["pendiente", "aprobada", "rechazada", "cancelada"]).optional(),
+  ordenId: z.coerce.number().int().positive().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+});
+
+export const aprobarSolicitudesSchema = z.object({
+  solicitudes: z.array(z.number().int().positive()).min(1),
+});
+
+export const resolverSolicitudSchema = z.object({
+  motivo: z.string().min(1).max(500),
+});
+
+export const solicitudIdParams = z.object({ solicitudId: z.coerce.number().int().positive() });

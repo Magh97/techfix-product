@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Bell, CheckCircle2, PenLine, Plus, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, Bell, CheckCircle2, PackagePlus, PenLine, Plus, Trash2, Wrench } from "lucide-react";
 import { SignatureCanvas } from "@/components/orden/SignatureCanvas";
 import { StatusBadge } from "@/components/orden/StatusBadge";
 import { Stepper } from "@/components/orden/Stepper";
@@ -12,9 +12,10 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { getSessionUser } from "@/lib/auth";
-import { ordenesApi, productsApi } from "@/lib/api";
+import { comprasApi, ordenesApi, productsApi } from "@/lib/api";
 import { fechaCorta, mxn } from "@/lib/utils";
 
 export default function OrdenDetallePage() {
@@ -26,6 +27,7 @@ export default function OrdenDetallePage() {
   const rol = usuario?.rol ?? "vendedor";
 
   const [dialog, setDialog] = useState<null | "diagnostico" | "cotizacion" | "consumo" | "manoObra" | "entrega" | "cancelar">(null);
+  const [solicitarAbierto, setSolicitarAbierto] = useState(false);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["orden", ordenId],
@@ -34,6 +36,24 @@ export default function OrdenDetallePage() {
   });
 
   const orden = data?.data;
+
+  const solicitudes = useQuery({
+    queryKey: ["solicitudes-orden", ordenId],
+    queryFn: () => comprasApi.solicitudes.list({ ordenId, pageSize: 100 }),
+    enabled: Number.isFinite(ordenId),
+  });
+
+  function cancelarSolicitud(s: { id: number }) {
+    const motivo = window.prompt("Justificación de la cancelación:")?.trim();
+    if (!motivo) return;
+    comprasApi.solicitudes
+      .cancelar(s.id, motivo)
+      .then(() => {
+        toast.success("Solicitud cancelada");
+        solicitudes.refetch();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"));
+  }
 
   function invalidar() {
     qc.invalidateQueries({ queryKey: ["orden", ordenId] });
@@ -80,7 +100,15 @@ export default function OrdenDetallePage() {
   const reservadas = orden.detalle.filter((d) => d.estadoLinea === "reservada");
   const esTecnico = rol === "tecnico";
   const esVendedor = rol === "vendedor" || rol === "admin";
+  const puedeSolicitar = esTecnico || rol === "admin";
   const activo = !["entregado", "cancelado"].includes(orden.estado);
+
+  const estadoSolicitud: Record<string, "default" | "success" | "warning" | "danger"> = {
+    pendiente: "warning",
+    aprobada: "success",
+    rechazada: "danger",
+    cancelada: "default",
+  };
 
   return (
     <div className="space-y-4">
@@ -250,12 +278,73 @@ export default function OrdenDetallePage() {
         </CardBody>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle>Refacciones solicitadas</CardTitle>
+            {puedeSolicitar && (
+              <Button size="sm" onClick={() => setSolicitarAbierto(true)}>
+                <PackagePlus className="h-4 w-4" /> Solicitar refacción
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardBody>
+          {solicitudes.isLoading ? (
+            <div className="grid place-items-center p-6">
+              <Spinner />
+            </div>
+          ) : (solicitudes.data?.data.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted">Sin solicitudes de refacción para esta orden.</p>
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Producto</TH>
+                  <TH className="text-right">Cant.</TH>
+                  <TH>Estado</TH>
+                  <TH>Motivo</TH>
+                  <TH>Solicitante</TH>
+                  <TH />
+                </TR>
+              </THead>
+              <tbody>
+                {solicitudes.data?.data.map((s) => (
+                  <TR key={s.id}>
+                    <TD>
+                      <p>{s.productoNombre}</p>
+                      <p className="font-mono text-xs text-muted">{s.sku}</p>
+                    </TD>
+                    <TD className="text-right">{s.cantidad}</TD>
+                    <TD>
+                      <Badge variant={estadoSolicitud[s.estado] ?? "default"}>{s.estado}</Badge>
+                    </TD>
+                    <TD className="text-muted">{s.motivo ?? "—"}</TD>
+                    <TD>{s.solicitanteNombre}</TD>
+                    <TD className="text-right">
+                      {s.estado === "pendiente" && puedeSolicitar && (
+                        <Button size="sm" variant="outline" onClick={() => cancelarSolicitud(s)}>
+                          Cancelar
+                        </Button>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
+
       {dialog === "diagnostico" && <DiagnosticoDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "cotizacion" && <CotizacionDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "consumo" && <ConsumoDialog ordenId={ordenId} piezas={reservadas} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "manoObra" && <ManoObraDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "entrega" && <EntregaDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "cancelar" && <CancelarDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
+      {solicitarAbierto && (
+        <SolicitarRefaccionDialog ordenId={ordenId} onClose={() => { setSolicitarAbierto(false); solicitudes.refetch(); }} />
+      )}
     </div>
   );
 }
@@ -491,6 +580,63 @@ function CancelarDialog({ ordenId, onClose, onDone }: { ordenId: number; onClose
         <Button variant="danger" disabled={!motivo.trim() || m.isPending} onClick={() => m.mutate(() => ordenesApi.cancelar(ordenId, motivo))}>
           Cancelar orden
         </Button>
+      </div>
+    </Dialog>
+  );
+}
+
+function SolicitarRefaccionDialog({ ordenId, onClose }: { ordenId: number; onClose: () => void }) {
+  const toast = useToast();
+  const { data: productos } = useQuery({ queryKey: ["productos", "solicitud"], queryFn: () => productsApi.list({ pageSize: 100 }) });
+  const [pid, setPid] = useState("");
+  const [cantidad, setCantidad] = useState("1");
+  const [motivo, setMotivo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  function enviar() {
+    if (!pid || !Number(cantidad) || Number(cantidad) < 1) {
+      toast.error("Selecciona producto y cantidad");
+      return;
+    }
+    setEnviando(true);
+    comprasApi.solicitudes
+      .create({ productoId: Number(pid), cantidad: Number(cantidad), ordenId, motivo: motivo || undefined })
+      .then(() => {
+        toast.success("Solicitud enviada al administrador");
+        onClose();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"))
+      .finally(() => setEnviando(false));
+  }
+
+  return (
+    <Dialog open onClose={onClose} title="Solicitar refacción">
+      <div className="space-y-3">
+        <div>
+          <Label>Producto *</Label>
+          <select value={pid} onChange={(e) => setPid(e.target.value)} className="h-10 w-full rounded-md border border-border-line bg-surface px-3 text-sm">
+            <option value="">Seleccionar…</option>
+            {productos?.data.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nombre} · stock {p.stock}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Label>Cantidad *</Label>
+          <Input type="number" min={1} step={1} value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
+        </div>
+        <div>
+          <Label>Motivo (opcional)</Label>
+          <Input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej. falta stock para continuar la reparación" />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button disabled={enviando || !pid || !Number(cantidad)} onClick={enviar}>
+            {enviando ? "Enviando…" : "Enviar solicitud"}
+          </Button>
+        </div>
       </div>
     </Dialog>
   );

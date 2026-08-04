@@ -1345,6 +1345,186 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(n5.body.error.code).toBe("PROFUNDIDAD_MAXIMA");
   });
 
+  it("REABASTECIMIENTO: sugiere por proveedor (favorito → último → sin proveedor) y excluye kits/OC", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+
+    const provFav = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `Fav-${suf}` })).body.data.id;
+    const provLast = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `Last-${suf}` })).body.data.id;
+
+    async function crear(sku: string, stock: number, stockMin: number, stockMax = 0) {
+      const r = await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku, nombre: sku, precioCompra: 10, precioVenta: 20, stockMinimo: stockMin, stockMaximo: stockMax });
+      await pool.query("UPDATE productos SET stock = $2 WHERE id = $1", [r.body.data.id, stock]);
+      return r.body.data.id;
+    }
+
+    // A: bajo mínimo con proveedor favorito
+    const a = await crear(`REA-FAV-${suf}`, 1, 5, 8);
+    await pool.query("UPDATE productos SET proveedor_favorito_id = $1 WHERE id = $2", [provFav, a]);
+
+    // B: bajo mínimo sin favorito pero con último proveedor (OC recibida)
+    const b = await crear(`REA-LAST-${suf}`, 0, 3);
+    const ocB = await request(app).post("/api/v1/compras").set(auth).send({ proveedorId: provLast, lineas: [{ productoId: b, cantidad: 2, precioUnitario: 10 }] });
+    await request(app).post(`/api/v1/compras/${ocB.body.data.id}/enviar`).set(auth);
+    await request(app).post(`/api/v1/compras/${ocB.body.data.id}/recibir`).set(auth);
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [b]);
+
+    // C: sobre mínimo → excluido
+    const c = await crear(`REA-OK-${suf}`, 20, 5);
+
+    // D: kit bajo mínimo → excluido
+    const kit = await crear(`REA-KIT-${suf}`, 0, 2);
+    await pool.query("UPDATE productos SET is_kit = true WHERE id = $1", [kit]);
+
+    // E: bajo mínimo con OC activa (borrador)
+    const e = await crear(`REA-OC-${suf}`, 0, 3, 6);
+    await pool.query("UPDATE productos SET proveedor_favorito_id = $1 WHERE id = $2", [provFav, e]);
+    await request(app).post("/api/v1/compras").set(auth).send({ proveedorId: provFav, lineas: [{ productoId: e, cantidad: 3, precioUnitario: 10 }] });
+
+    const res = await request(app).get("/api/v1/compras/reabastecimiento").set(auth);
+    expect(res.status).toBe(200);
+    const grupos = res.body.data.grupos;
+
+    const gFav = grupos.find((g: { proveedorId: number }) => g.proveedorId === provFav);
+    expect(gFav).toBeTruthy();
+    const fav = gFav.lineas.find((l: { productoId: number }) => l.productoId === a);
+    expect(fav.sugerido).toBe(8 - 1);
+    expect(fav.enOC).toBe(false);
+    expect(fav.esFavorito).toBe(true);
+    const enOC = gFav.lineas.find((l: { productoId: number }) => l.productoId === e);
+    expect(enOC.enOC).toBe(true);
+    expect(enOC.folioOC).toBeTruthy();
+
+    const gLast = grupos.find((g: { proveedorId: number }) => g.proveedorId === provLast);
+    const last = gLast.lineas.find((l: { productoId: number }) => l.productoId === b);
+    expect(last.sugerido).toBe(3 * 2);
+    expect(last.esFavorito).toBe(false);
+
+    const todos = grupos.flatMap((g: { lineas: { productoId: number }[] }) => g.lineas);
+    expect(todos.some((l: { productoId: number }) => l.productoId === c)).toBe(false);
+    expect(todos.some((l: { productoId: number }) => l.productoId === kit)).toBe(false);
+
+    // RBAC: vendedor no puede
+    const v = await request(app).get("/api/v1/compras/reabastecimiento").set({ Authorization: `Bearer ${vendedorToken}` });
+    expect(v.status).toBe(403);
+  });
+
+  it("SOLICITUDES: técnico crea (regla de stock), admin aprueba creando OC y rechaza", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authT = { Authorization: `Bearer ${tecnicoToken}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    const suf = Date.now();
+
+    const prov = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `SolProv-${suf}` })).body.data.id;
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `SOL-${suf}`, nombre: "Refacción", precioCompra: 15, precioVenta: 25, stockMinimo: 2, stockMaximo: 4 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 0, proveedor_favorito_id = $2 WHERE id = $1", [prod, prov]);
+
+    // Vendedor no puede crear
+    const v = await request(app).post("/api/v1/compras/solicitudes").set(authV).send({ productoId: prod, cantidad: 2 });
+    expect(v.status).toBe(403);
+
+    // Con stock suficiente → 422
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [prod]);
+    const conStock = await request(app).post("/api/v1/compras/solicitudes").set(authT).send({ productoId: prod, cantidad: 2 });
+    expect(conStock.status).toBe(422);
+    expect(conStock.body.error.code).toBe("STOCK_SUFICIENTE");
+
+    // Técnico crea (sin stock)
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [prod]);
+    const creada = await request(app)
+      .post("/api/v1/compras/solicitudes")
+      .set(authT)
+      .send({ productoId: prod, cantidad: 2, motivo: "Falta para orden" });
+    expect(creada.status).toBe(201);
+    const solId = creada.body.data.id;
+    expect(creada.body.data.estado).toBe("pendiente");
+
+    // Técnico lista sin orden → 400
+    const sinOrden = await request(app).get("/api/v1/compras/solicitudes").set(authT);
+    expect(sinOrden.status).toBe(400);
+
+    // Admin lista
+    const lista = await request(app).get("/api/v1/compras/solicitudes?estado=pendiente").set(auth);
+    expect(lista.status).toBe(200);
+    expect(lista.body.data.some((s: { id: number }) => s.id === solId)).toBe(true);
+
+    // NOT-05 registrada
+    const notif = await pool.query("SELECT 1 FROM notificaciones WHERE tipo = 'NOT-05' ORDER BY id DESC LIMIT 1");
+    expect(notif.rowCount).toBeGreaterThan(0);
+
+    // Aprobar → crea OC y marca aprobada
+    const aprobada = await request(app).post("/api/v1/compras/solicitudes/aprobar").set(auth).send({ solicitudes: [solId] });
+    expect(aprobada.status).toBe(200);
+    expect(aprobada.body.data.compras.length).toBe(1);
+    const estado = await pool.query("SELECT estado, compra_id FROM solicitudes_reabastecimiento WHERE id = $1", [solId]);
+    expect(estado.rows[0]?.estado).toBe("aprobada");
+    expect(estado.rows[0]?.compra_id).toBeTruthy();
+
+    // Rechazar otra solicitud
+    const sol2 = (await request(app).post("/api/v1/compras/solicitudes").set(authT).send({ productoId: prod, cantidad: 1 })).body.data.id;
+    const rechazada = await request(app).post(`/api/v1/compras/solicitudes/${sol2}/rechazar`).set(auth).send({ motivo: "Ya cubierta" });
+    expect(rechazada.status).toBe(200);
+    expect(rechazada.body.data.estado).toBe("rechazada");
+
+    // Técnico no puede aprobar
+    const noPermiso = await request(app).post("/api/v1/compras/solicitudes/aprobar").set(authT).send({ solicitudes: [sol2] });
+    expect(noPermiso.status).toBe(403);
+  });
+
+  it("SOLICITUDES: sin proveedor queda pendiente al aprobar", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authT = { Authorization: `Bearer ${tecnicoToken}` };
+    const suf = Date.now();
+
+    const prod = (
+      await request(app).post("/api/v1/productos").set(auth).send({ categoriaId: 1, sku: `SOLSP-${suf}`, nombre: "R sin prov", precioCompra: 5, precioVenta: 10 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [prod]);
+
+    const s = (await request(app).post("/api/v1/compras/solicitudes").set(authT).send({ productoId: prod, cantidad: 1 })).body.data.id;
+    const res = await request(app).post("/api/v1/compras/solicitudes/aprobar").set(auth).send({ solicitudes: [s] });
+    expect(res.status).toBe(200);
+    expect(res.body.data.sinProveedor).toContain(s);
+    const estado = await pool.query("SELECT estado FROM solicitudes_reabastecimiento WHERE id = $1", [s]);
+    expect(estado.rows[0]?.estado).toBe("pendiente");
+  });
+
+  it("SOLICITUDES: cancelación por dueño (pendiente) y por admin", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authT = { Authorization: `Bearer ${tecnicoToken}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    const suf = Date.now();
+
+    const prod = (
+      await request(app).post("/api/v1/productos").set(auth).send({ categoriaId: 1, sku: `SOLC-${suf}`, nombre: "R", precioCompra: 5, precioVenta: 10 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [prod]);
+
+    // Dueño (técnico) cancela su solicitud pendiente
+    const s1 = (await request(app).post("/api/v1/compras/solicitudes").set(authT).send({ productoId: prod, cantidad: 2, motivo: "x" })).body.data.id;
+    const can = await request(app).post(`/api/v1/compras/solicitudes/${s1}/cancelar`).set(authT).send({ motivo: "Ya no la necesito" });
+    expect(can.status).toBe(200);
+    expect(can.body.data.estado).toBe("cancelada");
+
+    // Vendedor no puede cancelar
+    const s2 = (await request(app).post("/api/v1/compras/solicitudes").set(authT).send({ productoId: prod, cantidad: 1 })).body.data.id;
+    const vend = await request(app).post(`/api/v1/compras/solicitudes/${s2}/cancelar`).set(authV).send({ motivo: "x" });
+    expect(vend.status).toBe(403);
+
+    // Admin cancela cualquier solicitud
+    const adminCan = await request(app).post(`/api/v1/compras/solicitudes/${s2}/cancelar`).set(auth).send({ motivo: "La cancela admin" });
+    expect(adminCan.status).toBe(200);
+    expect(adminCan.body.data.estado).toBe("cancelada");
+  });
+
   it("USUARIOS: alta, login, edición, desactivación y RBAC", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const authV = { Authorization: `Bearer ${vendedorToken}` };

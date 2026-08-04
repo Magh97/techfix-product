@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cpu, Download, FileSpreadsheet, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Cpu, Download, FileSpreadsheet, PackagePlus, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
-import { catalogosApi, productsApi } from "@/lib/api";
+import { catalogosApi, productsApi, proveedoresApi, comprasApi } from "@/lib/api";
 import { getSessionUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import type { CreateProducto, ImportResult, Movimiento, Producto, Sugerencias } from "@/lib/types";
@@ -24,7 +24,9 @@ const labelCategoria = (s: string) =>
 export default function ProductosPage() {
   const toast = useToast();
   const qc = useQueryClient();
-  const esAdmin = getSessionUser()?.rol === "admin";
+  const rol = getSessionUser()?.rol;
+  const esAdmin = rol === "admin";
+  const puedeSolicitar = rol === "admin" || rol === "tecnico";
   const [busqueda, setBusqueda] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -45,6 +47,9 @@ export default function ProductosPage() {
   const [movimientos, setMovimientos] = useState<Movimiento[] | null>(null);
   const [filtroRuta, setFiltroRuta] = useState<number[]>([]);
   const [tagInput, setTagInput] = useState("");
+  const [solicitarProducto, setSolicitarProducto] = useState<Producto | null>(null);
+  const [solicitud, setSolicitud] = useState({ cantidad: "1", motivo: "" });
+  const [solicitando, setSolicitando] = useState(false);
   const [form, setForm] = useState({
     sku: "",
     nombre: "",
@@ -56,6 +61,8 @@ export default function ProductosPage() {
     precioCompra: "",
     precioVenta: "",
     stockMinimo: "0",
+    stockMaximo: "0",
+    proveedorFavoritoId: "",
   });
 
   const { data, isLoading, isError, error } = useQuery({
@@ -68,6 +75,13 @@ export default function ProductosPage() {
         pageSize,
       }),
   });
+
+  const proveedoresQuery = useQuery({
+    queryKey: ["proveedores-lista"],
+    queryFn: () => proveedoresApi.list({ pageSize: 100 }),
+    enabled: abierto,
+  });
+  const proveedores = proveedoresQuery.data?.data ?? [];
 
   const catalogosQuery = useQuery({ queryKey: ["catalogos-lista"], queryFn: catalogosApi.list });
   const catalogos = catalogosQuery.data?.data ?? [];
@@ -114,7 +128,7 @@ export default function ProductosPage() {
     onSuccess: () => {
       toast.success("Producto creado");
       setAbierto(false);
-      setForm({ sku: "", nombre: "", codigoBarras: "", marca: "", modelo: "", catalogoId: "", especificaciones: [], precioCompra: "", precioVenta: "", stockMinimo: "0" });
+      setForm({ sku: "", nombre: "", codigoBarras: "", marca: "", modelo: "", catalogoId: "", especificaciones: [], precioCompra: "", precioVenta: "", stockMinimo: "0", stockMaximo: "0", proveedorFavoritoId: "" });
       setTagInput("");
       qc.invalidateQueries({ queryKey: ["productos"] });
     },
@@ -134,9 +148,29 @@ export default function ProductosPage() {
       precioCompra: Number(form.precioCompra),
       precioVenta: Number(form.precioVenta),
       stockMinimo: Number(form.stockMinimo || 0),
+      stockMaximo: Number(form.stockMaximo || 0),
+      proveedorFavoritoId: form.proveedorFavoritoId ? Number(form.proveedorFavoritoId) : null,
       catalogoId: form.catalogoId ? Number(form.catalogoId) : null,
       especificaciones,
     });
+  }
+
+  function enviarSolicitud() {
+    if (!solicitarProducto) return;
+    setSolicitando(true);
+    comprasApi.solicitudes
+      .create({
+        productoId: solicitarProducto.id,
+        cantidad: Number(solicitud.cantidad) || 1,
+        motivo: solicitud.motivo || undefined,
+      })
+      .then(() => {
+        toast.success("Solicitud enviada al administrador");
+        setSolicitarProducto(null);
+        setSolicitud({ cantidad: "1", motivo: "" });
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"))
+      .finally(() => setSolicitando(false));
   }
 
   function verSustitutos(p: Producto) {
@@ -389,6 +423,11 @@ export default function ProductosPage() {
                       <Button size="sm" variant="outline" className="ml-1" onClick={() => verMovimientos(p)}>
                         Movimientos
                       </Button>
+                      {puedeSolicitar && p.stock === 0 && (
+                        <Button size="sm" variant="outline" className="ml-1" onClick={() => { setSolicitarProducto(p); setSolicitud({ cantidad: "1", motivo: "" }); }}>
+                          <PackagePlus className="h-3.5 w-3.5" /> Solicitar
+                        </Button>
+                      )}
                       {esAdmin && (
                         <Button size="sm" variant="outline" className="ml-1" onClick={() => abrirBom(p)}>
                           <Cpu className="h-3.5 w-3.5" /> Componentes
@@ -521,6 +560,41 @@ export default function ProductosPage() {
                 onChange={(e) => setForm({ ...form, precioVenta: e.target.value })}
               />
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Stock mínimo</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.stockMinimo}
+                onChange={(e) => setForm({ ...form, stockMinimo: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Stock máximo (reposición)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.stockMaximo}
+                onChange={(e) => setForm({ ...form, stockMaximo: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Proveedor favorito</Label>
+            <select
+              value={form.proveedorFavoritoId}
+              onChange={(e) => setForm({ ...form, proveedorFavoritoId: e.target.value })}
+              className="h-10 w-full rounded-md border border-border-line bg-surface px-3 text-sm"
+            >
+              <option value="">Sin proveedor favorito</option>
+              {proveedores.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nombre}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setAbierto(false)}>
@@ -814,6 +888,28 @@ export default function ProductosPage() {
             <Button variant="outline" onClick={() => setAjustarProducto(null)}>Cancelar</Button>
             <Button disabled={ajustando || !ajuste.cantidad || !ajuste.motivo} onClick={guardarAjuste}>
               {ajustando ? "Ajustando…" : "Ajustar"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <Dialog open={!!solicitarProducto} onClose={() => setSolicitarProducto(null)} title={`Solicitar refacción · ${solicitarProducto?.nombre ?? ""}`}>
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            Sin stock disponible (<strong>0</strong>). El administrador revisará la solicitud para generar la orden de compra.
+          </p>
+          <div>
+            <Label>Cantidad *</Label>
+            <Input type="number" min={1} step={1} value={solicitud.cantidad} onChange={(e) => setSolicitud({ ...solicitud, cantidad: e.target.value })} />
+          </div>
+          <div>
+            <Label>Motivo (opcional)</Label>
+            <Input value={solicitud.motivo} onChange={(e) => setSolicitud({ ...solicitud, motivo: e.target.value })} placeholder="Ej. refacción requerida para una orden" />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setSolicitarProducto(null)}>Cancelar</Button>
+            <Button disabled={solicitando || !solicitud.cantidad} onClick={enviarSolicitud}>
+              {solicitando ? "Enviando…" : "Enviar solicitud"}
             </Button>
           </div>
         </div>

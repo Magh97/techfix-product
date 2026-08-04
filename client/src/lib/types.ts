@@ -25,11 +25,55 @@ export interface Producto {
   precioVenta: number;
   stock: number;
   stockMinimo: number;
+  stockMaximo: number;
+  proveedorFavoritoId: number | null;
   lowStock: boolean;
   isKit: boolean;
   manoObra: number;
   isActive: boolean;
   kitDisponible: number | null;
+}
+
+export interface ReabastecimientoLinea {
+  productoId: number;
+  sku: string;
+  nombre: string;
+  stock: number;
+  stockMinimo: number;
+  stockMaximo: number;
+  sugerido: number;
+  precio: number;
+  subtotal: number;
+  esFavorito: boolean;
+  enOC: boolean;
+  folioOC: string | null;
+}
+
+export interface ReabastecimientoGrupo {
+  proveedorId: number | null;
+  proveedorNombre: string;
+  totalEstimado: number;
+  lineas: ReabastecimientoLinea[];
+}
+
+export interface SolicitudReabastecimiento {
+  id: number;
+  productoId: number;
+  sku: string;
+  productoNombre: string;
+  cantidad: number;
+  ordenId: number | null;
+  ordenFolio: string | null;
+  solicitadoPor: number;
+  solicitanteNombre: string;
+  motivo: string | null;
+  estado: string;
+  rechazoMotivo: string | null;
+  compraId: number | null;
+  compraFolio: string | null;
+  resueltoPor: number | null;
+  createdAt: string;
+  resueltoAt: string | null;
 }
 
 export interface Paginated<T> {
@@ -59,6 +103,8 @@ export interface CreateProducto {
   precioCompra: number;
   precioVenta: number;
   stockMinimo?: number;
+  stockMaximo?: number;
+  proveedorFavoritoId?: number | null;
   catalogoId?: number | null;
   especificaciones?: string[];
 }

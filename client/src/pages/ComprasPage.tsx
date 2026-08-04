@@ -39,9 +39,14 @@ export default function ComprasPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Órdenes de compra</h1>
         {esAdmin && (
-          <Button onClick={() => navigate("/compras/nueva")}>
-            <Plus className="h-4 w-4" /> Nueva compra
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate("/reabastecimiento")}>
+              Reabastecer
+            </Button>
+            <Button onClick={() => navigate("/compras/nueva")}>
+              <Plus className="h-4 w-4" /> Nueva compra
+            </Button>
+          </div>
         )}
       </div>
 

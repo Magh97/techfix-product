@@ -16,6 +16,8 @@ export interface ProductRow {
   precio_venta: string;
   stock: number;
   stock_minimo: number;
+  stock_maximo: number;
+  proveedor_favorito_id: number | null;
   is_kit: boolean;
   mano_obra: string;
   is_active: boolean;
@@ -24,7 +26,7 @@ export interface ProductRow {
 
 const SELECT = `
   SELECT p.id, p.sku, p.codigo_barras, p.nombre, p.marca, p.modelo, p.categoria_id,
-         cat.nombre AS categoria, p.catalogo_id, p.especificaciones, p.precio_compra, p.precio_venta, p.stock, p.stock_minimo, p.is_kit, p.mano_obra, p.is_active,
+         cat.nombre AS categoria, p.catalogo_id, p.especificaciones, p.precio_compra, p.precio_venta, p.stock, p.stock_minimo, p.stock_maximo, p.proveedor_favorito_id, p.is_kit, p.mano_obra, p.is_active,
          CASE WHEN p.is_kit THEN (
            SELECT MIN(FLOOR(comp.stock / b.cantidad))
            FROM producto_bom b
@@ -107,6 +109,8 @@ export interface CreateProductInput {
   precioCompra: number;
   precioVenta: number;
   stockMinimo: number;
+  stockMaximo?: number;
+  proveedorFavoritoId?: number | null;
   catalogoId?: number | null;
   especificaciones?: string[];
 }
@@ -125,6 +129,14 @@ function insertColumns(input: CreateProductInput) {
     0,
     input.stockMinimo,
   ];
+  if (input.stockMaximo !== undefined) {
+    cols.push("stock_maximo");
+    vals.push(input.stockMaximo);
+  }
+  if (input.proveedorFavoritoId !== undefined) {
+    cols.push("proveedor_favorito_id");
+    vals.push(input.proveedorFavoritoId ?? null);
+  }
   if (input.catalogoId !== undefined) {
     cols.push("catalogo_id");
     vals.push(input.catalogoId ?? null);
