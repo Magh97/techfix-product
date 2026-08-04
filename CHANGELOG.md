@@ -1,0 +1,57 @@
+# Changelog
+
+Todos los cambios notables de este proyecto se documentan aquí.
+
+El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
+
+---
+
+## [0.1.0] — 2026-08-03
+
+### Added
+
+**Infraestructura**
+- Monorepo pnpm (workspaces `server` + `client`), TypeScript base y lockfile (`71d4529`)
+- API Express 5 con migraciones SQL propias, seed y tests (Vitest) (`19a8a95`, `741d719`)
+- SPA React 19 (Vite + Tailwind 4 + TanStack Query) con design system propio (`e8da587`, `8246674`, `08bf97a`)
+- Docker Compose + Dockerfiles multi-stage (`d308482`)
+- CI con GitHub Actions: lint, typecheck, migrate, seed, test y build (`7ae911f`)
+
+**Autenticación y catálogo**
+- Auth con JWT (access + refresh) y roles admin/vendedor/técnico (`563ed1c`, `8953376`)
+- CRUD de productos con SKU, código de barras, precios y stock (`563ed1c`)
+- CRUD de clientes con historial, saldo y preferencias de contacto (`cc77e0c`)
+
+**Servicios técnicos**
+- Órdenes de servicio con máquina de estados (pendiente → diagnóstico → cotizado → reparación → listo → entregado) (`d48b7a6`)
+- Folios correlativos por año, diagnóstico, cotizaciones, reserva/consumo de stock y garantía de servicio (`d48b7a6`)
+- Worker horario que marca automáticamente las órdenes retrasadas (US-SER-09) (`b1786f1`)
+
+**Ventas y finanzas**
+- Punto de venta (contado/crédito), abonos, cancelación y devolución con reversión de inventario (`cc77e0c`)
+- Ticket de venta en pantalla (US-VEN-09: impresión ESC/POS pendiente) (`30699b9`)
+- Caja: apertura, corte, cierre con arqueo, ingresos/egresos y cuentas por cobrar (`cc77e0c`)
+
+**Compras**
+- Proveedores, órdenes de compra (borrador → enviada → recibida), entrada de mercancía y CxP (`387fd5c`)
+
+**Notificaciones**
+- Envío de notificaciones por correo para NOT-02 (equipo listo) y NOT-03 (cotización) con auditoría en BD y plantillas configurables (`516329b`)
+- Simulación de envío en desarrollo sin SMTP configurado
+
+**Frontend**
+- Páginas: login, dashboard, productos, órdenes, POS, clientes, caja/finanzas, compras y proveedores (`08bf97a`, `ecb0549`, `30699b9`, `db7ea34`)
+- Alerta visual de stock bajo en el catálogo (US-INV-04) (`bb23447`)
+
+**Documentación y diseño**
+- Planeación, backlog, reglas de negocio, arquitectura C4, modelo de datos, diseño de API y ADRs (`b0c2e3a`, `9c0cb14`, `dd3082c`, `bd2fea6`, `62c343b`)
+- Guías UI/UX, documentación agent-optimized y wireframes navegables (`41d6bd9`, `62a886c`, `2c95d41`, `82cd8ba`)
+
+### Fixed
+- Configuración de pnpm 11 para permitir build scripts de esbuild (`235f46a`)
+- `retrasada` se recalcula al cambiar estado de una orden, evitando resetearla en órdenes aún vencidas (`b1786f1`)
+
+### Test
+- Tests de integración: ciclo de orden de servicio, liberación de reservas, POS, caja, compras y CxP (`741d719`, `2f555de`, `fd23c7d`, `3e78d6b`)
+- Tests de notificaciones: plantillas, mailer simulado y flujo NOT-02/NOT-03 (`244dede`)
+- Test del worker de retrasos (`f9eea58`)
