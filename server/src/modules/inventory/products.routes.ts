@@ -1,12 +1,21 @@
 import { Router } from "express";
+import multer from "multer";
 import { created, ok, paginated } from "../../shared/http";
+import { AppError } from "../../shared/errors";
 import { requireAuth, requireRole } from "../../shared/middleware/auth";
 import { getValidated, validate } from "../../shared/validation";
 import type { CreateProductInput } from "./products.repository";
 import { createProductSchema, exportProductosQuery, listProductsQuery, productIdParams, updateProductSchema } from "./products.schema";
+import { plantillaQuerySchema } from "./import.schema";
+import * as importService from "./import.service";
 import * as service from "./products.service";
 
 export const productsRouter = Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 productsRouter.use(requireAuth);
 
@@ -37,6 +46,16 @@ productsRouter.get("/por-codigo/:codigo", async (req, res) => {
 productsRouter.get("/exportar", validate(exportProductosQuery, "query"), async (req, res) => {
   const { formato } = getValidated<{ formato: "csv" | "xlsx" }>(req, "query");
   await service.exportarCatalogo(res, formato);
+});
+
+productsRouter.get("/plantilla", validate(plantillaQuerySchema, "query"), async (req, res) => {
+  const { formato } = getValidated<{ formato: "csv" | "xlsx" }>(req, "query");
+  await importService.descargarPlantilla(res, formato);
+});
+
+productsRouter.post("/importar", requireRole("admin"), upload.single("archivo"), async (req, res) => {
+  if (!req.file) throw AppError.badRequest("ARCHIVO_REQUERIDO", "Se requiere un archivo CSV o XLSX");
+  ok(res, await importService.importarProductos(req.file.buffer, req.file.originalname));
 });
 
 productsRouter.post("/", requireRole("admin"), validate(createProductSchema), async (req, res) => {

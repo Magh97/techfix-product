@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FileSpreadsheet, Plus } from "lucide-react";
+import { Download, FileSpreadsheet, Plus, Upload } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { productsApi } from "@/lib/api";
-import type { CreateProducto } from "@/lib/types";
+import type { CreateProducto, ImportResult } from "@/lib/types";
 
 const CATS: Record<string, string> = {
   componente: "Componente",
@@ -28,6 +28,9 @@ export default function ProductosPage() {
   const qc = useQueryClient();
   const [busqueda, setBusqueda] = useState("");
   const [abierto, setAbierto] = useState(false);
+  const [importAbierto, setImportAbierto] = useState(false);
+  const [importando, setImportando] = useState(false);
+  const [resultado, setResultado] = useState<ImportResult | null>(null);
   const [form, setForm] = useState({
     sku: "",
     nombre: "",
@@ -78,6 +81,20 @@ export default function ProductosPage() {
       .catch((e) => toast.error("Error al exportar", e instanceof Error ? e.message : ""));
   }
 
+  function importar(archivo: File) {
+    setImportando(true);
+    setResultado(null);
+    productsApi
+      .importar(archivo)
+      .then((r) => {
+        setResultado(r);
+        toast.success(`Importación completada: ${r.importados} producto(s)`);
+        qc.invalidateQueries({ queryKey: ["productos"] });
+      })
+      .catch((e) => toast.error("Error al importar", e instanceof Error ? e.message : ""))
+      .finally(() => setImportando(false));
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -88,6 +105,9 @@ export default function ProductosPage() {
           </Button>
           <Button variant="outline" onClick={() => exportar("xlsx")}>
             <FileSpreadsheet className="h-4 w-4" /> Excel
+          </Button>
+          <Button variant="outline" onClick={() => setImportAbierto(true)}>
+            <Upload className="h-4 w-4" /> Importar
           </Button>
           <Button onClick={() => setAbierto(true)}>
             <Plus className="h-4 w-4" /> Nuevo producto
@@ -205,6 +225,102 @@ export default function ProductosPage() {
             </Button>
           </div>
         </form>
+      </Dialog>
+
+      <Dialog open={importAbierto} onClose={() => setImportAbierto(false)} title="Importar productos">
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Sube un archivo <strong>.csv</strong> o <strong>.xlsx</strong> con los productos. Los duplicados por SKU o
+            código de barras se omiten y las filas inválidas se listan al final.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => productsApi.plantilla("csv")}>
+              <Download className="h-4 w-4" /> Plantilla CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => productsApi.plantilla("xlsx")}>
+              <FileSpreadsheet className="h-4 w-4" /> Plantilla Excel
+            </Button>
+          </div>
+          <div>
+            <Label>Archivo</Label>
+            <Input
+              type="file"
+              accept=".csv,.xlsx"
+              disabled={importando}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) importar(f);
+              }}
+            />
+          </div>
+
+          {importando && (
+            <div className="grid place-items-center p-6">
+              <Spinner />
+            </div>
+          )}
+
+          {resultado && !importando && (
+            <div className="space-y-3">
+              <div className="rounded-md bg-surface-2 p-3 text-sm">
+                <p>
+                  <strong>{resultado.importados}</strong> importados · <strong>{resultado.omitidos.length}</strong>{" "}
+                  omitidos · <strong>{resultado.errores.length}</strong> con error
+                </p>
+              </div>
+              {resultado.omitidos.length > 0 && (
+                <div>
+                  <p className="mb-1 text-sm font-semibold">Omitidos (duplicados)</p>
+                  <div className="max-h-40 overflow-y-auto">
+                    <Table>
+                      <THead>
+                        <TR>
+                          <TH>Fila</TH>
+                          <TH>SKU</TH>
+                          <TH>Motivo</TH>
+                        </TR>
+                      </THead>
+                      <tbody>
+                        {resultado.omitidos.map((o, i) => (
+                          <TR key={i}>
+                            <TD>{o.fila}</TD>
+                            <TD className="font-mono text-xs">{o.sku}</TD>
+                            <TD className="text-muted">{o.motivo}</TD>
+                          </TR>
+                        ))}
+                      </tbody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+              {resultado.errores.length > 0 && (
+                <div>
+                  <p className="mb-1 text-sm font-semibold text-danger">Filas con error</p>
+                  <div className="max-h-40 overflow-y-auto">
+                    <Table>
+                      <THead>
+                        <TR>
+                          <TH>Fila</TH>
+                          <TH>SKU</TH>
+                          <TH>Motivo</TH>
+                        </TR>
+                      </THead>
+                      <tbody>
+                        {resultado.errores.map((o, i) => (
+                          <TR key={i}>
+                            <TD>{o.fila}</TD>
+                            <TD className="font-mono text-xs">{o.sku}</TD>
+                            <TD className="text-muted">{o.motivo}</TD>
+                          </TR>
+                        ))}
+                      </tbody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </Dialog>
     </div>
   );

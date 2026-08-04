@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import ExcelJS from "exceljs";
 import type { Express } from "express";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -321,6 +322,68 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     const xlsx = await request(app).get("/api/v1/reports/ventas/export?formato=xlsx").set(auth);
     expect(xlsx.status).toBe(200);
     expect(xlsx.headers["content-type"]).toContain("spreadsheetml");
+  });
+
+  it("importación de productos: plantilla y archivo CSV con duplicados y errores (solo admin)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const vendedorAuth = { Authorization: `Bearer ${vendedorToken}` };
+
+    // Solo admin
+    const forbidden = await request(app)
+      .post("/api/v1/productos/importar")
+      .set(vendedorAuth)
+      .attach("archivo", Buffer.from("x"), "x.csv");
+    expect(forbidden.status).toBe(403);
+
+    // Plantilla descargable
+    const plantilla = await request(app).get("/api/v1/productos/plantilla?formato=csv").set(auth);
+    expect(plantilla.status).toBe(200);
+    expect(plantilla.headers["content-type"]).toContain("text/csv");
+
+    const sku = `IMP-${Date.now()}`;
+    const sufijo = String(Date.now()).slice(-9);
+    const codigo = `75${sufijo}1`;
+    const codigoSinSku = `75${sufijo}2`;
+    const codigoStockNeg = `75${sufijo}3`;
+    const codigoXlsx = `75${sufijo}4`;
+    const csv = [
+      "SKU,CodigoBarras,Nombre,Marca,Modelo,CategoriaId,PrecioCompra,PrecioVenta,StockMinimo,Stock",
+      `${sku},${codigo},Producto importado,MarcaX,M1,1,10,20,2,5`,
+      `${sku},${codigo},Duplicado,MarcaX,M1,1,10,20,2,5`,
+      `,${codigoSinSku},Sin sku,MarcaX,M1,1,10,20,2,5`,
+      `IMP-ERR-${Date.now()},${codigoStockNeg},Stock negativo,MarcaX,M1,1,-5,20,2,5`,
+    ].join("\n");
+
+    const res = await request(app)
+      .post("/api/v1/productos/importar")
+      .set(auth)
+      .attach("archivo", Buffer.from(csv), { filename: "productos.csv", contentType: "text/csv" });
+    expect(res.status).toBe(200);
+    expect(res.body.data.importados).toBe(1);
+    expect(res.body.data.omitidos.some((o: { sku: string }) => o.sku === sku)).toBe(true);
+    expect(res.body.data.errores.length).toBe(2);
+
+    // El producto importado quedó con el stock inicial indicado
+    const creado = await request(app).get(`/api/v1/productos/por-codigo/${codigo}`).set(auth);
+    expect(creado.status).toBe(200);
+    expect(creado.body.data.stock).toBe(5);
+
+    // Importación desde XLSX real
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Productos");
+    ws.addRow(["SKU", "CodigoBarras", "Nombre", "Marca", "Modelo", "CategoriaId", "PrecioCompra", "PrecioVenta", "StockMinimo", "Stock"]);
+    const skuXlsx = `IMPX-${Date.now()}`;
+    ws.addRow([skuXlsx, codigoXlsx, "Producto xlsx", "MarcaX", "M2", "1", "10", "20", "2", "3"]);
+    const xlsxBuffer = Buffer.from(await wb.xlsx.writeBuffer());
+    const resX = await request(app)
+      .post("/api/v1/productos/importar")
+      .set(auth)
+      .attach("archivo", xlsxBuffer, {
+        filename: "productos.xlsx",
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+    expect(resX.status).toBe(200);
+    expect(resX.body.data.importados).toBe(1);
   });
 
   it("cancelar una orden libera las reservas de inventario", async () => {
