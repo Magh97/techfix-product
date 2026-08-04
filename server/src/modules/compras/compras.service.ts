@@ -1,5 +1,6 @@
 import { withTransaction } from "../../shared/db";
 import { AppError } from "../../shared/errors";
+import { registrarAuditoria } from "../../shared/auditoria";
 import * as repo from "./compras.repository";
 import { findProveedorById } from "./proveedores.repository";
 import { ESTADO_COMPRA_LABEL, validarTransicionCompra, type Rol } from "./estadosCompra";
@@ -90,6 +91,7 @@ export async function crear(input: { proveedorId: number; fechaVencimiento?: str
     await repo.insertDetalleCompra(client, id, input.lineas);
     return id;
   });
+  await registrarAuditoria({ usuarioId: user.id, accion: "CREAR", entidad: "compra", entidadId: compraId });
   return getById(compraId);
 }
 
@@ -135,6 +137,7 @@ export async function recibir(compraId: number, user: { id: number; rol: Rol }) 
     }
     await repo.updateCompraEstado(client, compraId, "recibida");
   });
+  await registrarAuditoria({ usuarioId: user.id, accion: "RECIBIR", entidad: "compra", entidadId: compraId });
   return getById(compraId);
 }
 
@@ -158,6 +161,7 @@ export async function registrarPago(compraId: number, input: { monto: number; me
     throw AppError.business("PAYMENT_INVALID", `Monto inválido: pendiente ${pendiente}`);
   }
   await withTransaction((client) => repo.insertPagoProveedor(client, { compraId, monto: input.monto, metodo: input.metodo, usuarioId: user.id }));
+  await registrarAuditoria({ usuarioId: user.id, accion: "PAGAR", entidad: "pago_proveedor", entidadId: compraId, despues: input });
   return { compraId, monto: input.monto, saldoPendiente: Math.max(0, pendiente - input.monto) };
 }
 

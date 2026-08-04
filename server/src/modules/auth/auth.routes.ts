@@ -15,3 +15,8 @@ authRouter.post("/refresh", validate(refreshSchema), async (req, res) => {
   const { refreshToken } = getValidated<{ refreshToken: string }>(req, "body");
   ok(res, await service.refresh(refreshToken));
 });
+
+authRouter.post("/logout", validate(refreshSchema), async (req, res) => {
+  const { refreshToken } = getValidated<{ refreshToken: string }>(req, "body");
+  ok(res, await service.logout(refreshToken));
+});

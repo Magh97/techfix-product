@@ -68,8 +68,8 @@ productsRouter.post("/importar", requireRole("admin"), upload.single("archivo"),
   ok(res, await importService.importarProductos(req.file.buffer, req.file.originalname));
 });
 
-productsRouter.post("/", requireRole("admin"), validate(createProductSchema), async (req, res) => {
-  created(res, await service.create(getValidated<CreateProductInput>(req, "body")));
+productsRouter.post("/", requireRole("admin"), validate(createProductSchema), async (req: AuthedRequest, res) => {
+  created(res, await service.create(getValidated<CreateProductInput>(req, "body"), req.user!));
 });
 
 productsRouter.put(
@@ -77,9 +77,9 @@ productsRouter.put(
   requireRole("admin"),
   validate(productIdParams, "params"),
   validate(updateProductSchema),
-  async (req, res) => {
+  async (req: AuthedRequest, res) => {
     const { productoId } = getValidated<{ productoId: number }>(req, "params");
-    ok(res, await service.update(productoId, getValidated<Record<string, unknown>>(req, "body")));
+    ok(res, await service.update(productoId, getValidated<Record<string, unknown>>(req, "body"), req.user!));
   }
 );
 

@@ -1562,4 +1562,63 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(porFolio.status).toBe(200);
     expect(porFolio.body.data.id).toBe(venta.body.data.id);
   });
+
+  it("AUTH: rotación de refresh con detección de reuso", async () => {
+    const login = await request(app).post("/api/v1/auth/login").send({ usuario: "admin", password: "admin1234" });
+    const refresh1 = login.body.data.refreshToken;
+
+    // Rotación correcta
+    const rotado = await request(app).post("/api/v1/auth/refresh").send({ refreshToken: refresh1 });
+    expect(rotado.status).toBe(200);
+    expect(rotado.body.data.refreshToken).toBeTruthy();
+    const refresh2 = rotado.body.data.refreshToken;
+
+    // Reuso del token anterior → 401 y revoca la familia
+    const reuso = await request(app).post("/api/v1/auth/refresh").send({ refreshToken: refresh1 });
+    expect(reuso.status).toBe(401);
+    expect(reuso.body.error.code).toBe("UNAUTHORIZED");
+
+    // El token recién emitido también queda revocado (familia)
+    const familia = await request(app).post("/api/v1/auth/refresh").send({ refreshToken: refresh2 });
+    expect(familia.status).toBe(401);
+  });
+
+  it("AUDITORÍA: se registran ventas y compras", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `AUD-${Date.now()}`, nombre: "Prod auditoría", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    expect(venta.status).toBe(201);
+    const ventaId = venta.body.data.id;
+
+    const auditVenta = await pool.query<{ accion: string }>(
+      "SELECT accion FROM auditoria WHERE entidad = 'venta' AND entidad_id = $1 ORDER BY id DESC LIMIT 1",
+      [ventaId]
+    );
+    expect(auditVenta.rows[0]?.accion).toBe("CREAR");
+
+    const prov = await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `Prov Audit ${Date.now()}` });
+    const proveedorId = prov.body.data.id;
+    const oc = await request(app)
+      .post("/api/v1/compras")
+      .set(auth)
+      .send({ proveedorId, lineas: [{ productoId, cantidad: 2, precioUnitario: 5 }] });
+    expect(oc.status).toBe(201);
+    const compraId = oc.body.data.id;
+
+    const auditCompra = await pool.query<{ accion: string }>(
+      "SELECT accion FROM auditoria WHERE entidad = 'compra' AND entidad_id = $1 ORDER BY id DESC LIMIT 1",
+      [compraId]
+    );
+    expect(auditCompra.rows[0]?.accion).toBe("CREAR");
+  });
 });

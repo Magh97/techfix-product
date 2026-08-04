@@ -2,6 +2,7 @@ import { AppError } from "../../shared/errors";
 import type { Response } from "express";
 import { withTransaction } from "../../shared/db";
 import { sendExport, type ExportColumn } from "../../shared/export";
+import { registrarAuditoria } from "../../shared/auditoria";
 import { findCatalogoById } from "../catalogos/catalogos.repository";
 import * as repo from "./products.repository";
 
@@ -85,11 +86,12 @@ export async function getByCode(codigo: string) {
   return mapProduct(row);
 }
 
-export async function create(input: repo.CreateProductInput) {
+export async function create(input: repo.CreateProductInput, user: { id: number }) {
   const existing = await repo.findProductBySku(input.sku);
   if (existing) throw AppError.conflict("CONFLICT", "El SKU ya existe");
   const row = await repo.createProduct(input);
   if (!row) throw AppError.business("INTERNAL_ERROR", "No se pudo crear el producto");
+  await registrarAuditoria({ usuarioId: user.id, accion: "CREAR", entidad: "producto", entidadId: row.id, despues: { sku: row.sku, nombre: row.nombre } });
   return mapProduct(row);
 }
 
@@ -105,15 +107,24 @@ const FIELD_MAP: Record<string, string> = {
   catalogoId: "catalogo_id",
 };
 
-export async function update(id: number, fields: Record<string, unknown>) {
+export async function update(id: number, fields: Record<string, unknown>, user: { id: number }) {
   const mapped: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(fields)) {
     const col = FIELD_MAP[k];
     if (col) mapped[col] = v;
     if (k === "especificaciones" && v !== undefined) mapped.especificaciones = JSON.stringify(v);
   }
+  const antes = await repo.findProductById(id);
   const row = await repo.updateProduct(id, mapped);
   if (!row) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
+  await registrarAuditoria({
+    usuarioId: user.id,
+    accion: "EDITAR",
+    entidad: "producto",
+    entidadId: id,
+    antes: antes ? { nombre: antes.nombre, sku: antes.sku } : undefined,
+    despues: { nombre: row.nombre, sku: row.sku },
+  });
   return mapProduct(row);
 }
 

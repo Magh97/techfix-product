@@ -3,6 +3,7 @@ import { withTransaction } from "../../shared/db";
 import { AppError } from "../../shared/errors";
 import { getConfig } from "../../shared/config";
 import { calcMoney } from "../../shared/money";
+import { registrarAuditoria } from "../../shared/auditoria";
 import * as repo from "./ventas.repository";
 
 function today(): string {
@@ -182,8 +183,15 @@ export async function registrarVenta(
     };
   };
 
-  if (client) return run(client);
-  return withTransaction(run);
+  const dto = client ? await run(client) : await withTransaction(run);
+  await registrarAuditoria({
+    usuarioId: user.id,
+    accion: "CREAR",
+    entidad: "venta",
+    entidadId: dto.id,
+    despues: { folio: dto.folio, total: dto.total, tipoPago: dto.tipoPago },
+  });
+  return dto;
 }
 
 /* --- Lecturas --- */
@@ -295,6 +303,7 @@ export async function cancelar(ventaId: number, motivo: string, user: { id: numb
     }
     await repo.updateVentaEstado(c, ventaId, "cancelada");
   });
+  await registrarAuditoria({ usuarioId: user.id, accion: "CANCELAR", entidad: "venta", entidadId: ventaId, despues: { motivo } });
   return getById(ventaId);
 }
 
@@ -327,5 +336,6 @@ export async function devolucion(
     }
     await repo.updateVentaEstado(c, ventaId, "devuelta");
   });
+  await registrarAuditoria({ usuarioId: user.id, accion: "DEVOLUCION", entidad: "venta", entidadId: ventaId, despues: { lineas: input.lineas } });
   return getById(ventaId);
 }
