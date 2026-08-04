@@ -14,6 +14,9 @@ import type {
   Paginated,
   Producto,
   Proveedor,
+  ReporteInventario,
+  ReporteVenta,
+  ReporteServicios,
   Venta,
 } from "./types";
 
@@ -66,6 +69,7 @@ export const productsApi = {
     return api<Paginated<Producto>>(`/productos${s ? `?${s}` : ""}`);
   },
   create: (input: CreateProducto) => api<{ data: Producto }>("/productos", { method: "POST", body: JSON.stringify(input) }),
+  exportar: (formato: "csv" | "xlsx") => downloadExport("/productos/exportar", `catalogo-productos.${formato}`, { formato }),
 };
 
 export const clientesApi = {
@@ -194,4 +198,53 @@ export const ordenesApi = {
     api<{ data: OrdenServicio }>(`/ordenes/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),
   notificar: (id: number, tipo: "listo" | "cotizacion") =>
     api<{ data: unknown }>(`/ordenes/${id}/notificar`, { method: "POST", body: JSON.stringify({ tipo }) }),
+};
+
+export async function downloadExport(
+  path: string,
+  filename: string,
+  params?: Record<string, string | number | undefined>
+) {
+  const qs = new URLSearchParams();
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") qs.set(k, String(v));
+    }
+  }
+  const s = qs.toString();
+  const res = await fetch(`${API_URL}${path}${s ? `?${s}` : ""}`, { headers: authHeader() });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(res.status, body?.error?.code ?? "ERROR", body?.error?.message ?? "Error al exportar");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export const reportsApi = {
+  inventario: () => api<{ data: { data: ReporteInventario[]; resumen: { totalArticulos: number; valorTotalCosto: number; stockBajo: number } } }>("/reports/inventario"),
+  ventas: (params: { desde?: string; hasta?: string; agrupar: string }) => {
+    const qs = new URLSearchParams();
+    if (params.desde) qs.set("desde", params.desde);
+    if (params.hasta) qs.set("hasta", params.hasta);
+    qs.set("agrupar", params.agrupar);
+    return api<{ data: { data: ReporteVenta[]; resumen: { totalVentas: number; totalImporte: number } } }>(`/reports/ventas?${qs.toString()}`);
+  },
+  servicios: (params: { desde?: string; hasta?: string; estado?: string; tecnicoId?: number }) => {
+    const qs = new URLSearchParams();
+    if (params.desde) qs.set("desde", params.desde);
+    if (params.hasta) qs.set("hasta", params.hasta);
+    if (params.estado) qs.set("estado", params.estado);
+    if (params.tecnicoId) qs.set("tecnicoId", String(params.tecnicoId));
+    return api<{ data: ReporteServicios }>(`/reports/servicios?${qs.toString()}`);
+  },
+  exportar: (tipo: "inventario" | "ventas" | "servicios", formato: "csv" | "xlsx", params?: Record<string, string | number | undefined>) =>
+    downloadExport(`/reports/${tipo}/export`, `reporte-${tipo}.${formato}`, { ...params, formato }),
 };

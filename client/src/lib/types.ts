@@ -3,7 +3,6 @@ export interface Usuario {
   nombre: string;
   rol: "admin" | "vendedor" | "tecnico";
 }
-
 export interface LoginResponse {
   token: string;
   refreshToken: string;
@@ -270,4 +269,41 @@ export interface CxpItem {
   saldo: number;
   fechaVencimiento: string | null;
   estado: "vigente" | "vencido" | "pagado";
+}
+
+export interface ReporteInventario {
+  id: number;
+  sku: string;
+  codigoBarras: string | null;
+  nombre: string;
+  marca: string | null;
+  modelo: string | null;
+  categoria: string;
+  stock: number;
+  stockMinimo: number;
+  precioCompra: number;
+  precioVenta: number;
+  valoracionCosto: number;
+  lowStock: boolean;
+}
+
+export interface ReporteVenta {
+  grupo: string;
+  ventas: number;
+  total: number;
+  unidades?: number;
+}
+
+export interface ReporteServicios {
+  resumen: {
+    total: number;
+    enProceso: number;
+    entregadas: number;
+    canceladas: number;
+    retrasadas: number;
+    tiempoPromedioReparacionDias: number;
+  };
+  porEstado: { estado: string; ordenes: number }[];
+  porTecnico: { tecnico: string; ordenes: number }[];
+  porTipoEquipo: { tipoEquipo: string; ordenes: number }[];
 }
