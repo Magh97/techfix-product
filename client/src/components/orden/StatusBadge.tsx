@@ -5,6 +5,7 @@ const MAP: Record<string, { label: string; variant: "default" | "success" | "dan
   en_diagnostico: { label: "Diagnóstico", variant: "accent" },
   cotizado: { label: "Cotizado", variant: "warning" },
   en_reparacion: { label: "En reparación", variant: "accent" },
+  sustitucion_pendiente: { label: "Esperando sustitución", variant: "warning" },
   listo: { label: "Listo", variant: "success" },
   entregado: { label: "Entregado", variant: "success" },
   cancelado: { label: "Cancelado", variant: "danger" },

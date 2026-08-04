@@ -382,3 +382,29 @@ export function resolverSolicitud(
   }
   return query(`UPDATE solicitudes_reabastecimiento SET ${sets.join(", ")} WHERE id = $1`, vals);
 }
+
+// Al recibir una OC: las solicitudes aprobadas del producto pasan a "entregada"
+export function entregarSolicitudesProducto(client: PoolClient, productoId: number, usuarioId: number) {
+  return client.query<{ orden_id: number | null }>(
+    `UPDATE solicitudes_reabastecimiento s
+     SET estado = 'entregada', resuelto_por = $2, resuelto_at = NOW()
+     WHERE s.producto_id = $1 AND s.estado = 'aprobada'
+     RETURNING s.orden_id`,
+    [productoId, usuarioId]
+  ).then((r) => r.rows);
+}
+
+// Historial de la orden cuando llega una refacción solicitada
+export function insertHistorialOrdenEntregada(
+  client: PoolClient,
+  ordenId: number,
+  productoNombre: string,
+  folioOC: string,
+  usuarioId: number
+) {
+  return client.query(
+    `INSERT INTO historial_orden (orden_id, estado, usuario_id, nota)
+     SELECT $1, o.estado, $2, $3 FROM ordenes_servicio o WHERE o.id = $1`,
+    [ordenId, usuarioId, `Refacción ${productoNombre} llegó · OC ${folioOC}`]
+  );
+}

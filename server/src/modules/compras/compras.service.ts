@@ -136,6 +136,15 @@ export async function recibir(compraId: number, user: { id: number; rol: Rol }) 
           usuarioId: user.id,
         });
       }
+
+      // Al llegar el producto, las solicitudes aprobadas pasan a "entregada" y
+      // se actualiza el historial de la(s) orden(es) que esperaban la refacción
+      const llegaron = await repo.entregarSolicitudesProducto(client, l.producto_id, user.id);
+      for (const fila of llegaron) {
+        if (fila.orden_id) {
+          await repo.insertHistorialOrdenEntregada(client, fila.orden_id, l.nombre_producto, c.folio, user.id);
+        }
+      }
     }
     await repo.updateCompraEstado(client, compraId, "recibida");
   });

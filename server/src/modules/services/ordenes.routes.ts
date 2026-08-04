@@ -8,12 +8,15 @@ import {
   consumoSchema,
   cidParams,
   crearCotizacionSchema,
+  crearSustitucionSchema,
   createOrdenSchema,
   diagnosticoSchema,
   entregarSchema,
   listOrdenesQuery,
   manoObraSchema,
   notificarSchema,
+  resolverSustitucionSchema,
+  sidParams,
   idParams,
 } from "./ordenes.schema";
 import * as service from "./ordenes.service";
@@ -166,6 +169,58 @@ ordenesRouter.post(
   async (req: AuthedRequest, res) => {
     const { id } = getValidated<{ id: number }>(req, "params");
     ok(res, await service.notificar(id, getValidated<never>(req, "body"), req.user!));
+  }
+);
+
+/* --- Sustituciones (validación del cliente) --- */
+
+ordenesRouter.post(
+  "/:id/sustituciones",
+  requireRole("tecnico", "admin"),
+  validate(idParams, "params"),
+  validate(crearSustitucionSchema),
+  async (req: AuthedRequest, res) => {
+    const { id } = getValidated<{ id: number }>(req, "params");
+    created(res, await service.crearSustitucion(id, getValidated<never>(req, "body"), req.user!));
+  }
+);
+
+ordenesRouter.get("/:id/sustituciones", requireRole("tecnico", "admin"), validate(idParams, "params"), async (req: AuthedRequest, res) => {
+  const { id } = getValidated<{ id: number }>(req, "params");
+  ok(res, await service.listarSustituciones(id));
+});
+
+ordenesRouter.post(
+  "/:id/sustituciones/:sid/aceptar",
+  requireRole("tecnico", "admin"),
+  validate(sidParams, "params"),
+  async (req: AuthedRequest, res) => {
+    const { id, sid } = getValidated<{ id: number; sid: number }>(req, "params");
+    ok(res, await service.aceptarSustitucion(id, sid, req.user!));
+  }
+);
+
+ordenesRouter.post(
+  "/:id/sustituciones/:sid/rechazar",
+  requireRole("tecnico", "admin"),
+  validate(sidParams, "params"),
+  validate(resolverSustitucionSchema),
+  async (req: AuthedRequest, res) => {
+    const { id, sid } = getValidated<{ id: number; sid: number }>(req, "params");
+    const { motivo } = getValidated<{ motivo: string }>(req, "body");
+    ok(res, await service.rechazarSustitucion(id, sid, motivo, req.user!));
+  }
+);
+
+ordenesRouter.post(
+  "/:id/sustituciones/:sid/cancelar",
+  requireRole("tecnico", "admin"),
+  validate(sidParams, "params"),
+  validate(resolverSustitucionSchema),
+  async (req: AuthedRequest, res) => {
+    const { id, sid } = getValidated<{ id: number; sid: number }>(req, "params");
+    const { motivo } = getValidated<{ motivo: string }>(req, "body");
+    ok(res, await service.cancelarSustitucion(id, sid, motivo, req.user!));
   }
 );
 

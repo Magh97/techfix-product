@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Bell, CheckCircle2, PackagePlus, PenLine, Plus, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, Bell, CheckCircle2, PackagePlus, PenLine, Plus, RefreshCw, Trash2, Wrench } from "lucide-react";
 import { SignatureCanvas } from "@/components/orden/SignatureCanvas";
 import { StatusBadge } from "@/components/orden/StatusBadge";
 import { Stepper } from "@/components/orden/Stepper";
@@ -17,6 +17,7 @@ import { useToast } from "@/components/ui/toast";
 import { getSessionUser } from "@/lib/auth";
 import { comprasApi, ordenesApi, productsApi } from "@/lib/api";
 import { fechaCorta, mxn } from "@/lib/utils";
+import type { Sustitucion } from "@/lib/types";
 
 export default function OrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -28,6 +29,7 @@ export default function OrdenDetallePage() {
 
   const [dialog, setDialog] = useState<null | "diagnostico" | "cotizacion" | "consumo" | "manoObra" | "entrega" | "cancelar">(null);
   const [solicitarAbierto, setSolicitarAbierto] = useState(false);
+  const [sustitucionLinea, setSustitucionLinea] = useState<{ lineaId: number; productoId: number; nombre: string } | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["orden", ordenId],
@@ -43,6 +45,12 @@ export default function OrdenDetallePage() {
     enabled: Number.isFinite(ordenId),
   });
 
+  const sustituciones = useQuery({
+    queryKey: ["sustituciones-orden", ordenId],
+    queryFn: () => ordenesApi.sustituciones.list(ordenId),
+    enabled: Number.isFinite(ordenId),
+  });
+
   function cancelarSolicitud(s: { id: number }) {
     const motivo = window.prompt("Justificación de la cancelación:")?.trim();
     if (!motivo) return;
@@ -51,6 +59,44 @@ export default function OrdenDetallePage() {
       .then(() => {
         toast.success("Solicitud cancelada");
         solicitudes.refetch();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"));
+  }
+
+  function aceptarSustitucion(s: Sustitucion) {
+    ordenesApi.sustituciones
+      .aceptar(ordenId, s.id)
+      .then(() => {
+        toast.success("Cliente aceptó la sustitución; pieza reemplazada");
+        invalidar();
+        sustituciones.refetch();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"));
+  }
+
+  function rechazarSustitucion(s: Sustitucion) {
+    const motivo = window.prompt("Motivo del rechazo (se generará la solicitud de reabastecimiento):")?.trim();
+    if (!motivo) return;
+    ordenesApi.sustituciones
+      .rechazar(ordenId, s.id, motivo)
+      .then(() => {
+        toast.success("Sustitución rechazada; solicitud generada");
+        invalidar();
+        sustituciones.refetch();
+        solicitudes.refetch();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"));
+  }
+
+  function cancelarSustitucion(s: Sustitucion) {
+    const motivo = window.prompt("Justificación de la cancelación:")?.trim();
+    if (!motivo) return;
+    ordenesApi.sustituciones
+      .cancelar(ordenId, s.id, motivo)
+      .then(() => {
+        toast.success("Sustitución cancelada");
+        invalidar();
+        sustituciones.refetch();
       })
       .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"));
   }
@@ -101,11 +147,13 @@ export default function OrdenDetallePage() {
   const esTecnico = rol === "tecnico";
   const esVendedor = rol === "vendedor" || rol === "admin";
   const puedeSolicitar = esTecnico || rol === "admin";
+  const puedeProponer = puedeSolicitar && (orden.estado === "cotizado" || orden.estado === "en_reparacion");
   const activo = !["entregado", "cancelado"].includes(orden.estado);
 
-  const estadoSolicitud: Record<string, "default" | "success" | "warning" | "danger"> = {
+  const estadoSolicitud: Record<string, "default" | "success" | "warning" | "danger" | "accent"> = {
     pendiente: "warning",
-    aprobada: "success",
+    aprobada: "accent",
+    entregada: "success",
     rechazada: "danger",
     cancelada: "default",
   };
@@ -181,6 +229,12 @@ export default function OrdenDetallePage() {
         )}
       </div>
 
+      {orden.estado === "sustitucion_pendiente" && (
+        <div className="rounded-md border border-warning bg-warning-soft px-4 py-3 text-sm text-warning">
+          Orden en espera de la validación del cliente sobre una sustitución de pieza.
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -229,23 +283,40 @@ export default function OrdenDetallePage() {
                         <td className="py-2">
                           {l.nombre}
                           {l.horas && <span className="text-muted"> ({l.horas}h × {mxn(l.tarifaHora ?? 0)})</span>}
+                          {l.tipoLinea === "refaccion" && l.stock !== null && l.stock < (l.cantidad ?? 0) && (
+                            <span className="ml-1 text-xs text-danger">sin stock</span>
+                          )}
                         </td>
                         <td className="py-2 text-right">{l.cantidad ? `× ${l.cantidad}` : ""}</td>
                         <td className="py-2 text-right">{mxn(l.precioNeto)}</td>
+                        <td className="py-2 text-right">
+                          {puedeProponer && l.tipoLinea === "refaccion" && l.productoId && l.stock !== null && l.stock < (l.cantidad ?? 0) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setSustitucionLinea({ lineaId: l.id, productoId: l.productoId!, nombre: l.nombre ?? "" })}
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" /> Sustituir
+                            </Button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                     <tr className="border-t border-border-line font-semibold">
                       <td className="py-2">Subtotal</td>
+                      <td />
                       <td />
                       <td className="py-2 text-right">{mxn(cotizacion.subtotal)}</td>
                     </tr>
                     <tr className="text-muted">
                       <td className="py-1">IVA</td>
                       <td />
+                      <td />
                       <td className="py-1 text-right">{mxn(cotizacion.iva)}</td>
                     </tr>
                     <tr className="font-bold">
                       <td className="py-1">Total</td>
+                      <td />
                       <td />
                       <td className="py-1 text-right">{mxn(cotizacion.total)}</td>
                     </tr>
@@ -336,6 +407,72 @@ export default function OrdenDetallePage() {
         </CardBody>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Sustituciones</CardTitle>
+        </CardHeader>
+        <CardBody>
+          {sustituciones.isLoading ? (
+            <div className="grid place-items-center p-6">
+              <Spinner />
+            </div>
+          ) : (sustituciones.data?.data.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted">Sin sustituciones propuestas.</p>
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Original</TH>
+                  <TH>Sustituto</TH>
+                  <TH className="text-right">Cant.</TH>
+                  <TH>Estado</TH>
+                  <TH>Cliente</TH>
+                  <TH className="text-right">Acciones</TH>
+                </TR>
+              </THead>
+              <tbody>
+                {sustituciones.data?.data.map((s) => (
+                  <TR key={s.id}>
+                    <TD>
+                      <p>{s.nombreOriginal}</p>
+                      <p className="font-mono text-xs text-muted">{s.skuOriginal}</p>
+                    </TD>
+                    <TD>
+                      <p>
+                        {s.nombreSustituto} <span className="text-muted">({mxn(s.precioSustituto)})</span>
+                      </p>
+                      <p className="font-mono text-xs text-muted">{s.skuSustituto} · {s.stockSustituto} disp.</p>
+                    </TD>
+                    <TD className="text-right">{s.cantidad}</TD>
+                    <TD>
+                      <Badge variant={s.estado === "aceptada" ? "success" : s.estado === "rechazada" ? "danger" : s.estado === "pendiente" ? "warning" : "default"}>
+                        {s.estado}
+                      </Badge>
+                    </TD>
+                    <TD>{s.clienteAcepta === null ? "—" : s.clienteAcepta ? "Aceptó" : "Rechazó"}</TD>
+                    <TD className="text-right">
+                      {s.estado === "pendiente" && puedeSolicitar && (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => aceptarSustitucion(s)}>
+                            Cliente aceptó
+                          </Button>
+                          <Button size="sm" variant="outline" className="ml-1" onClick={() => rechazarSustitucion(s)}>
+                            Cliente rechazó
+                          </Button>
+                          <Button size="sm" variant="ghost" className="ml-1" onClick={() => cancelarSustitucion(s)}>
+                            Cancelar
+                          </Button>
+                        </>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
+
       {dialog === "diagnostico" && <DiagnosticoDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "cotizacion" && <CotizacionDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "consumo" && <ConsumoDialog ordenId={ordenId} piezas={reservadas} onClose={() => setDialog(null)} onDone={invalidar} />}
@@ -344,6 +481,19 @@ export default function OrdenDetallePage() {
       {dialog === "cancelar" && <CancelarDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
       {solicitarAbierto && (
         <SolicitarRefaccionDialog ordenId={ordenId} onClose={() => { setSolicitarAbierto(false); solicitudes.refetch(); }} />
+      )}
+      {sustitucionLinea && cotizacion && (
+        <SustitucionDialog
+          ordenId={ordenId}
+          cotizacionId={cotizacion.id}
+          lineaId={sustitucionLinea.lineaId}
+          productoId={sustitucionLinea.productoId}
+          nombre={sustitucionLinea.nombre}
+          onClose={() => {
+            setSustitucionLinea(null);
+            sustituciones.refetch();
+          }}
+        />
       )}
     </div>
   );
@@ -635,6 +785,92 @@ function SolicitarRefaccionDialog({ ordenId, onClose }: { ordenId: number; onClo
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button disabled={enviando || !pid || !Number(cantidad)} onClick={enviar}>
             {enviando ? "Enviando…" : "Enviar solicitud"}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function SustitucionDialog({
+  ordenId,
+  cotizacionId,
+  lineaId,
+  productoId,
+  nombre,
+  onClose,
+}: {
+  ordenId: number;
+  cotizacionId: number;
+  lineaId: number;
+  productoId: number;
+  nombre: string;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const { data: sugerencias } = useQuery({
+    queryKey: ["sugerencias", productoId],
+    queryFn: () => productsApi.sugerencias(productoId),
+    enabled: !!productoId,
+  });
+  const [sustitutoId, setSustitutoId] = useState("");
+  const [justificacion, setJustificacion] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  const sustitutos = (sugerencias?.data.sustitutos ?? [])
+    .concat(sugerencias?.data.sustitutosComponente ?? [])
+    .filter((s, i, arr) => arr.findIndex((x) => x.id === s.id) === i);
+
+  function enviar() {
+    if (!sustitutoId) {
+      toast.error("Selecciona un sustituto");
+      return;
+    }
+    setEnviando(true);
+    ordenesApi.sustituciones
+      .create(ordenId, {
+        cotizacionId,
+        lineaId,
+        sustitutoId: Number(sustitutoId),
+        justificacion: justificacion || undefined,
+      })
+      .then(() => {
+        toast.success("Sustitución propuesta; se consultará al cliente");
+        onClose();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"))
+      .finally(() => setEnviando(false));
+  }
+
+  return (
+    <Dialog open onClose={onClose} title={`Proponer sustitución · ${nombre}`}>
+      <div className="space-y-3">
+        <p className="text-sm text-muted">
+          La pieza original no tiene stock. El sustituto se propone al cliente y, al aceptarlo, reemplaza la línea con su
+          precio.
+        </p>
+        <div>
+          <Label>Sustituto *</Label>
+          <select value={sustitutoId} onChange={(e) => setSustitutoId(e.target.value)} className="h-10 w-full rounded-md border border-border-line bg-surface px-3 text-sm">
+            <option value="">Seleccionar sustituto…</option>
+            {sustitutos.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.nombre} · {s.sku} · {mxn(s.precioVenta)} · {s.stock} disp.
+              </option>
+            ))}
+          </select>
+          {sustitutos.length === 0 && (
+            <p className="mt-1 text-xs text-muted">Sin sustitutos compatibles con stock disponible.</p>
+          )}
+        </div>
+        <div>
+          <Label>Justificación (opcional)</Label>
+          <Input value={justificacion} onChange={(e) => setJustificacion(e.target.value)} placeholder="Ej. no hay stock y el cliente requiere el equipo" />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button disabled={enviando || !sustitutoId} onClick={enviar}>
+            {enviando ? "Enviando…" : "Proponer sustitución"}
           </Button>
         </div>
       </div>

@@ -3,6 +3,7 @@ export type EstadoOrden =
   | "en_diagnostico"
   | "cotizado"
   | "en_reparacion"
+  | "sustitucion_pendiente"
   | "listo"
   | "entregado"
   | "cancelado";

@@ -60,6 +60,7 @@ export interface CotizacionLineaRow {
   horas: string | null;
   tarifa_hora: string | null;
   nombre_producto: string | null;
+  stock: number | null;
 }
 
 export interface DetalleOrdenRow {
@@ -285,11 +286,38 @@ export function findCotizacionById(id: number) {
 
 export function listCotizacionLineas(cotizacionId: number) {
   return query<CotizacionLineaRow>(
-    `SELECT dc.*, p.nombre AS nombre_producto FROM detalle_cotizacion dc
+    `SELECT dc.*, p.nombre AS nombre_producto, p.stock
+     FROM detalle_cotizacion dc
      LEFT JOIN productos p ON p.id = dc.producto_id
      WHERE dc.cotizacion_id = $1 ORDER BY dc.id`,
     [cotizacionId]
   ).then((r) => r.rows);
+}
+
+export function findCotizacionLineaById(lineaId: number) {
+  return query<CotizacionLineaRow>(
+    `SELECT dc.*, p.nombre AS nombre_producto, p.stock
+     FROM detalle_cotizacion dc
+     LEFT JOIN productos p ON p.id = dc.producto_id
+     WHERE dc.id = $1`,
+    [lineaId]
+  ).then((r) => r.rows[0]);
+}
+
+export function updateCotizacionLinea(lineaId: number, fields: { productoId?: number; precioNeto?: number }) {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (fields.productoId !== undefined) {
+    vals.push(fields.productoId);
+    sets.push(`producto_id = $${vals.length}`);
+  }
+  if (fields.precioNeto !== undefined) {
+    vals.push(fields.precioNeto);
+    sets.push(`precio_neto = $${vals.length}`);
+  }
+  if (!sets.length) return Promise.resolve();
+  vals.push(lineaId);
+  return query(`UPDATE detalle_cotizacion SET ${sets.join(", ")} WHERE id = $${vals.length}`, vals);
 }
 
 export function updateCotizacionEstado(id: number, estado: CotizacionRow["estado"]) {
@@ -400,6 +428,106 @@ export function countReservaDisponible(ordenId: number, productoId: number) {
     "SELECT COALESCE(SUM(cantidad),0)::int AS c FROM detalle_orden WHERE orden_id = $1 AND producto_id = $2 AND estado_linea = 'reservada'",
     [ordenId, productoId]
   ).then((r) => Number(r.rows[0]?.c ?? 0));
+}
+
+// Libera la reserva de un producto específico dentro de una transacción
+export function liberarReservaProductoClient(client: PoolClient, ordenId: number, productoId: number) {
+  return client.query<{ cantidad: number }>(
+    `UPDATE detalle_orden SET estado_linea = 'liberada'
+     WHERE orden_id = $1 AND producto_id = $2 AND estado_linea = 'reservada'
+     RETURNING cantidad`,
+    [ordenId, productoId]
+  ).then((r) => r.rows);
+}
+
+/* --- Sustituciones (validación del cliente) --- */
+
+export interface SustitucionRow {
+  id: number;
+  orden_id: number;
+  cotizacion_id: number;
+  cotizacion_folio: string;
+  linea_id: number;
+  producto_original_id: number;
+  sku_original: string;
+  nombre_original: string;
+  cantidad: number;
+  sustituto_id: number;
+  sku_sustituto: string;
+  nombre_sustituto: string;
+  precio_sustituto: string;
+  stock_sustituto: number;
+  justificacion: string | null;
+  cliente_acepta: boolean | null;
+  estado: string;
+  solicitud_id: number | null;
+  creada_por: number;
+  creador_nombre: string;
+  resuelto_por: number | null;
+  created_at: string;
+  resuelto_at: string | null;
+}
+
+const SELECT_SUSTITUCION = `
+  SELECT s.*, c.folio AS cotizacion_folio,
+         po.sku AS sku_original, po.nombre AS nombre_original,
+         ps.sku AS sku_sustituto, ps.nombre AS nombre_sustituto,
+         ps.precio_venta AS precio_sustituto, ps.stock AS stock_sustituto,
+         u.nombre AS creador_nombre
+  FROM sustituciones s
+  JOIN cotizaciones c ON c.id = s.cotizacion_id
+  JOIN productos po ON po.id = s.producto_original_id
+  JOIN productos ps ON ps.id = s.sustituto_id
+  JOIN usuarios u ON u.id = s.creada_por
+`;
+
+export function listSustituciones(ordenId: number) {
+  return query<SustitucionRow>(`${SELECT_SUSTITUCION} WHERE s.orden_id = $1 ORDER BY s.id DESC`, [ordenId]).then(
+    (r) => r.rows
+  );
+}
+
+export function findSustitucionById(id: number) {
+  return query<SustitucionRow>(`${SELECT_SUSTITUCION} WHERE s.id = $1`, [id]).then((r) => r.rows[0]);
+}
+
+export function insertSustitucion(input: {
+  ordenId: number;
+  cotizacionId: number;
+  lineaId: number;
+  productoOriginalId: number;
+  cantidad: number;
+  sustitutoId: number;
+  justificacion: string | null;
+  creadaPor: number;
+}) {
+  return query<{ id: number }>(
+    `INSERT INTO sustituciones (orden_id, cotizacion_id, linea_id, producto_original_id, cantidad, sustituto_id, justificacion, creada_por)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+    [
+      input.ordenId,
+      input.cotizacionId,
+      input.lineaId,
+      input.productoOriginalId,
+      input.cantidad,
+      input.sustitutoId,
+      input.justificacion,
+      input.creadaPor,
+    ]
+  ).then((r) => r.rows[0]?.id);
+}
+
+export function resolverSustitucion(
+  id: number,
+  campos: { estado: string; clienteAcepta?: boolean | null; solicitudId?: number | null; resueltoPor: number }
+) {
+  const sets = ["estado = $2", "cliente_acepta = $3", "resuelto_por = $4", "resuelto_at = NOW()"];
+  const vals: unknown[] = [id, campos.estado, campos.clienteAcepta ?? null, campos.resueltoPor];
+  if (campos.solicitudId !== undefined) {
+    sets.push(`solicitud_id = $${vals.length + 1}`);
+    vals.push(campos.solicitudId);
+  }
+  return query(`UPDATE sustituciones SET ${sets.join(", ")} WHERE id = $1`, vals);
 }
 
 /* --- Garantía generada en la entrega --- */

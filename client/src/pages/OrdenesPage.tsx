@@ -19,6 +19,7 @@ const FILTROS = [
   { key: "en_diagnostico", label: "Diagnóstico" },
   { key: "cotizado", label: "Cotizado" },
   { key: "en_reparacion", label: "Reparación" },
+  { key: "sustitucion_pendiente", label: "Esperando sustitución" },
   { key: "listo", label: "Listo" },
   { key: "entregado", label: "Entregado" },
   { key: "cancelado", label: "Cancelado" },

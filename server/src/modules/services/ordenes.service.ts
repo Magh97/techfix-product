@@ -3,6 +3,8 @@ import { AppError } from "../../shared/errors";
 import { getConfig } from "../../shared/config";
 import { getIvaRate } from "../../shared/config";
 import { calcMoney } from "../../shared/money";
+import { insertNotificacion } from "../notifications/notifications.repository";
+import * as comprasService from "../compras/compras.service";
 import { ESTADO_LABEL, validarTransicion } from "./estados";
 import type { EstadoOrden, Rol, TipoEquipo } from "./ordenes.types";
 import * as repo from "./ordenes.repository";
@@ -97,6 +99,7 @@ function mapCotizacion(c: repo.CotizacionRow, lineas: repo.CotizacionLineaRow[])
       descripcion: l.descripcion_mano_obra,
       horas: l.horas ? Number(l.horas) : null,
       tarifaHora: l.tarifa_hora ? Number(l.tarifa_hora) : null,
+      stock: l.stock ?? null,
     })),
   };
 }
@@ -535,4 +538,213 @@ export async function marcarRetrasadas() {
     }
   }
   return ids.length;
+}
+
+/* --- Sustituciones (validación del cliente) --- */
+
+function mapSustitucion(s: repo.SustitucionRow) {
+  return {
+    id: s.id,
+    ordenId: s.orden_id,
+    cotizacionId: s.cotizacion_id,
+    cotizacionFolio: s.cotizacion_folio,
+    lineaId: s.linea_id,
+    productoOriginalId: s.producto_original_id,
+    skuOriginal: s.sku_original,
+    nombreOriginal: s.nombre_original,
+    cantidad: s.cantidad,
+    sustitutoId: s.sustituto_id,
+    skuSustituto: s.sku_sustituto,
+    nombreSustituto: s.nombre_sustituto,
+    precioSustituto: Number(s.precio_sustituto),
+    stockSustituto: s.stock_sustituto,
+    justificacion: s.justificacion,
+    clienteAcepta: s.cliente_acepta,
+    estado: s.estado,
+    solicitudId: s.solicitud_id,
+    creadaPor: s.creada_por,
+    creadorNombre: s.creador_nombre,
+    createdAt: s.created_at,
+    resueltoAt: s.resuelto_at,
+  };
+}
+
+async function cotizacionDe(s: repo.SustitucionRow) {
+  return repo.findCotizacionById(s.cotizacion_id);
+}
+
+export async function crearSustitucion(
+  ordenId: number,
+  input: { cotizacionId: number; lineaId: number; sustitutoId: number; justificacion?: string },
+  user: { id: number; rol: Rol }
+) {
+  const orden = await repo.findOrdenById(ordenId);
+  if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
+  if (user.rol !== "tecnico" && user.rol !== "admin") throw AppError.forbidden();
+  if (orden.estado !== "cotizado" && orden.estado !== "en_reparacion") {
+    throw AppError.conflict("ORDER_STATE_INVALID", "Solo se puede proponer sustitución en cotizado o en reparación");
+  }
+
+  const cot = await repo.findCotizacionById(input.cotizacionId);
+  if (!cot || cot.orden_id !== ordenId) throw AppError.notFound("QUOTE_NOT_FOUND", "Cotización no encontrada");
+  if (cot.estado !== "emitida" && cot.estado !== "aprobada") {
+    throw AppError.conflict("QUOTE_INVALID", "La cotización debe estar emitida o aprobada");
+  }
+
+  const linea = await repo.findCotizacionLineaById(input.lineaId);
+  if (!linea || linea.cotizacion_id !== input.cotizacionId) {
+    throw AppError.notFound("LINEA_NOT_FOUND", "Línea de cotización no encontrada");
+  }
+  if (linea.tipo_linea !== "refaccion" || !linea.producto_id || !linea.cantidad) {
+    throw AppError.badRequest("LINEA_NO_REFACCION", "La línea debe ser una refacción");
+  }
+  if (linea.stock !== null && linea.stock >= linea.cantidad) {
+    throw AppError.business("STOCK_SUFICIENTE", "Hay stock suficiente para esa pieza; no requiere sustitución");
+  }
+
+  const sustituto = await repo.findProducto(input.sustitutoId);
+  if (!sustituto) throw AppError.notFound("PRODUCT_NOT_FOUND", "Sustituto no encontrado");
+  if (sustituto.stock < linea.cantidad) {
+    throw AppError.business("INSUFFICIENT_STOCK", `El sustituto no tiene stock suficiente (disponible ${sustituto.stock})`);
+  }
+  if (sustituto.id === linea.producto_id) {
+    throw AppError.badRequest("MISMO_PRODUCTO", "El sustituto no puede ser el mismo producto");
+  }
+
+  const id = await repo.insertSustitucion({
+    ordenId,
+    cotizacionId: input.cotizacionId,
+    lineaId: input.lineaId,
+    productoOriginalId: linea.producto_id,
+    cantidad: linea.cantidad,
+    sustitutoId: input.sustitutoId,
+    justificacion: input.justificacion ?? null,
+    creadaPor: user.id,
+  });
+
+  await insertNotificacion({
+    clienteId: null,
+    ordenId,
+    tipo: "NOT-06",
+    canal: "app",
+    estado: "enviado",
+    contenido: `Sustitución propuesta: ${linea.nombre_producto} → ${sustituto.nombre}`,
+  });
+
+  await repo.updateOrdenEstado(ordenId, "sustitucion_pendiente", esRetrasada("sustitucion_pendiente", orden.fecha_prometida));
+  await repo.insertHistorial(ordenId, "sustitucion_pendiente", user.id, `Sustitución propuesta: ${linea.nombre_producto} → ${sustituto.nombre}`);
+
+  const row = await repo.findSustitucionById(id!);
+  return mapSustitucion(row!);
+}
+
+export async function listarSustituciones(ordenId: number) {
+  return (await repo.listSustituciones(ordenId)).map(mapSustitucion);
+}
+
+export async function aceptarSustitucion(ordenId: number, sid: number, user: { id: number; rol: Rol }) {
+  const orden = await repo.findOrdenById(ordenId);
+  if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
+  if (user.rol !== "tecnico" && user.rol !== "admin") throw AppError.forbidden();
+  const s = await repo.findSustitucionById(sid);
+  if (!s || s.orden_id !== ordenId) throw AppError.notFound("SUSTITUCION_NOT_FOUND", "Sustitución no encontrada");
+  if (s.estado !== "pendiente") throw AppError.conflict("SUSTITUCION_CERRADA", "La sustitución ya fue resuelta");
+
+  const sustituto = await repo.findProducto(s.sustituto_id);
+  if (!sustituto) throw AppError.notFound("PRODUCT_NOT_FOUND", "Sustituto no encontrado");
+  if (sustituto.stock < s.cantidad) {
+    throw AppError.business("INSUFFICIENT_STOCK", `El sustituto ya no tiene stock suficiente (disponible ${sustituto.stock})`);
+  }
+
+  const cot = await cotizacionDe(s);
+  const fueAprobada = cot?.estado === "aprobada";
+  const precioNuevo = Number(sustituto.precio_venta);
+  const ivaRate = await getIvaRate();
+
+  await withTransaction(async (client) => {
+    // Reemplazar la pieza en la cotización con el precio nuevo del sustituto
+    await repo.updateCotizacionLinea(s.linea_id, { productoId: s.sustituto_id, precioNeto: precioNuevo * s.cantidad });
+
+    // Recalcular totales de la cotización
+    const lineas = await repo.listCotizacionLineas(s.cotizacion_id);
+    const subtotal = lineas.reduce((acc, l) => acc + Number(l.precio_neto), 0);
+    const mon = calcMoney(subtotal, 0, ivaRate);
+    await repo.updateCotizacionTotales(s.cotizacion_id, mon.subtotal, mon.iva, mon.total);
+
+    // Si estaba aprobada: liberar reserva del original y reservar el sustituto
+    if (fueAprobada) {
+      const liberadas = await repo.liberarReservaProductoClient(client, ordenId, s.producto_original_id);
+      const cantidadLib = liberadas.reduce((a, r) => a + Number(r.cantidad), 0);
+      if (cantidadLib > 0) {
+        await repo.liberarStock(client, s.producto_original_id, cantidadLib);
+        await repo.insertMovimiento(client, {
+          productoId: s.producto_original_id,
+          tipo: "LIBERACION",
+          cantidad: cantidadLib,
+          usuarioId: user.id,
+          motivo: `Sustitución aceptada (orden ${orden.folio})`,
+        });
+      }
+      const res = await repo.reservarStock(client, s.sustituto_id, s.cantidad);
+      if (!res.rowCount) throw AppError.business("STOCK_RESERVED", "No hay stock suficiente del sustituto para reservar");
+      await repo.insertDetalleOrdenReserva(client, ordenId, s.sustituto_id, s.cantidad, precioNuevo);
+      await repo.insertMovimiento(client, {
+        productoId: s.sustituto_id,
+        tipo: "RESERVA",
+        cantidad: -s.cantidad,
+        usuarioId: user.id,
+        motivo: `Sustitución aceptada (orden ${orden.folio})`,
+      });
+    }
+  });
+
+  await repo.resolverSustitucion(sid, { estado: "aceptada", clienteAcepta: true, resueltoPor: user.id });
+  const destino: EstadoOrden = fueAprobada ? "en_reparacion" : "cotizado";
+  await repo.updateOrdenEstado(ordenId, destino, esRetrasada(destino, orden.fecha_prometida));
+  await repo.insertHistorial(
+    ordenId,
+    destino,
+    user.id,
+    `Cliente aceptó sustitución: ${s.nombre_original} → ${s.nombre_sustituto} ($${precioNuevo})`
+  );
+  return mapSustitucion((await repo.findSustitucionById(sid))!);
+}
+
+export async function rechazarSustitucion(ordenId: number, sid: number, motivo: string, user: { id: number; rol: Rol }) {
+  const orden = await repo.findOrdenById(ordenId);
+  if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
+  if (user.rol !== "tecnico" && user.rol !== "admin") throw AppError.forbidden();
+  const s = await repo.findSustitucionById(sid);
+  if (!s || s.orden_id !== ordenId) throw AppError.notFound("SUSTITUCION_NOT_FOUND", "Sustitución no encontrada");
+  if (s.estado !== "pendiente") throw AppError.conflict("SUSTITUCION_CERRADA", "La sustitución ya fue resuelta");
+
+  // El cliente no aceptó → se solicita el reabastecimiento del producto original
+  const solicitud = await comprasService.crearSolicitud(
+    { productoId: s.producto_original_id, cantidad: s.cantidad, ordenId, motivo },
+    { id: user.id }
+  );
+
+  await repo.resolverSustitucion(sid, { estado: "rechazada", clienteAcepta: false, solicitudId: solicitud.id, resueltoPor: user.id });
+  const cot = await cotizacionDe(s);
+  const destino: EstadoOrden = cot?.estado === "aprobada" ? "en_reparacion" : "cotizado";
+  await repo.updateOrdenEstado(ordenId, destino, esRetrasada(destino, orden.fecha_prometida));
+  await repo.insertHistorial(ordenId, destino, user.id, `Cliente rechazó sustitución; se generó solicitud de reabastecimiento de ${s.nombre_original}`);
+  return mapSustitucion((await repo.findSustitucionById(sid))!);
+}
+
+export async function cancelarSustitucion(ordenId: number, sid: number, motivo: string, user: { id: number; rol: Rol }) {
+  const orden = await repo.findOrdenById(ordenId);
+  if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
+  if (user.rol !== "tecnico" && user.rol !== "admin") throw AppError.forbidden();
+  const s = await repo.findSustitucionById(sid);
+  if (!s || s.orden_id !== ordenId) throw AppError.notFound("SUSTITUCION_NOT_FOUND", "Sustitución no encontrada");
+  if (s.estado !== "pendiente") throw AppError.conflict("SUSTITUCION_CERRADA", "Solo se puede cancelar una sustitución pendiente");
+  if (user.rol !== "admin" && s.creada_por !== user.id) throw AppError.forbidden();
+
+  await repo.resolverSustitucion(sid, { estado: "cancelada", clienteAcepta: null, resueltoPor: user.id });
+  const cot = await cotizacionDe(s);
+  const destino: EstadoOrden = cot?.estado === "aprobada" ? "en_reparacion" : "cotizado";
+  await repo.updateOrdenEstado(ordenId, destino, esRetrasada(destino, orden.fecha_prometida));
+  await repo.insertHistorial(ordenId, destino, user.id, `Sustitución cancelada: ${motivo}`);
+  return mapSustitucion((await repo.findSustitucionById(sid))!);
 }

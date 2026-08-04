@@ -19,12 +19,19 @@ const TRANSICIONES: Record<EstadoOrden, Transicion[]> = {
   ],
   cotizado: [
     { to: "en_reparacion", roles: ["tecnico"], condicion: "cotizacion_aprobada" },
+    { to: "sustitucion_pendiente", roles: ["tecnico"] },
     { to: "cancelado", roles: ["vendedor", "admin"] },
   ],
   en_reparacion: [
     { to: "listo", roles: ["tecnico"] },
     { to: "cancelado", roles: ["admin"] },
     { to: "en_diagnostico", roles: ["tecnico"] },
+    { to: "sustitucion_pendiente", roles: ["tecnico"] },
+  ],
+  sustitucion_pendiente: [
+    { to: "en_reparacion", roles: ["tecnico"] },
+    { to: "cotizado", roles: ["tecnico"] },
+    { to: "cancelado", roles: ["vendedor", "admin"] },
   ],
   listo: [
     { to: "entregado", roles: ["vendedor", "admin"] },
@@ -52,6 +59,7 @@ export const ESTADO_LABEL: Record<EstadoOrden, string> = {
   en_diagnostico: "Diagnóstico",
   cotizado: "Cotizado",
   en_reparacion: "En reparación",
+  sustitucion_pendiente: "Esperando sustitución",
   listo: "Listo",
   entregado: "Entregado",
   cancelado: "Cancelado",

@@ -34,6 +34,12 @@ export const PLANTILLAS: Record<string, Plantilla> = {
       "Se registró una solicitud de refacción pendiente de aprobación.\n" +
       "Revisa la pantalla de Reabastecimiento para gestionarla.\n\nTechStore · {fecha}",
   },
+  "NOT-06": {
+    asunto: "Sustitución propuesta — TechStore",
+    cuerpo:
+      "Se propuso una sustitución de pieza con validación del cliente.\n" +
+      "Revisa la orden para dar seguimiento.\n\nTechStore · {fecha}",
+  },
 };
 
 export const PLANTILLA_DEFAULT: Plantilla = {
