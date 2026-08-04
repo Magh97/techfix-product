@@ -16,6 +16,7 @@ import type {
   DashboardResumen,
   EspecificacionCampo,
   EstadoOrden,
+  Garantia,
   ImportResult,
   LoginResponse,
   Movimiento,
@@ -260,6 +261,18 @@ export const configuracionApi = {
       method: "PUT",
       body: JSON.stringify({ clave, valor }),
     }),
+};
+
+export const garantiasApi = {
+  list: (params?: { clienteId?: number; estado?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.clienteId) qs.set("clienteId", String(params.clienteId));
+    if (params?.estado) qs.set("estado", params.estado);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<Garantia>>(`/garantias${s ? `?${s}` : ""}`);
+  },
 };
 
 export const ordenesApi = {

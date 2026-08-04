@@ -9,6 +9,7 @@ import { configuracionRouter } from "./modules/configuracion/configuracion.route
 import { clientesRouter } from "./modules/crm/clientes.routes";
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes";
 import { cajaRouter, finanzasRouter } from "./modules/finance/finance.routes";
+import { garantiasRouter } from "./modules/garantias/garantias.routes";
 import { productsRouter } from "./modules/inventory/products.routes";
 import { notificacionesRouter } from "./modules/notifications/notifications.routes";
 import { quoteRouter } from "./modules/quote/quote.routes";
@@ -51,6 +52,7 @@ export function createApp() {
   app.use("/api/v1/catalogos", catalogosRouter);
   app.use("/api/v1/notificaciones", notificacionesRouter);
   app.use("/api/v1/configuracion", configuracionRouter);
+  app.use("/api/v1/garantias", garantiasRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

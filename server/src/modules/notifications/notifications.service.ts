@@ -63,6 +63,45 @@ export async function notificarRetraso(ordenId: number) {
   return enviarCorreo(orden, tipoNotificacion("retraso"));
 }
 
+// NOT-04: recordatorio de garantía por vencer (disparada por el worker)
+export async function notificarGarantia(garantiaId: number) {
+  const g = await repo.findGarantiaNotif(garantiaId);
+  if (!g) return { enviado: false, motivo: "SIN_GARANTIA" };
+  const tipo = tipoNotificacion("garantia");
+  const cliente = await repo.findClienteById(g.cliente_id);
+  const folio = g.orden_folio ?? g.venta_folio ?? "";
+  const vars = { cliente: cliente?.nombre ?? g.cliente_nombre, folio, fecha: hoy() };
+
+  if (!cliente?.correo) {
+    await repo.insertNotificacion({
+      clienteId: g.cliente_id,
+      garantiaId,
+      tipo,
+      canal: "correo",
+      estado: "fallido",
+      error: "cliente sin correo",
+      contenido: `Notificación ${tipo} · garantía ${g.id}`,
+    });
+    return { enviado: false, motivo: "SIN_CORREO", garantiaId };
+  }
+
+  const dbPlantilla = await repo.findPlantilla(tipo);
+  const { asunto, cuerpo } = renderPlantilla(tipo, vars, dbPlantilla);
+  const result = await sendMail({ to: cliente.correo, subject: asunto, body: cuerpo });
+
+  await repo.insertNotificacion({
+    clienteId: g.cliente_id,
+    garantiaId,
+    tipo,
+    canal: "correo",
+    estado: result.ok ? "enviado" : "fallido",
+    error: result.ok ? null : result.error,
+    contenido: cuerpo,
+  });
+
+  return { enviado: result.ok, canal: "correo", garantiaId, simulated: result.simulated };
+}
+
 /* --- Plantillas (NOT-05) y historial (NOT-06) --- */
 
 export async function listPlantillas() {

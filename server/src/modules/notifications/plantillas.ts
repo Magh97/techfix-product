@@ -22,6 +22,12 @@ export const PLANTILLAS: Record<string, Plantilla> = {
       "Hola {cliente}, la cotización de tu orden con folio {folio} ya está lista para su revisión.\n" +
       "Acércate a la tienda o contáctanos para aprobarla y dar inicio a la reparación.\n\nTechStore · {fecha}",
   },
+  "NOT-04": {
+    asunto: "Tu garantía está por vencer — TechStore",
+    cuerpo:
+      "Hola {cliente}, la garantía de tu orden {folio} está por vencer.\n" +
+      "Si presentas algún problema, acércate antes de la fecha límite.\n\nTechStore · {fecha}",
+  },
 };
 
 export const PLANTILLA_DEFAULT: Plantilla = {
@@ -41,6 +47,15 @@ export function renderPlantilla(
   };
 }
 
-export function tipoNotificacion(input: "listo" | "cotizacion" | "retraso"): string {
-  return input === "listo" ? "NOT-02" : input === "cotizacion" ? "NOT-03" : "NOT-01";
+export function tipoNotificacion(input: "listo" | "cotizacion" | "retraso" | "garantia"): string {
+  switch (input) {
+    case "listo":
+      return "NOT-02";
+    case "cotizacion":
+      return "NOT-03";
+    case "garantia":
+      return "NOT-04";
+    default:
+      return "NOT-01";
+  }
 }

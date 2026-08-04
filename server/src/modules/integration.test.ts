@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { pool } from "../shared/db";
 import { marcarRetrasadas } from "./services/ordenes.service";
+import { marcarGarantiasPorVencer } from "./garantias/garantias.service";
 
 // Solo corre con RUN_DB_TESTS=true y una base migrada + seed (ver CI)
 const runDb = !!process.env.RUN_DB_TESTS;
@@ -1484,5 +1485,53 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
       await request(app).put("/api/v1/configuracion").set(auth).send({ clave: "credito.limite_default", valor: 3000 });
       await request(app).put("/api/v1/configuracion").set(auth).send({ clave: "ventas.descuento_vendedor_max", valor: 0.1 });
     }
+  });
+
+  it("GARANTÍAS: listado con filtros y por cliente", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const c = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, correo) VALUES ('Cliente Garantía', '5522114455', 'garantia@correo.test') RETURNING id"
+    );
+    const clienteId = c.rows[0]!.id;
+    await pool.query(
+      "INSERT INTO garantias (cliente_id, tipo, inicio, fin) VALUES ($1,'servicio',CURRENT_DATE,CURRENT_DATE + 10)",
+      [clienteId]
+    );
+
+    const res = await request(app).get("/api/v1/garantias?estado=vigente").set(auth);
+    expect(res.status).toBe(200);
+    const item = res.body.data.find((g: { clienteId: number }) => g.clienteId === clienteId);
+    expect(item).toBeTruthy();
+    expect(item.estado).toBe("vigente");
+
+    const porCliente = await request(app).get(`/api/v1/clientes/${clienteId}/garantias`).set(auth);
+    expect(porCliente.status).toBe(200);
+    expect(porCliente.body.data.length).toBeGreaterThan(0);
+  });
+
+  it("NOTIFICACIONES: worker NOT-04 recuerda garantía por vencer y no duplica", async () => {
+    const c = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, correo) VALUES ('Cliente Garantía Notif', '5522116677', 'garantianotif@correo.test') RETURNING id"
+    );
+    const clienteId = c.rows[0]!.id;
+    const g = await pool.query<{ id: number }>(
+      "INSERT INTO garantias (cliente_id, tipo, inicio, fin) VALUES ($1,'servicio',CURRENT_DATE,CURRENT_DATE + 1) RETURNING id",
+      [clienteId]
+    );
+    const garantiaId = g.rows[0]!.id;
+
+    await marcarGarantiasPorVencer();
+    const n1 = await pool.query<{ id: number }>(
+      "SELECT id FROM notificaciones WHERE garantia_id = $1 AND tipo = 'NOT-04'",
+      [garantiaId]
+    );
+    expect(n1.rowCount).toBe(1);
+
+    await marcarGarantiasPorVencer();
+    const n2 = await pool.query<{ id: number }>(
+      "SELECT id FROM notificaciones WHERE garantia_id = $1 AND tipo = 'NOT-04'",
+      [garantiaId]
+    );
+    expect(n2.rowCount).toBe(1);
   });
 });
