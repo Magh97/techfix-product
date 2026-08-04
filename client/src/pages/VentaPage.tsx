@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Minus, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Minus, Plus, RefreshCw, ScanLine, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import TicketDialog from "@/components/TicketDialog";
 import { useToast } from "@/components/ui/toast";
 import { getSessionUser } from "@/lib/auth";
 import { clientesApi, productsApi, ventasApi } from "@/lib/api";
@@ -42,6 +43,7 @@ export default function VentaPage() {
   const [ticket, setTicket] = useState<Venta | null>(null);
   const [sugerencias, setSugerencias] = useState<Sugerencias | null>(null);
   const [sugerenciaDe, setSugerenciaDe] = useState<Producto | null>(null);
+  const [codigoInput, setCodigoInput] = useState("");
 
   const { data: productos, isLoading } = useQuery({
     queryKey: ["productos", "pos", busqueda],
@@ -110,6 +112,18 @@ export default function VentaPage() {
       .catch((e) => toast.error("Error", e instanceof Error ? e.message : ""));
   }
 
+  function agregarPorCodigo() {
+    const codigo = codigoInput.trim();
+    if (!codigo) return;
+    productsApi
+      .porCodigo(codigo)
+      .then((r) => {
+        add(r.data);
+        setCodigoInput("");
+      })
+      .catch((e) => toast.error("Código no encontrado", e instanceof Error ? e.message : ""));
+  }
+
   function usarSustituto(s: Sustituto) {
     const esKit = !!sugerencias?.componenteCorto;
     if (!esKit && sugerenciaDe) {
@@ -134,6 +148,21 @@ export default function VentaPage() {
         <h1 className="text-2xl font-bold">Punto de Venta</h1>
 
         <div className="flex gap-2">
+          <div className="relative w-44">
+            <ScanLine className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+            <Input
+              className="pl-9"
+              placeholder="Escanear…"
+              value={codigoInput}
+              onChange={(e) => setCodigoInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  agregarPorCodigo();
+                }
+              }}
+            />
+          </div>
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
             <Input className="pl-9" placeholder="Buscar producto por nombre o SKU…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
@@ -344,33 +373,7 @@ export default function VentaPage() {
         </div>
       </Dialog>
 
-      <Dialog open={!!ticket} onClose={() => setTicket(null)} title="Ticket de venta">
-        {ticket && (
-          <div className="space-y-3">
-            <div className="text-center">
-              <p className="text-lg font-bold">TechStore</p>
-              <p className="font-mono text-sm">{ticket.folio}</p>
-              <Badge variant={ticket.tipoPago === "credito" ? "warning" : "success"}>{ticket.tipoPago}</Badge>
-            </div>
-            <div className="divide-y divide-border-line text-sm">
-              {ticket.lineas.map((l, i) => (
-                <div key={i} className="flex justify-between py-1.5">
-                  <span>{l.cantidad} × {l.descripcion}</span>
-                  <span>{mxn(l.precio)}</span>
-                </div>
-              ))}
-            </div>
-            <div className="border-t border-border-line pt-2 text-sm">
-              <div className="flex justify-between"><span>Subtotal</span><span>{mxn(ticket.subtotal)}</span></div>
-              {ticket.descuento > 0 && <div className="flex justify-between"><span>Descuento</span><span>-{mxn(ticket.descuento)}</span></div>}
-              <div className="flex justify-between"><span>IVA</span><span>{mxn(ticket.iva)}</span></div>
-              <div className="flex justify-between text-lg font-bold"><span>Total</span><span>{mxn(ticket.total)}</span></div>
-              {ticket.cambio ? <div className="flex justify-between"><span>Cambio</span><span>{mxn(ticket.cambio)}</span></div> : null}
-              {ticket.fechaVencimiento && <div className="flex justify-between text-xs text-muted"><span>Vence</span><span>{ticket.fechaVencimiento}</span></div>}
-            </div>
-          </div>
-        )}
-      </Dialog>
+      <TicketDialog venta={ticket} onClose={() => setTicket(null)} />
     </div>
   );
 }

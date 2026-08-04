@@ -1534,4 +1534,32 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     );
     expect(n2.rowCount).toBe(1);
   });
+
+  it("POS: por-codigo y por-folio exponen datos para escaneo y reimpresión", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const codigo = `750${suf}`;
+
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `SCAN-${suf}`, codigoBarras: codigo, nombre: "Prod escaneo", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+
+    const porCodigo = await request(app).get(`/api/v1/productos/por-codigo/${codigo}`).set(auth);
+    expect(porCodigo.status).toBe(200);
+    expect(porCodigo.body.data.sku).toBe(`SCAN-${suf}`);
+    expect(porCodigo.body.data.stock).toBe(10);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    expect(venta.status).toBe(201);
+
+    const porFolio = await request(app).get(`/api/v1/ventas/por-folio/${venta.body.data.folio}`).set(auth);
+    expect(porFolio.status).toBe(200);
+    expect(porFolio.body.data.id).toBe(venta.body.data.id);
+  });
 });
