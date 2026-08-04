@@ -232,7 +232,7 @@ export async function cambiarEstado(id: number, nuevoEstado: EstadoOrden, nota: 
       }
       await repo.liberarReservas(client, id);
     }
-    await repo.updateOrdenEstado(id, nuevoEstado, false);
+    await repo.updateOrdenEstado(id, nuevoEstado, esRetrasada(nuevoEstado, orden.fecha_prometida));
   });
 
   await repo.insertHistorial(id, nuevoEstado, user.id, nota ?? ESTADO_LABEL[nuevoEstado]);
@@ -517,4 +517,9 @@ export async function notificar(
   _user: { id: number; rol: Rol }
 ) {
   return notifications.notificar(ordenId, input);
+}
+
+// US-SER-09: job horario que marca las órdenes retrasadas
+export function marcarRetrasadas() {
+  return repo.marcarRetrasadas();
 }
