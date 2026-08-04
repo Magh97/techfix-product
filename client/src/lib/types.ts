@@ -1,7 +1,9 @@
 export interface Usuario {
   id: number;
   nombre: string;
+  usuario?: string;
   rol: "admin" | "vendedor" | "tecnico";
+  isActive?: boolean;
 }
 export interface LoginResponse {
   token: string;

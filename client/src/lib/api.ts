@@ -72,12 +72,20 @@ export const authApi = {
 };
 
 export const usuariosApi = {
-  list: (params?: { rol?: "admin" | "vendedor" | "tecnico" }) => {
+  list: (params?: { rol?: "admin" | "vendedor" | "tecnico"; isActive?: boolean; page?: number; pageSize?: number }) => {
     const qs = new URLSearchParams();
     if (params?.rol) qs.set("rol", params.rol);
+    if (params?.isActive !== undefined) qs.set("isActive", String(params.isActive));
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
     const s = qs.toString();
-    return api<{ data: Usuario[] }>(`/usuarios${s ? `?${s}` : ""}`);
+    return api<Paginated<Usuario>>(`/usuarios${s ? `?${s}` : ""}`);
   },
+  create: (input: { nombre: string; usuario: string; password: string; rol: "admin" | "vendedor" | "tecnico" }) =>
+    api<{ data: Usuario }>("/usuarios", { method: "POST", body: JSON.stringify(input) }),
+  update: (id: number, input: Partial<{ nombre: string; rol: "admin" | "vendedor" | "tecnico"; isActive: boolean; password: string }>) =>
+    api<{ data: Usuario }>(`/usuarios/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  remove: (id: number) => api<{ data: Usuario }>(`/usuarios/${id}`, { method: "DELETE" }),
 };
 
 export const dashboardApi = {
