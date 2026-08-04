@@ -1261,4 +1261,51 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(prod.rows[0]?.catalogo_id).toBe(imp.body.data.id);
     expect(prod.rows[0]?.especificaciones?.tipo_memoria).toBe("DDR5");
   });
+
+  it("USUARIOS: alta, login, edición, desactivación y RBAC", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    const suf = Date.now();
+    const usuario = `nuevo-${suf}`;
+
+    // Solo admin puede crear
+    expect((await request(app).post("/api/v1/usuarios").set(authV).send({ nombre: "X", usuario: `x-${suf}`, password: "123456", rol: "vendedor" })).status).toBe(403);
+
+    // Alta
+    const creado = await request(app)
+      .post("/api/v1/usuarios")
+      .set(auth)
+      .send({ nombre: "Nuevo Vendedor", usuario, password: "secreto123", rol: "vendedor" });
+    expect(creado.status).toBe(201);
+    const nuevoId = creado.body.data.id;
+
+    // Login con la nueva credencial
+    const login = await request(app).post("/api/v1/auth/login").send({ usuario, password: "secreto123" });
+    expect(login.status).toBe(200);
+    expect(login.body.data.usuario.rol).toBe("vendedor");
+
+    // Usuario duplicado → 409
+    const dup = await request(app).post("/api/v1/usuarios").set(auth).send({ nombre: "Otro", usuario, password: "secreto123", rol: "vendedor" });
+    expect(dup.status).toBe(409);
+    expect(dup.body.error.code).toBe("USERNAME_TAKEN");
+
+    // Desactivar self → 422
+    const yoId = (await pool.query<{ id: number }>("SELECT id FROM usuarios WHERE usuario = 'admin'")).rows[0]!.id;
+    const selfDes = await request(app).delete(`/api/v1/usuarios/${yoId}`).set(auth);
+    expect(selfDes.status).toBe(422);
+    expect(selfDes.body.error.code).toBe("SELF_DEACTIVATE");
+
+    // Editar rol
+    const editado = await request(app)
+      .put(`/api/v1/usuarios/${nuevoId}`)
+      .set(auth)
+      .send({ rol: "tecnico", nombre: "Nuevo Técnico" });
+    expect(editado.status).toBe(200);
+    expect(editado.body.data.rol).toBe("tecnico");
+
+    // Desactivar → login falla
+    await request(app).delete(`/api/v1/usuarios/${nuevoId}`).set(auth);
+    const loginDes = await request(app).post("/api/v1/auth/login").send({ usuario, password: "secreto123" });
+    expect(loginDes.status).toBe(422);
+  });
 });
