@@ -6,6 +6,7 @@ import { ESTADO_LABEL, validarTransicion } from "./estados";
 import type { EstadoOrden, Rol, TipoEquipo } from "./ordenes.types";
 import * as repo from "./ordenes.repository";
 import * as ventasService from "../sales/ventas.service";
+import * as notifications from "../notifications/notifications.service";
 
 const DIAS_GARANTIA_SERVICIO = 30;
 const TOLERANCIA_RETRASO_DIAS = 1; // 1 día calendario (incluye domingo) — BR-RET
@@ -515,15 +516,5 @@ export async function notificar(
   input: { tipo: "listo" | "cotizacion"; canal?: string },
   _user: { id: number; rol: Rol }
 ) {
-  const orden = await repo.findOrdenById(ordenId);
-  if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
-  const canal = input.canal ?? "whatsapp";
-  await repo.insertNotificacion({
-    clienteId: orden.cliente_id,
-    ordenId: orden.id,
-    tipo: `NOT-0${input.tipo === "listo" ? 2 : 3}`,
-    canal,
-    contenido: `${input.tipo === "listo" ? "Equipo listo" : "Cotización lista"} · orden ${orden.folio}`,
-  });
-  return { enviado: true, canal, folio: orden.folio };
+  return notifications.notificar(ordenId, input);
 }

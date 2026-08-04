@@ -30,6 +30,29 @@ async function main() {
 
   await pool.query(`INSERT INTO configuracion (clave, valor) VALUES ('iva', '{"rate":0.16}') ON CONFLICT (clave) DO NOTHING`);
 
+  const plantillas = [
+    {
+      tipo: "NOT-02",
+      asunto: "Tu equipo ya está listo — TechStore",
+      cuerpo:
+        "Hola {cliente}, buenas noticias: tu equipo con folio {folio} ya está listo.\n" +
+        "Puedes pasar a recogerlo a la tienda. ¡Te esperamos!\n\nTechStore · {fecha}",
+    },
+    {
+      tipo: "NOT-03",
+      asunto: "Tu cotización está lista — TechStore",
+      cuerpo:
+        "Hola {cliente}, la cotización de tu orden con folio {folio} ya está lista para su revisión.\n" +
+        "Acércate a la tienda o contáctanos para aprobarla y dar inicio a la reparación.\n\nTechStore · {fecha}",
+    },
+  ];
+  for (const p of plantillas) {
+    await pool.query(
+      `INSERT INTO plantillas_notificacion (tipo, asunto, cuerpo) VALUES ($1,$2,$3) ON CONFLICT (tipo) DO NOTHING`,
+      [p.tipo, p.asunto, p.cuerpo]
+    );
+  }
+
   const clientes = [
     { nombre: "Ana Torres", telefono: "5512345678", correo: "ana.torres@mail.com" },
     { nombre: "Beto Sánchez", telefono: "5522334455", correo: "beto.sanchez@mail.com" },
