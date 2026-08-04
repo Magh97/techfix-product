@@ -386,6 +386,107 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(resX.body.data.importados).toBe(1);
   });
 
+  it("BOM: define kit, recalcula precio, desglosa en la venta y restaura stock al cancelar", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+
+    const crearProd = async (sku: string, nombre: string, pc: number, pv: number) => {
+      const r = await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku, nombre, precioCompra: pc, precioVenta: pv });
+      return r.body.data.id;
+    };
+
+    const kitId = await crearProd(`KIT-${Date.now()}`, "Kit test", 0, 0);
+    const compA = await crearProd(`CA-${Date.now()}`, "Comp A", 50, 100);
+    const compB = await crearProd(`CB-${Date.now()}`, "Comp B", 100, 200);
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [compA]);
+    await pool.query("UPDATE productos SET stock = 3 WHERE id = $1", [compB]);
+
+    // Validaciones antes de definir
+    const selfRef = await request(app)
+      .put(`/api/v1/productos/${kitId}/bom`)
+      .set(auth)
+      .send({ componentes: [{ productoId: kitId, cantidad: 1 }] });
+    expect(selfRef.status).toBe(400);
+
+    const missing = await request(app)
+      .put(`/api/v1/productos/${kitId}/bom`)
+      .set(auth)
+      .send({ componentes: [{ productoId: 999999, cantidad: 1 }] });
+    expect(missing.status).toBe(404);
+
+    // Definir BOM: 1×compA + 2×compB + 50 de mano de obra
+    const definido = await request(app)
+      .put(`/api/v1/productos/${kitId}/bom`)
+      .set(auth)
+      .send({
+        componentes: [
+          { productoId: compA, cantidad: 1 },
+          { productoId: compB, cantidad: 2 },
+        ],
+        manoObra: 50,
+      });
+    expect(definido.status).toBe(200);
+    expect(definido.body.data.componentes.length).toBe(2);
+    // costo = 50 + 100*2 = 250 · venta = 100 + 200*2 + 50 = 550
+    expect(definido.body.data.precioCompra).toBe(250);
+    expect(definido.body.data.precioVenta).toBe(550);
+    expect(definido.body.data.manoObra).toBe(50);
+
+    // Kit anidado rechazado
+    const nested = await request(app)
+      .put(`/api/v1/productos/${compA}/bom`)
+      .set(auth)
+      .send({ componentes: [{ productoId: kitId, cantidad: 1 }] });
+    expect(nested.status).toBe(400);
+
+    // Venta del kit
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        lineas: [{ tipo: "producto", productoId: kitId, cantidad: 1 }],
+        tipoPago: "contado",
+        metodoPago: "efectivo",
+        montoRecibido: 1000,
+      });
+    expect(venta.status).toBe(201);
+    expect(venta.body.data.lineas.length).toBe(3);
+    expect(venta.body.data.subtotal).toBe(550);
+    expect(venta.body.data.total).toBe(638); // 550 + IVA 88
+
+    // Stocks de componentes decrementados: A 5→4, B 3→1
+    const stockA = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [compA]);
+    const stockB = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [compB]);
+    expect(Number(stockA.rows[0]?.stock)).toBe(4);
+    expect(Number(stockB.rows[0]?.stock)).toBe(1);
+
+    // Movimientos de salida por componente
+    const movs = await pool.query<{ tipo: string }>(
+      "SELECT tipo FROM movimientos_inventario WHERE producto_id = ANY($1) AND tipo = 'SALIDA_VENTA' ORDER BY producto_id",
+      [[compA, compB]]
+    );
+    expect(movs.rowCount).toBe(2);
+
+    // Stock insuficiente en un componente → 422
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [compB]);
+    const sinStock = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId: kitId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    expect(sinStock.status).toBe(422);
+    expect(sinStock.body.error.code).toBe("INSUFFICIENT_STOCK");
+
+    // Cancelación restaura stock de componentes
+    const cancelada = await request(app).post(`/api/v1/ventas/${venta.body.data.id}/cancelar`).set(auth).send({ motivo: "Test BOM" });
+    expect(cancelada.status).toBe(200);
+    const stockA2 = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [compA]);
+    const stockB2 = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [compB]);
+    expect(Number(stockA2.rows[0]?.stock)).toBe(5);
+    expect(Number(stockB2.rows[0]?.stock)).toBe(2); // estaba en 0 → se restauran las 2 del kit
+  });
+
   it("cancelar una orden libera las reservas de inventario", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const authT = { Authorization: `Bearer ${tecnicoToken}` };

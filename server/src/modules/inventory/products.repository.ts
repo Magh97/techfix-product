@@ -1,4 +1,5 @@
 import { query } from "../../shared/db";
+import type { PoolClient } from "pg";
 
 export interface ProductRow {
   id: number;
@@ -14,12 +15,13 @@ export interface ProductRow {
   stock: number;
   stock_minimo: number;
   is_kit: boolean;
+  mano_obra: string;
   is_active: boolean;
 }
 
 const SELECT = `
   SELECT p.id, p.sku, p.codigo_barras, p.nombre, p.marca, p.modelo, p.categoria_id,
-         c.tipo AS categoria, p.precio_compra, p.precio_venta, p.stock, p.stock_minimo, p.is_kit, p.is_active
+         c.tipo AS categoria, p.precio_compra, p.precio_venta, p.stock, p.stock_minimo, p.is_kit, p.mano_obra, p.is_active
   FROM productos p
   JOIN categorias c ON c.id = p.categoria_id
 `;
@@ -126,6 +128,80 @@ export function createProductWithStock(input: CreateProductInput & { stock: numb
 
 export function categoriaExists(id: number) {
   return query<{ id: number }>("SELECT id FROM categorias WHERE id = $1", [id]).then((r) => r.rows[0] !== undefined);
+}
+
+/* --- BOM / kits (ADR-0003) --- */
+
+export interface ProductoBasicoRow {
+  id: number;
+  sku: string;
+  nombre: string;
+  precio_compra: string;
+  precio_venta: string;
+  stock: number;
+  is_kit: boolean;
+  is_active: boolean;
+}
+
+export function findProductoBasico(id: number) {
+  return query<ProductoBasicoRow>(
+    "SELECT id, sku, nombre, precio_compra, precio_venta, stock, is_kit, is_active FROM productos WHERE id = $1",
+    [id]
+  ).then((r) => r.rows[0]);
+}
+
+export interface BomComponenteRow {
+  producto_id: number;
+  sku: string;
+  nombre: string;
+  cantidad: number;
+  precio_compra: string;
+  precio_venta: string;
+  stock: number;
+}
+
+export function listBom(kitId: number) {
+  return query<BomComponenteRow>(
+    `SELECT b.componente_id AS producto_id, p.sku, p.nombre, b.cantidad, p.precio_compra, p.precio_venta, p.stock
+     FROM producto_bom b
+     JOIN productos p ON p.id = b.componente_id
+     WHERE b.kit_producto_id = $1
+     ORDER BY p.nombre`,
+    [kitId]
+  ).then((r) => r.rows);
+}
+
+export function countBom(kitId: number) {
+  return query<{ c: string }>("SELECT COUNT(*)::int AS c FROM producto_bom WHERE kit_producto_id = $1", [kitId]).then(
+    (r) => Number(r.rows[0]?.c ?? 0)
+  );
+}
+
+export function deleteBom(client: PoolClient, kitId: number) {
+  return client.query("DELETE FROM producto_bom WHERE kit_producto_id = $1", [kitId]);
+}
+
+export function insertBomComponente(
+  client: PoolClient,
+  kitId: number,
+  componenteId: number,
+  cantidad: number
+) {
+  return client.query(
+    "INSERT INTO producto_bom (kit_producto_id, componente_id, cantidad) VALUES ($1,$2,$3)",
+    [kitId, componenteId, cantidad]
+  );
+}
+
+export function updateKitConfig(
+  client: PoolClient,
+  kitId: number,
+  data: { precioCompra: number; precioVenta: number; manoObra: number }
+) {
+  return client.query(
+    `UPDATE productos SET is_kit = true, mano_obra = $2, precio_compra = $3, precio_venta = $4, updated_at = NOW() WHERE id = $1`,
+    [kitId, data.manoObra, data.precioCompra, data.precioVenta]
+  );
 }
 
 export function updateProduct(id: number, fields: Record<string, unknown>) {

@@ -80,6 +80,45 @@ async function main() {
     );
   }
 
+  // Kit de ejemplo: PC Gamer i5 (ADR-0003) — precio = Σ componentes + mano de obra
+  const kit = {
+    sku: "KIT-001",
+    nombre: "PC Gamer Intel i5",
+    categoriaId: 3,
+    manoObra: 350,
+    componentes: [
+      { sku: "PROC-001", cantidad: 1 },
+      { sku: "RAM-001", cantidad: 2 },
+      { sku: "SSD-001", cantidad: 1 },
+      { sku: "MON-001", cantidad: 1 },
+    ],
+  };
+  const kitPrecios = await pool.query<{ sku: string; precio_compra: string; precio_venta: string }>(
+    "SELECT sku, precio_compra, precio_venta FROM productos WHERE sku = ANY($1)",
+    [kit.componentes.map((c) => c.sku)]
+  );
+  const precios = new Map(kitPrecios.rows.map((r) => [r.sku, { c: Number(r.precio_compra), v: Number(r.precio_venta) }]));
+  const precioCompra = kit.componentes.reduce((a, c) => a + (precios.get(c.sku)?.c ?? 0) * c.cantidad, 0);
+  const precioVenta = kit.componentes.reduce((a, c) => a + (precios.get(c.sku)?.v ?? 0) * c.cantidad, 0) + kit.manoObra;
+
+  await pool.query(
+    `INSERT INTO productos (categoria_id, sku, nombre, precio_compra, precio_venta, stock, stock_minimo, is_kit, mano_obra)
+     VALUES ($1,$2,$3,$4,$5,0,0,true,$6) ON CONFLICT (sku) DO UPDATE
+       SET precio_compra = EXCLUDED.precio_compra, precio_venta = EXCLUDED.precio_venta, mano_obra = EXCLUDED.mano_obra`,
+    [kit.categoriaId, kit.sku, kit.nombre, precioCompra, precioVenta, kit.manoObra]
+  );
+  const kitId = await pool.query<{ id: number }>("SELECT id FROM productos WHERE sku = $1", [kit.sku]);
+  if (kitId.rows[0]) {
+    await pool.query("DELETE FROM producto_bom WHERE kit_producto_id = $1", [kitId.rows[0].id]);
+    for (const c of kit.componentes) {
+      await pool.query(
+        `INSERT INTO producto_bom (kit_producto_id, componente_id, cantidad)
+         SELECT $1, id, $2 FROM productos WHERE sku = $3`,
+        [kitId.rows[0].id, c.cantidad, c.sku]
+      );
+    }
+  }
+
   const proveedores = [
     { nombre: "Distribuidora Tecno Mayorista", contacto: "ventas@tecnomayorista.mx", condicionesPago: "Crédito 30 días" },
     { nombre: "Importadora de Componentes MX", contacto: "Carlos (55) 4444-5555", condicionesPago: "Contado / transferencia" },

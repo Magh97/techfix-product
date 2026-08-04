@@ -1,4 +1,5 @@
 import type {
+  Bom,
   Caja,
   Cliente,
   Compra,
@@ -73,6 +74,9 @@ export const productsApi = {
   exportar: (formato: "csv" | "xlsx") => downloadExport("/productos/exportar", `catalogo-productos.${formato}`, { formato }),
   plantilla: (formato: "csv" | "xlsx") => downloadExport("/productos/plantilla", `plantilla-productos.${formato}`, { formato }),
   importar: (file: File) => uploadFile<ImportResult>("/productos/importar", "archivo", file),
+  getBom: (id: number) => api<{ data: Bom }>(`/productos/${id}/bom`),
+  setBom: (id: number, input: { componentes: { productoId: number; cantidad: number }[]; manoObra?: number }) =>
+    api<{ data: Bom }>(`/productos/${id}/bom`, { method: "PUT", body: JSON.stringify(input) }),
 };
 
 export const clientesApi = {

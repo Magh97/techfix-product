@@ -5,7 +5,7 @@ import { AppError } from "../../shared/errors";
 import { requireAuth, requireRole } from "../../shared/middleware/auth";
 import { getValidated, validate } from "../../shared/validation";
 import type { CreateProductInput } from "./products.repository";
-import { createProductSchema, exportProductosQuery, listProductsQuery, productIdParams, updateProductSchema } from "./products.schema";
+import { createProductSchema, bomSchema, exportProductosQuery, listProductsQuery, productIdParams, updateProductSchema } from "./products.schema";
 import { plantillaQuerySchema } from "./import.schema";
 import * as importService from "./import.service";
 import * as service from "./products.service";
@@ -80,5 +80,21 @@ productsRouter.patch(
   async (req, res) => {
     const { productoId } = getValidated<{ productoId: number }>(req, "params");
     ok(res, await service.deactivate(productoId));
+  }
+);
+
+productsRouter.get("/:productoId/bom", requireRole("admin"), validate(productIdParams, "params"), async (req, res) => {
+  const { productoId } = getValidated<{ productoId: number }>(req, "params");
+  ok(res, await service.getBom(productoId));
+});
+
+productsRouter.put(
+  "/:productoId/bom",
+  requireRole("admin"),
+  validate(productIdParams, "params"),
+  validate(bomSchema),
+  async (req, res) => {
+    const { productoId } = getValidated<{ productoId: number }>(req, "params");
+    ok(res, await service.setBom(productoId, getValidated<never>(req, "body")));
   }
 );

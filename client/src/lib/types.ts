@@ -24,6 +24,7 @@ export interface Producto {
   stockMinimo: number;
   lowStock: boolean;
   isKit: boolean;
+  manoObra: number;
   isActive: boolean;
 }
 
@@ -312,4 +313,23 @@ export interface ImportResult {
   importados: number;
   omitidos: { fila: number; sku: string; motivo: string }[];
   errores: { fila: number; sku: string; motivo: string }[];
+}
+
+export interface BomItem {
+  productoId: number;
+  sku: string;
+  nombre: string;
+  cantidad: number;
+  precioCompra: number;
+  precioVenta: number;
+  stock: number;
+}
+
+export interface Bom {
+  kitId: number;
+  nombre: string;
+  manoObra: number;
+  precioCompra: number;
+  precioVenta: number;
+  componentes: BomItem[];
 }

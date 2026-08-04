@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FileSpreadsheet, Plus, Upload } from "lucide-react";
+import { Cpu, Download, FileSpreadsheet, Plus, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { productsApi } from "@/lib/api";
-import type { CreateProducto, ImportResult } from "@/lib/types";
+import { getSessionUser } from "@/lib/auth";
+import type { CreateProducto, ImportResult, Producto } from "@/lib/types";
 
 const CATS: Record<string, string> = {
   componente: "Componente",
@@ -26,11 +27,16 @@ const mxn = (n: number) => n.toLocaleString("es-MX", { minimumFractionDigits: 2,
 export default function ProductosPage() {
   const toast = useToast();
   const qc = useQueryClient();
+  const esAdmin = getSessionUser()?.rol === "admin";
   const [busqueda, setBusqueda] = useState("");
   const [abierto, setAbierto] = useState(false);
   const [importAbierto, setImportAbierto] = useState(false);
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState<ImportResult | null>(null);
+  const [bomProducto, setBomProducto] = useState<Producto | null>(null);
+  const [bomDraft, setBomDraft] = useState<{ productoId: string; cantidad: string }[]>([]);
+  const [bomManoObra, setBomManoObra] = useState("");
+  const [bomGuardando, setBomGuardando] = useState(false);
   const [form, setForm] = useState({
     sku: "",
     nombre: "",
@@ -46,6 +52,12 @@ export default function ProductosPage() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["productos", busqueda],
     queryFn: () => productsApi.list({ q: busqueda || undefined, pageSize: 50 }),
+  });
+
+  const catalogo = useQuery({
+    queryKey: ["productos", "catalogo"],
+    queryFn: () => productsApi.list({ pageSize: 200 }),
+    enabled: !!bomProducto,
   });
 
   const create = useMutation({
@@ -95,6 +107,52 @@ export default function ProductosPage() {
       .finally(() => setImportando(false));
   }
 
+  function abrirBom(p: Producto) {
+    setBomProducto(p);
+    setBomManoObra(p.isKit ? String(p.manoObra ?? 0) : "0");
+    setBomDraft([{ productoId: "", cantidad: "1" }]);
+    productsApi
+      .getBom(p.id)
+      .then((r) => {
+        setBomDraft(r.data.componentes.map((c) => ({ productoId: String(c.productoId), cantidad: String(c.cantidad) })));
+        setBomManoObra(String(r.data.manoObra ?? 0));
+      })
+      .catch(() => {
+        // Sin BOM aún: arranca con una fila vacía
+      });
+  }
+
+  const bomSubtotalCompra = bomDraft.reduce((acc, row) => {
+    const p = catalogo.data?.data.find((x) => x.id === Number(row.productoId));
+    return acc + (p ? p.precioCompra * (Number(row.cantidad) || 0) : 0);
+  }, 0);
+  const bomSubtotalVenta = bomDraft.reduce((acc, row) => {
+    const p = catalogo.data?.data.find((x) => x.id === Number(row.productoId));
+    return acc + (p ? p.precioVenta * (Number(row.cantidad) || 0) : 0);
+  }, 0);
+  const manoObra = Number(bomManoObra) || 0;
+
+  function guardarBom() {
+    if (!bomProducto) return;
+    const componentes = bomDraft
+      .filter((r) => r.productoId && Number(r.cantidad) > 0)
+      .map((r) => ({ productoId: Number(r.productoId), cantidad: Number(r.cantidad) }));
+    if (!componentes.length) {
+      toast.error("Agrega al menos un componente");
+      return;
+    }
+    setBomGuardando(true);
+    productsApi
+      .setBom(bomProducto.id, { componentes, manoObra })
+      .then(() => {
+        toast.success("BOM guardado");
+        setBomProducto(null);
+        qc.invalidateQueries({ queryKey: ["productos"] });
+      })
+      .catch((e) => toast.error("Error al guardar BOM", e instanceof Error ? e.message : ""))
+      .finally(() => setBomGuardando(false));
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -141,13 +199,17 @@ export default function ProductosPage() {
                   <TH>Categoría</TH>
                   <TH className="text-right">P. venta</TH>
                   <TH className="text-right">Stock</TH>
+                  <TH className="text-right">Acciones</TH>
                 </TR>
               </THead>
               <tbody>
                 {data?.data.map((p) => (
                   <TR key={p.id}>
                     <TD className="font-mono text-xs text-muted">{p.sku}</TD>
-                    <TD>{p.nombre}</TD>
+                    <TD>
+                      {p.nombre}
+                      {p.isKit && <Badge variant="accent" className="ml-2">Kit</Badge>}
+                    </TD>
                     <TD>
                       <Badge variant="default">{CATS[p.categoria] ?? p.categoria}</Badge>
                     </TD>
@@ -155,6 +217,13 @@ export default function ProductosPage() {
                     <TD className="text-right">
                       <span className={p.lowStock ? "font-semibold text-warning" : undefined}>{p.stock}</span>
                       {p.lowStock && <Badge variant="warning" className="ml-2">bajo</Badge>}
+                    </TD>
+                    <TD className="text-right">
+                      {esAdmin && (
+                        <Button size="sm" variant="outline" onClick={() => abrirBom(p)}>
+                          <Cpu className="h-3.5 w-3.5" /> Componentes
+                        </Button>
+                      )}
                     </TD>
                   </TR>
                 ))}
@@ -225,6 +294,97 @@ export default function ProductosPage() {
             </Button>
           </div>
         </form>
+      </Dialog>
+
+      <Dialog open={!!bomProducto} onClose={() => setBomProducto(null)} title={`Componentes de ${bomProducto?.nombre ?? ""}`}>
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Define los componentes del kit. El precio del kit se recalcula como la suma de los componentes más la mano
+            de obra de ensamble.
+          </p>
+
+          <div className="max-h-52 space-y-2 overflow-auto">
+            {bomDraft.map((row, i) => {
+              const sel = catalogo.data?.data.find((x) => x.id === Number(row.productoId));
+              return (
+                <div key={i} className="flex items-center gap-2">
+                  <select
+                    value={row.productoId}
+                    onChange={(e) => setBomDraft((d) => d.map((r, j) => (j === i ? { ...r, productoId: e.target.value } : r)))}
+                    className="h-10 flex-1 rounded-md border border-border-line bg-surface px-3 text-sm"
+                  >
+                    <option value="">Selecciona un producto…</option>
+                    {catalogo.data?.data
+                      .filter((x) => x.id !== bomProducto?.id && !x.isKit)
+                      .map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.sku} — {x.nombre} (${mxn(x.precioVenta)})
+                        </option>
+                      ))}
+                  </select>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={row.cantidad}
+                    onChange={(e) => setBomDraft((d) => d.map((r, j) => (j === i ? { ...r, cantidad: e.target.value } : r)))}
+                    className="w-20"
+                    placeholder="Cant."
+                  />
+                  {sel && <span className="w-24 text-right text-xs text-muted">${mxn(sel.precioVenta * (Number(row.cantidad) || 0))}</span>}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setBomDraft((d) => d.filter((_, j) => j !== i))}
+                  >
+                    <Trash2 className="h-4 w-4 text-danger" />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBomDraft((d) => [...d, { productoId: "", cantidad: "1" }])}
+            >
+              <Plus className="h-4 w-4" /> Agregar componente
+            </Button>
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted">Mano de obra de ensamble</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={bomManoObra}
+                onChange={(e) => setBomManoObra(e.target.value)}
+                className="w-24 text-right"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-md bg-surface-2 p-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted">Costo kit (Σ compras)</span>
+              <span>${mxn(bomSubtotalCompra)}</span>
+            </div>
+            <div className="flex justify-between font-semibold">
+              <span>Precio venta (Σ ventas + ensamble)</span>
+              <span>${mxn(bomSubtotalVenta + manoObra)}</span>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setBomProducto(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={guardarBom} disabled={bomGuardando}>
+              {bomGuardando ? "Guardando…" : "Guardar BOM"}
+            </Button>
+          </div>
+        </div>
       </Dialog>
 
       <Dialog open={importAbierto} onClose={() => setImportAbierto(false)} title="Importar productos">

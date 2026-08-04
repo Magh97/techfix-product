@@ -52,7 +52,7 @@ export default function VentaPage() {
 
   const descOk = esAdmin || montos.desc <= montos.subtotal * 0.1;
 
-  function add(p: { id: number; nombre: string; precioVenta: number }) {
+  function add(p: { id: number; nombre: string; precioVenta: number; isKit: boolean }) {
     setCart((c) => {
       const exist = c.find((x) => x.productoId === p.id);
       if (exist) return c.map((x) => (x.productoId === p.id ? { ...x, qty: x.qty + 1 } : x));
@@ -113,11 +113,14 @@ export default function VentaPage() {
                   <div key={p.id} className="flex items-center justify-between px-4 py-2.5 text-sm hover:bg-surface-2">
                     <div>
                       <span className="font-semibold">{p.nombre}</span>
-                      <span className={cn("ml-2 text-xs", p.stock <= p.stockMinimo ? "text-warning" : "text-muted")}>stock {p.stock}</span>
+                      {p.isKit && <Badge variant="accent" className="ml-2">Kit</Badge>}
+                      <span className={cn("ml-2 text-xs", p.stock <= p.stockMinimo && !p.isKit ? "text-warning" : "text-muted")}>
+                        {p.isKit ? "se desglosa por componentes" : `stock ${p.stock}`}
+                      </span>
                     </div>
                     <div className="flex items-center gap-3">
                       <span>{mxn(p.precioVenta)}</span>
-                      <Button size="sm" variant="outline" disabled={p.stock <= 0} onClick={() => add(p)}>
+                      <Button size="sm" variant="outline" disabled={!p.isKit && p.stock <= 0} onClick={() => add(p)}>
                         <Plus className="h-3.5 w-3.5" />
                       </Button>
                     </div>

@@ -53,21 +53,61 @@ export async function registrarVenta(
         }
         const p = await repo.findProductoParaVenta(c, l.productoId);
         if (!p) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
-        if (p.stock < l.cantidad) {
-          throw AppError.business("INSUFFICIENT_STOCK", `${p.nombre}: stock disponible ${p.stock}`);
+
+        if (p.is_kit) {
+          // ADR-0003: desglosar componentes y descontar stock de cada pieza
+          const bom = await repo.listBomParaVenta(c, p.id);
+          if (!bom.length) throw AppError.business("KIT_WITHOUT_BOM", `El kit ${p.nombre} no tiene componentes definidos`);
+          for (const comp of bom) {
+            const cant = comp.cantidad * l.cantidad;
+            if (comp.stock < cant) {
+              throw AppError.business("INSUFFICIENT_STOCK", `${comp.nombre}: stock disponible ${comp.stock}`);
+            }
+            const res = await repo.decrementStock(c, comp.componente_id, cant);
+            if (!res.rowCount) throw AppError.business("INSUFFICIENT_STOCK", `${comp.nombre}: stock insuficiente`);
+            const precio = Number(comp.precio_venta) * cant;
+            subtotal += precio;
+            lineasDetalle.push({
+              descripcion: `${p.nombre} · ${comp.nombre}`,
+              cantidad: cant,
+              precio,
+              productoId: comp.componente_id,
+            });
+            await repo.insertMovimiento(c, {
+              productoId: comp.componente_id,
+              tipo: "SALIDA_VENTA",
+              cantidad: -cant,
+              usuarioId: user.id,
+              motivo: `Venta kit ${p.nombre}`,
+            });
+          }
+          const manoObra = Number(p.mano_obra) * l.cantidad;
+          if (manoObra > 0) {
+            subtotal += manoObra;
+            lineasDetalle.push({
+              descripcion: `Mano de obra de ensamble · ${p.nombre}`,
+              cantidad: l.cantidad,
+              precio: manoObra,
+              productoId: null,
+            });
+          }
+        } else {
+          if (p.stock < l.cantidad) {
+            throw AppError.business("INSUFFICIENT_STOCK", `${p.nombre}: stock disponible ${p.stock}`);
+          }
+          const res = await repo.decrementStock(c, l.productoId, l.cantidad);
+          if (!res.rowCount) throw AppError.business("INSUFFICIENT_STOCK", `${p.nombre}: stock insuficiente`);
+          const precio = Number(p.precio_venta) * l.cantidad;
+          subtotal += precio;
+          lineasDetalle.push({ descripcion: p.nombre, cantidad: l.cantidad, precio, productoId: l.productoId });
+          await repo.insertMovimiento(c, {
+            productoId: l.productoId,
+            tipo: "SALIDA_VENTA",
+            cantidad: -l.cantidad,
+            usuarioId: user.id,
+            motivo: "Venta",
+          });
         }
-        const res = await repo.decrementStock(c, l.productoId, l.cantidad);
-        if (!res.rowCount) throw AppError.business("INSUFFICIENT_STOCK", `${p.nombre}: stock insuficiente`);
-        const precio = Number(p.precio_venta) * l.cantidad;
-        subtotal += precio;
-        lineasDetalle.push({ descripcion: p.nombre, cantidad: l.cantidad, precio, productoId: l.productoId });
-        await repo.insertMovimiento(c, {
-          productoId: l.productoId,
-          tipo: "SALIDA_VENTA",
-          cantidad: -l.cantidad,
-          usuarioId: user.id,
-          motivo: "Venta",
-        });
       } else {
         const unit = l.precioNeto ?? 0;
         const cantidad = l.cantidad || 1;
