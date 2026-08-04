@@ -18,6 +18,8 @@ export const createProductSchema = z.object({
   precioCompra: z.number().nonnegative(),
   precioVenta: z.number().nonnegative(),
   stockMinimo: z.number().int().nonnegative().default(0),
+  catalogoId: z.number().int().positive().optional().nullable(),
+  especificaciones: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
 });
 
 export const updateProductSchema = createProductSchema.partial();

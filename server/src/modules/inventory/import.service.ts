@@ -3,6 +3,7 @@ import { Readable } from "stream";
 import type { Response } from "express";
 import { AppError } from "../../shared/errors";
 import { sendExport, type ExportColumn } from "../../shared/export";
+import { listCatalogos } from "../catalogos/catalogos.repository";
 import { importRowSchema } from "./import.schema";
 import * as repo from "./products.repository";
 
@@ -34,6 +35,10 @@ const HEADER_MAP: Record<string, string> = {
   stockminimo: "stockMinimo",
   stock_minimo: "stockMinimo",
   stock: "stock",
+  catalogoid: "catalogoId",
+  catalogo_id: "catalogoId",
+  catalogo: "catalogo",
+  especificaciones: "especificaciones",
 };
 
 function normalizeHeader(s: string): string {
@@ -107,7 +112,32 @@ export async function importarProductos(buffer: Buffer, filename: string): Promi
       continue;
     }
 
-    await repo.createProductWithStock(d);
+    let catalogoId = d.catalogoId ?? undefined;
+    if (!catalogoId && d.catalogo) {
+      const catalogos = await listCatalogos();
+      const match = catalogos.find((c) => c.nombre.toLowerCase() === String(d.catalogo).toLowerCase());
+      if (!match) {
+        errores.push({ fila: fila.numero, sku: d.sku, motivo: `Catálogo "${d.catalogo}" no existe` });
+        continue;
+      }
+      catalogoId = match.id;
+    }
+
+    let especificaciones: Record<string, unknown> | undefined;
+    if (d.especificaciones) {
+      try {
+        especificaciones = JSON.parse(d.especificaciones);
+      } catch {
+        errores.push({ fila: fila.numero, sku: d.sku, motivo: "Especificaciones deben ser JSON válido" });
+        continue;
+      }
+      if (typeof especificaciones !== "object" || especificaciones === null || Array.isArray(especificaciones)) {
+        errores.push({ fila: fila.numero, sku: d.sku, motivo: "Especificaciones deben ser un objeto JSON" });
+        continue;
+      }
+    }
+
+    await repo.createProductWithStock({ ...d, catalogoId, especificaciones });
     importados++;
   }
 
@@ -121,6 +151,8 @@ const COLUMNAS_PLANTILLA: ExportColumn[] = [
   { header: "Marca", key: "marca" },
   { header: "Modelo", key: "modelo" },
   { header: "CategoriaId", key: "categoriaId" },
+  { header: "Catalogo", key: "catalogo" },
+  { header: "Especificaciones", key: "especificaciones" },
   { header: "PrecioCompra", key: "precioCompra" },
   { header: "PrecioVenta", key: "precioVenta" },
   { header: "StockMinimo", key: "stockMinimo" },
@@ -134,6 +166,8 @@ const FILA_EJEMPLO: Record<string, unknown> = {
   marca: "Intel",
   modelo: "i7-12700",
   categoriaId: "1",
+  catalogo: "Procesador",
+  especificaciones: '{"socket":"LGA1700"}',
   precioCompra: "3000",
   precioVenta: "3400",
   stockMinimo: "3",

@@ -3,6 +3,7 @@ import express from "express";
 import helmet from "helmet";
 import { env } from "./config/env";
 import { authRouter } from "./modules/auth/auth.routes";
+import { catalogosRouter } from "./modules/catalogos/catalogos.routes";
 import { comprasRouter, proveedoresRouter } from "./modules/compras/compras.routes";
 import { clientesRouter } from "./modules/crm/clientes.routes";
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes";
@@ -45,6 +46,7 @@ export function createApp() {
   app.use("/api/v1/reports", reportsRouter);
   app.use("/api/v1/usuarios", usuariosRouter);
   app.use("/api/v1/dashboard", dashboardRouter);
+  app.use("/api/v1/catalogos", catalogosRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -10,6 +10,8 @@ export interface ProductRow {
   modelo: string | null;
   categoria_id: number;
   categoria: string;
+  catalogo_id: number | null;
+  especificaciones: Record<string, unknown>;
   precio_compra: string;
   precio_venta: string;
   stock: number;
@@ -22,7 +24,7 @@ export interface ProductRow {
 
 const SELECT = `
   SELECT p.id, p.sku, p.codigo_barras, p.nombre, p.marca, p.modelo, p.categoria_id,
-         c.tipo AS categoria, p.precio_compra, p.precio_venta, p.stock, p.stock_minimo, p.is_kit, p.mano_obra, p.is_active,
+         c.tipo AS categoria, p.catalogo_id, p.especificaciones, p.precio_compra, p.precio_venta, p.stock, p.stock_minimo, p.is_kit, p.mano_obra, p.is_active,
          CASE WHEN p.is_kit THEN (
            SELECT MIN(FLOOR(comp.stock / b.cantidad))
            FROM producto_bom b
@@ -94,42 +96,52 @@ export interface CreateProductInput {
   precioCompra: number;
   precioVenta: number;
   stockMinimo: number;
+  catalogoId?: number | null;
+  especificaciones?: Record<string, unknown>;
+}
+
+function insertColumns(input: CreateProductInput) {
+  const cols = ["categoria_id", "sku", "codigo_barras", "nombre", "marca", "modelo", "precio_compra", "precio_venta", "stock", "stock_minimo"];
+  const vals: unknown[] = [
+    input.categoriaId,
+    input.sku,
+    input.codigoBarras || null,
+    input.nombre,
+    input.marca ?? null,
+    input.modelo ?? null,
+    input.precioCompra,
+    input.precioVenta,
+    0,
+    input.stockMinimo,
+  ];
+  if (input.catalogoId !== undefined) {
+    cols.push("catalogo_id");
+    vals.push(input.catalogoId ?? null);
+  }
+  if (input.especificaciones !== undefined) {
+    cols.push("especificaciones");
+    vals.push(JSON.stringify(input.especificaciones ?? {}));
+  }
+  return { cols, vals };
 }
 
 export function createProduct(input: CreateProductInput) {
+  const { cols, vals } = insertColumns(input);
+  const placeholders = vals.map((_, i) => `$${i + 1}`).join(", ");
   return query<{ id: number }>(
-    `INSERT INTO productos (categoria_id, sku, codigo_barras, nombre, marca, modelo, precio_compra, precio_venta, stock, stock_minimo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9) RETURNING id`,
-    [
-      input.categoriaId,
-      input.sku,
-      input.codigoBarras ?? null,
-      input.nombre,
-      input.marca ?? null,
-      input.modelo ?? null,
-      input.precioCompra,
-      input.precioVenta,
-      input.stockMinimo,
-    ]
+    `INSERT INTO productos (${cols.join(", ")}) VALUES (${placeholders}) RETURNING id`,
+    vals
   ).then((r) => (r.rows[0] ? findProductById(Number(r.rows[0].id)) : undefined));
 }
 
 export function createProductWithStock(input: CreateProductInput & { stock: number }) {
+  const { cols, vals } = insertColumns(input);
+  const stockIdx = cols.indexOf("stock");
+  vals[stockIdx] = input.stock;
+  const placeholders = vals.map((_, i) => `$${i + 1}`).join(", ");
   return query<{ id: number }>(
-    `INSERT INTO productos (categoria_id, sku, codigo_barras, nombre, marca, modelo, precio_compra, precio_venta, stock, stock_minimo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-    [
-      input.categoriaId,
-      input.sku,
-      input.codigoBarras ?? null,
-      input.nombre,
-      input.marca ?? null,
-      input.modelo ?? null,
-      input.precioCompra,
-      input.precioVenta,
-      input.stock,
-      input.stockMinimo,
-    ]
+    `INSERT INTO productos (${cols.join(", ")}) VALUES (${placeholders}) RETURNING id`,
+    vals
   ).then((r) => (r.rows[0] ? findProductById(Number(r.rows[0].id)) : undefined));
 }
 
@@ -155,6 +167,13 @@ export function findProductoBasico(id: number) {
     "SELECT id, sku, nombre, precio_compra, precio_venta, stock, is_kit, is_active FROM productos WHERE id = $1",
     [id]
   ).then((r) => r.rows[0]);
+}
+
+export function listSugerenciasPorCatalogo(catalogoId: number, excluirId: number) {
+  return query<ProductRow>(
+    `${SELECT} WHERE p.is_active = true AND p.stock > 0 AND p.catalogo_id = $1 AND p.id <> $2 ORDER BY p.nombre`,
+    [catalogoId, excluirId]
+  ).then((r) => r.rows);
 }
 
 export interface BomComponenteRow {

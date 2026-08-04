@@ -2,6 +2,7 @@ import { AppError } from "../../shared/errors";
 import type { Response } from "express";
 import { withTransaction } from "../../shared/db";
 import { sendExport, type ExportColumn } from "../../shared/export";
+import { findCatalogoById } from "../catalogos/catalogos.repository";
 import * as repo from "./products.repository";
 
 export interface ProductDTO {
@@ -13,6 +14,8 @@ export interface ProductDTO {
   modelo: string | null;
   categoriaId: number;
   categoria: string;
+  catalogoId: number | null;
+  especificaciones: Record<string, unknown>;
   precioCompra: number;
   precioVenta: number;
   stock: number;
@@ -34,6 +37,8 @@ function mapProduct(r: repo.ProductRow): ProductDTO {
     modelo: r.modelo,
     categoriaId: r.categoria_id,
     categoria: r.categoria,
+    catalogoId: r.catalogo_id,
+    especificaciones: r.especificaciones ?? {},
     precioCompra: Number(r.precio_compra),
     precioVenta: Number(r.precio_venta),
     stock: r.stock,
@@ -97,6 +102,7 @@ const FIELD_MAP: Record<string, string> = {
   precioCompra: "precio_compra",
   precioVenta: "precio_venta",
   stockMinimo: "stock_minimo",
+  catalogoId: "catalogo_id",
 };
 
 export async function update(id: number, fields: Record<string, unknown>) {
@@ -104,6 +110,7 @@ export async function update(id: number, fields: Record<string, unknown>) {
   for (const [k, v] of Object.entries(fields)) {
     const col = FIELD_MAP[k];
     if (col) mapped[col] = v;
+    if (k === "especificaciones" && v !== undefined) mapped.especificaciones = JSON.stringify(v);
   }
   const row = await repo.updateProduct(id, mapped);
   if (!row) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
@@ -114,6 +121,68 @@ export async function deactivate(id: number) {
   const row = await repo.deactivateProduct(id);
   if (!row) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
   return mapProduct(row);
+}
+
+/* --- Sustitución (taxonomía) --- */
+
+interface SustitutoDTO {
+  id: number;
+  sku: string;
+  nombre: string;
+  precioVenta: number;
+  stock: number;
+  especificaciones: Record<string, unknown>;
+}
+
+async function sustitutosDe(productoId: number, source: repo.ProductRow): Promise<SustitutoDTO[]> {
+  if (!source.catalogo_id) return [];
+  const catalogo = await findCatalogoById(source.catalogo_id);
+  const candidatos = await repo.listSugerenciasPorCatalogo(source.catalogo_id, productoId);
+  const claves = catalogo?.claves_compatibilidad ?? [];
+  const specs = source.especificaciones ?? {};
+  return candidatos
+    .filter((c) =>
+      claves.every((k: string) => {
+        const v = specs[k];
+        return v === undefined || (c.especificaciones ?? {})[k] === v;
+      })
+    )
+    .map((c) => ({
+      id: c.id,
+      sku: c.sku,
+      nombre: c.nombre,
+      precioVenta: Number(c.precio_venta),
+      stock: c.stock,
+      especificaciones: c.especificaciones ?? {},
+    }));
+}
+
+export async function sugerencias(productoId: number) {
+  const producto = await repo.findProductById(productoId);
+  if (!producto) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
+
+  const sustitutos = await sustitutosDe(productoId, producto);
+
+  let componenteCorto: { productoId: number; nombre: string; stock: number; requerido: number } | null = null;
+  let sustitutosComponente: SustitutoDTO[] = [];
+
+  if (producto.is_kit && (producto.kit_disponible ?? 0) <= 0) {
+    const componentes = await repo.listBom(productoId);
+    const corto = componentes.find((c) => c.stock < c.cantidad);
+    if (corto) {
+      componenteCorto = { productoId: corto.producto_id, nombre: corto.nombre, stock: corto.stock, requerido: corto.cantidad };
+      const compRow = await repo.findProductById(corto.producto_id);
+      if (compRow) sustitutosComponente = await sustitutosDe(corto.producto_id, compRow);
+    }
+  }
+
+  const catalogo = producto.catalogo_id ? await findCatalogoById(producto.catalogo_id) : undefined;
+  return {
+    producto: { id: producto.id, nombre: producto.nombre, catalogoId: producto.catalogo_id, catalogoNombre: catalogo?.nombre ?? null },
+    componenteCorto,
+    sustitutos,
+    sustitutosComponente,
+  };
 }
 
 /* --- BOM / kits (ADR-0003) --- */
