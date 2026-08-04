@@ -1,12 +1,14 @@
 import { AppError } from "../../shared/errors";
 import * as repo from "./catalogos.repository";
 
+export const MAX_PROFUNDIDAD_CATALOGO = 4;
+
 export interface CatalogoDTO {
   id: number;
   parentId: number | null;
   nombre: string;
-  camposEspecificacion: { clave: string; etiqueta: string }[];
-  clavesCompatibilidad: string[];
+  tagsSugeridas: string[];
+  tagsCompatibilidad: string[];
 }
 
 function mapCatalogo(r: repo.CatalogoRow): CatalogoDTO {
@@ -14,8 +16,8 @@ function mapCatalogo(r: repo.CatalogoRow): CatalogoDTO {
     id: r.id,
     parentId: r.parent_id,
     nombre: r.nombre,
-    camposEspecificacion: r.campos_especificacion ?? [],
-    clavesCompatibilidad: r.claves_compatibilidad ?? [],
+    tagsSugeridas: r.tags_sugeridas ?? [],
+    tagsCompatibilidad: r.tags_compatibilidad ?? [],
   };
 }
 
@@ -55,8 +57,21 @@ async function validarSinCiclo(nodoId: number, nuevoParentId: number | null) {
   }
 }
 
+// Regla de negocio: el árbol se limita a `MAX_PROFUNDIDAD_CATALOGO` niveles
+async function validarProfundidad(parentId: number | null) {
+  if (!parentId) return;
+  const profundidad = await repo.profundidadCatalogo(parentId);
+  if (profundidad >= MAX_PROFUNDIDAD_CATALOGO) {
+    throw AppError.badRequest(
+      "PROFUNDIDAD_MAXIMA",
+      `El árbol de catálogos admite máximo ${MAX_PROFUNDIDAD_CATALOGO} niveles`
+    );
+  }
+}
+
 export async function create(input: repo.InsertCatalogoInput) {
   if (input.parentId) await getById(input.parentId);
+  await validarProfundidad(input.parentId ?? null);
   await validarNombreUnico(input.nombre, input.parentId ?? null);
   const row = await repo.insertCatalogo(input);
   if (!row) throw AppError.business("INTERNAL_ERROR", "No se pudo crear el catálogo");
@@ -69,11 +84,11 @@ export async function update(id: number, fields: Record<string, unknown>) {
 
   const mapped: Record<string, unknown> = {};
   if ("nombre" in fields && fields.nombre !== undefined) mapped.nombre = fields.nombre;
-  if ("camposEspecificacion" in fields && fields.camposEspecificacion !== undefined) {
-    mapped.campos_especificacion = JSON.stringify(fields.camposEspecificacion);
+  if ("tagsSugeridas" in fields && fields.tagsSugeridas !== undefined) {
+    mapped.tags_sugeridas = JSON.stringify(fields.tagsSugeridas);
   }
-  if ("clavesCompatibilidad" in fields && fields.clavesCompatibilidad !== undefined) {
-    mapped.claves_compatibilidad = JSON.stringify(fields.clavesCompatibilidad);
+  if ("tagsCompatibilidad" in fields && fields.tagsCompatibilidad !== undefined) {
+    mapped.tags_compatibilidad = JSON.stringify(fields.tagsCompatibilidad);
   }
 
   let nuevoParentId = existente.parent_id;
@@ -81,6 +96,7 @@ export async function update(id: number, fields: Record<string, unknown>) {
     nuevoParentId = fields.parentId === null || fields.parentId === undefined ? null : Number(fields.parentId);
     mapped.parent_id = nuevoParentId;
     await validarSinCiclo(id, nuevoParentId);
+    await validarProfundidad(nuevoParentId);
   }
   if (mapped.nombre !== undefined) {
     await validarNombreUnico(String(mapped.nombre), nuevoParentId, id);

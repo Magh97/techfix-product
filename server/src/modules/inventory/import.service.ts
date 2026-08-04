@@ -123,16 +123,17 @@ export async function importarProductos(buffer: Buffer, filename: string): Promi
       catalogoId = match.id;
     }
 
-    let especificaciones: Record<string, unknown> | undefined;
+    let especificaciones: string[] | undefined;
     if (d.especificaciones) {
       try {
-        especificaciones = JSON.parse(d.especificaciones);
+        const parsed = JSON.parse(d.especificaciones);
+        if (!Array.isArray(parsed) || !parsed.every((x) => typeof x === "string")) {
+          errores.push({ fila: fila.numero, sku: d.sku, motivo: "Especificaciones deben ser un arreglo JSON de tags" });
+          continue;
+        }
+        especificaciones = parsed;
       } catch {
         errores.push({ fila: fila.numero, sku: d.sku, motivo: "Especificaciones deben ser JSON válido" });
-        continue;
-      }
-      if (typeof especificaciones !== "object" || especificaciones === null || Array.isArray(especificaciones)) {
-        errores.push({ fila: fila.numero, sku: d.sku, motivo: "Especificaciones deben ser un objeto JSON" });
         continue;
       }
     }
@@ -167,7 +168,7 @@ const FILA_EJEMPLO: Record<string, unknown> = {
   modelo: "i7-12700",
   categoriaId: "1",
   catalogo: "Procesador",
-  especificaciones: '{"socket":"LGA1700"}',
+  especificaciones: '["LGA1700","socket-LGA1700"]',
   precioCompra: "3000",
   precioVenta: "3400",
   stockMinimo: "3",

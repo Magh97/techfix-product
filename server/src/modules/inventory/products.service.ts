@@ -16,7 +16,7 @@ export interface ProductDTO {
   categoriaId: number;
   categoria: string;
   catalogoId: number | null;
-  especificaciones: Record<string, unknown>;
+  especificaciones: string[];
   precioCompra: number;
   precioVenta: number;
   stock: number;
@@ -39,7 +39,7 @@ function mapProduct(r: repo.ProductRow): ProductDTO {
     categoriaId: r.categoria_id,
     categoria: r.categoria,
     catalogoId: r.catalogo_id,
-    especificaciones: r.especificaciones ?? {},
+    especificaciones: r.especificaciones ?? [],
     precioCompra: Number(r.precio_compra),
     precioVenta: Number(r.precio_venta),
     stock: r.stock,
@@ -55,6 +55,7 @@ function mapProduct(r: repo.ProductRow): ProductDTO {
 export interface ListQuery {
   q?: string;
   categoria?: string;
+  catalogoId?: number;
   stockBajo?: boolean;
   page: number;
   pageSize: number;
@@ -63,7 +64,7 @@ export interface ListQuery {
 export async function list(q: ListQuery) {
   const limit = q.pageSize;
   const offset = (q.page - 1) * limit;
-  const filters = { q: q.q, categoria: q.categoria, stockBajo: q.stockBajo };
+  const filters = { q: q.q, categoria: q.categoria, catalogoId: q.catalogoId, stockBajo: q.stockBajo };
   const [rows, totalItems] = await Promise.all([
     repo.listProducts({ ...filters, limit, offset }),
     repo.countProducts(filters),
@@ -86,10 +87,33 @@ export async function getByCode(codigo: string) {
   return mapProduct(row);
 }
 
+async function raizCatalogo(catalogoId: number): Promise<number | null> {
+  let c = await findCatalogoById(catalogoId);
+  if (!c) return null;
+  while (c.parent_id != null) {
+    const padre = await findCatalogoById(c.parent_id);
+    if (!padre) break;
+    c = padre;
+  }
+  return c.id;
+}
+
 export async function create(input: repo.CreateProductInput, user: { id: number }) {
   const existing = await repo.findProductBySku(input.sku);
   if (existing) throw AppError.conflict("CONFLICT", "El SKU ya existe");
-  const row = await repo.createProduct(input);
+
+  // Regla de negocio: la categoría siempre es la raíz del catálogo seleccionado
+  let categoriaId = input.categoriaId;
+  if (input.catalogoId) {
+    const raiz = await raizCatalogo(input.catalogoId);
+    if (!raiz) throw AppError.notFound("CATALOG_NOT_FOUND", "Catálogo no encontrado");
+    categoriaId = raiz;
+  }
+  if (!(await repo.categoriaExists(categoriaId))) {
+    throw AppError.badRequest("CATEGORIA_INVALIDA", "La categoría debe ser un catálogo raíz");
+  }
+
+  const row = await repo.createProduct({ ...input, categoriaId });
   if (!row) throw AppError.business("INTERNAL_ERROR", "No se pudo crear el producto");
   await registrarAuditoria({ usuarioId: user.id, accion: "CREAR", entidad: "producto", entidadId: row.id, despues: { sku: row.sku, nombre: row.nombre } });
   return mapProduct(row);
@@ -115,6 +139,21 @@ export async function update(id: number, fields: Record<string, unknown>, user: 
     if (k === "especificaciones" && v !== undefined) mapped.especificaciones = JSON.stringify(v);
   }
   const antes = await repo.findProductById(id);
+
+  // Consistencia: si cambia el catálogo, la categoría se recalcula a su raíz
+  if (mapped.catalogo_id !== undefined) {
+    if (mapped.catalogo_id) {
+      const raiz = await raizCatalogo(Number(mapped.catalogo_id));
+      if (!raiz) throw AppError.notFound("CATALOG_NOT_FOUND", "Catálogo no encontrado");
+      mapped.categoria_id = raiz;
+    } else {
+      delete mapped.categoria_id;
+    }
+  }
+  if (mapped.categoria_id !== undefined && !(await repo.categoriaExists(Number(mapped.categoria_id)))) {
+    throw AppError.badRequest("CATEGORIA_INVALIDA", "La categoría debe ser un catálogo raíz");
+  }
+
   const row = await repo.updateProduct(id, mapped);
   if (!row) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
   await registrarAuditoria({
@@ -181,29 +220,28 @@ interface SustitutoDTO {
   nombre: string;
   precioVenta: number;
   stock: number;
-  especificaciones: Record<string, unknown>;
+  especificaciones: string[];
 }
 
 async function sustitutosDe(productoId: number, source: repo.ProductRow): Promise<SustitutoDTO[]> {
   if (!source.catalogo_id) return [];
   const catalogo = await findCatalogoById(source.catalogo_id);
   const candidatos = await repo.listSugerenciasPorCatalogo(source.catalogo_id, productoId);
-  const claves = catalogo?.claves_compatibilidad ?? [];
-  const specs = source.especificaciones ?? {};
+  const compat = catalogo?.tags_compatibilidad ?? [];
+  const tags = source.especificaciones ?? [];
   return candidatos
-    .filter((c) =>
-      claves.every((k: string) => {
-        const v = specs[k];
-        return v === undefined || (c.especificaciones ?? {})[k] === v;
-      })
-    )
+    .filter((c) => {
+      if (!compat.length) return true;
+      const tagsC = c.especificaciones ?? [];
+      return compat.some((t: string) => tags.includes(t) && tagsC.includes(t));
+    })
     .map((c) => ({
       id: c.id,
       sku: c.sku,
       nombre: c.nombre,
       precioVenta: Number(c.precio_venta),
       stock: c.stock,
-      especificaciones: c.especificaciones ?? {},
+      especificaciones: c.especificaciones ?? [],
     }));
 }
 

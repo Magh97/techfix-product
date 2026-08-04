@@ -60,20 +60,15 @@ export interface CreateProducto {
   precioVenta: number;
   stockMinimo?: number;
   catalogoId?: number | null;
-  especificaciones?: Record<string, unknown>;
-}
-
-export interface EspecificacionCampo {
-  clave: string;
-  etiqueta: string;
+  especificaciones?: string[];
 }
 
 export interface Catalogo {
   id: number;
   parentId: number | null;
   nombre: string;
-  camposEspecificacion: EspecificacionCampo[];
-  clavesCompatibilidad: string[];
+  tagsSugeridas: string[];
+  tagsCompatibilidad: string[];
 }
 
 export interface Sustituto {
@@ -82,7 +77,7 @@ export interface Sustituto {
   nombre: string;
   precioVenta: number;
   stock: number;
-  especificaciones: Record<string, unknown>;
+  especificaciones: string[];
 }
 
 export interface Sugerencias {

@@ -16,7 +16,6 @@ import type {
   CxcItem,
   CxpItem,
   DashboardResumen,
-  EspecificacionCampo,
   EstadoOrden,
   Garantia,
   ImportResult,
@@ -181,17 +180,19 @@ export const dashboardApi = {
 
 export const catalogosApi = {
   list: () => api<{ data: Catalogo[] }>("/catalogos"),
-  create: (input: { nombre: string; parentId?: number | null; camposEspecificacion?: EspecificacionCampo[]; clavesCompatibilidad?: string[] }) =>
+  create: (input: { nombre: string; parentId?: number | null; tagsSugeridas?: string[]; tagsCompatibilidad?: string[] }) =>
     api<{ data: Catalogo }>("/catalogos", { method: "POST", body: JSON.stringify(input) }),
-  update: (id: number, input: { nombre?: string; parentId?: number | null; camposEspecificacion?: EspecificacionCampo[]; clavesCompatibilidad?: string[] }) =>
+  update: (id: number, input: { nombre?: string; parentId?: number | null; tagsSugeridas?: string[]; tagsCompatibilidad?: string[] }) =>
     api<{ data: Catalogo }>(`/catalogos/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   remove: (id: number) => api<{ data: { id: number } }>(`/catalogos/${id}`, { method: "DELETE" }),
 };
 
 export const productsApi = {
-  list: (params?: { q?: string; page?: number; pageSize?: number }) => {
+  list: (params?: { q?: string; categoria?: string; catalogoId?: number; page?: number; pageSize?: number }) => {
     const qs = new URLSearchParams();
     if (params?.q) qs.set("q", params.q);
+    if (params?.categoria) qs.set("categoria", params.categoria);
+    if (params?.catalogoId) qs.set("catalogoId", String(params.catalogoId));
     if (params?.page) qs.set("page", String(params.page));
     if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
     const s = qs.toString();

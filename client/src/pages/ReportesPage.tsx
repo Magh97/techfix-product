@@ -12,13 +12,7 @@ import { useToast } from "@/components/ui/toast";
 import { reportsApi, usuariosApi } from "@/lib/api";
 import { cn, mxn } from "@/lib/utils";
 
-const CATS: Record<string, string> = {
-  componente: "Componente",
-  periferico: "Periférico",
-  equipo_completo: "Equipo",
-  refaccion: "Refacción",
-  usado: "Usado",
-};
+const labelCategoria = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 const ESTADOS_LABEL: Record<string, string> = {
   pendiente: "Pendiente",
@@ -253,7 +247,7 @@ export default function ReportesPage() {
                         {p.nombre}
                         {p.lowStock && <Badge variant="warning" className="ml-2">bajo</Badge>}
                       </TD>
-                      <TD>{CATS[p.categoria] ?? p.categoria}</TD>
+                      <TD>{labelCategoria(p.categoria)}</TD>
                       <TD className="text-right">{p.stock}</TD>
                       <TD className="text-right">{mxn(p.valoracionCosto)}</TD>
                     </TR>

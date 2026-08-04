@@ -40,14 +40,14 @@ const ESTADOS_VENTA_VALIDOS = "('completada', 'credito_pendiente')";
 export function reporteInventario() {
   return query<InventarioRow>(
     `SELECT p.id, p.sku, p.codigo_barras, p.nombre, p.marca, p.modelo,
-            c.tipo AS categoria, p.stock, p.stock_minimo,
+            cat.nombre AS categoria, p.stock, p.stock_minimo,
             p.precio_compra, p.precio_venta,
             (p.stock * p.precio_compra)::numeric AS valoracion_costo,
             (p.stock <= p.stock_minimo) AS low_stock
      FROM productos p
-     JOIN categorias c ON c.id = p.categoria_id
+     JOIN catalogos cat ON cat.id = p.categoria_id
      WHERE p.is_active = true
-     ORDER BY c.tipo, p.nombre`
+     ORDER BY cat.nombre, p.nombre`
   ).then((r) => r.rows);
 }
 

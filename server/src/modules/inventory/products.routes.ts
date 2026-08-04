@@ -22,6 +22,7 @@ productsRouter.use(requireAuth);
 interface ListQuery {
   q?: string;
   categoria?: string;
+  catalogoId?: number;
   stockBajo?: "true" | "false";
   page: number;
   pageSize: number;
@@ -32,6 +33,7 @@ productsRouter.get("/", validate(listProductsQuery, "query"), async (req, res) =
   const result = await service.list({
     q: q.q,
     categoria: q.categoria,
+    catalogoId: q.catalogoId,
     stockBajo: q.stockBajo === "true" ? true : q.stockBajo === "false" ? false : undefined,
     page: q.page,
     pageSize: q.pageSize,
