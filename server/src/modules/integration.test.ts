@@ -1525,6 +1525,145 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(adminCan.body.data.estado).toBe("cancelada");
   });
 
+  it("SUSTITUCIÓN: proponer y aceptar reemplaza la pieza en la cotización (precio nuevo)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authT = { Authorization: `Bearer ${tecnicoToken}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    const suf = Date.now();
+
+    const root = await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `RootSub-${suf}` });
+    const ram = await request(app).post("/api/v1/catalogos").set(auth).send({
+      nombre: `RAMSub-${suf}`,
+      parentId: root.body.data.id,
+      tagsCompatibilidad: ["DDR5"],
+    });
+    const ramId = ram.body.data.id;
+
+    const a = (
+      await request(app).post("/api/v1/productos").set(auth).send({
+        categoriaId: 1, sku: `SUBA-${suf}`, nombre: "RAM original", precioCompra: 5, precioVenta: 10, catalogoId: ramId, especificaciones: ["DDR5"],
+      })
+    ).body.data.id;
+    const b = (
+      await request(app).post("/api/v1/productos").set(auth).send({
+        categoriaId: 1, sku: `SUBB-${suf}`, nombre: "RAM sustituta", precioCompra: 6, precioVenta: 12, catalogoId: ramId, especificaciones: ["DDR5"],
+      })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 1 WHERE id = $1", [a]);
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [b]);
+
+    const orden = await request(app).post("/api/v1/ordenes").set(auth).send({ clienteId, tipoEquipo: "laptop", marca: "Lenovo", modelo: "X1", fallaReportada: "No enciende", fechaPrometida: todayPlus(3) });
+    const ordenId = orden.body.data.id;
+    const cot = await request(app)
+      .post(`/api/v1/ordenes/${ordenId}/cotizaciones`)
+      .set(authT)
+      .send({ lineas: [{ tipoLinea: "refaccion", productoId: a, cantidad: 1 }] });
+    expect(cot.status).toBe(201);
+    const cotizacionId = cot.body.data.id;
+    const lineaId = (await request(app).get(`/api/v1/ordenes/${ordenId}`).set(auth)).body.data.cotizaciones[0].lineas[0].id;
+
+    // Sin stock del original → se propone sustitución
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [a]);
+    const prop = await request(app)
+      .post(`/api/v1/ordenes/${ordenId}/sustituciones`)
+      .set(authT)
+      .send({ cotizacionId, lineaId, sustitutoId: b, justificacion: "Sin stock" });
+    expect(prop.status).toBe(201);
+    const sid = prop.body.data.id;
+    expect(prop.body.data.estado).toBe("pendiente");
+    let det = (await request(app).get(`/api/v1/ordenes/${ordenId}`).set(auth)).body.data;
+    expect(det.estado).toBe("sustitucion_pendiente");
+
+    // Vendedor no puede crear sustitución
+    const v = await request(app).post(`/api/v1/ordenes/${ordenId}/sustituciones`).set(authV).send({ cotizacionId, lineaId, sustitutoId: b });
+    expect(v.status).toBe(403);
+
+    // Cliente acepta → la pieza se reemplaza con el precio nuevo
+    const aceptada = await request(app).post(`/api/v1/ordenes/${ordenId}/sustituciones/${sid}/aceptar`).set(authT);
+    expect(aceptada.status).toBe(200);
+    expect(aceptada.body.data.estado).toBe("aceptada");
+    det = (await request(app).get(`/api/v1/ordenes/${ordenId}`).set(auth)).body.data;
+    expect(det.estado).toBe("cotizado");
+    const linea = det.cotizaciones[0].lineas[0];
+    expect(linea.productoId).toBe(b);
+    expect(linea.precioNeto).toBe(12);
+    expect(det.cotizaciones[0].total).toBeCloseTo(12 * 1.16, 2);
+  });
+
+  it("SUSTITUCIÓN: rechazar genera solicitud y al recibir la OC se marca entregada", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authT = { Authorization: `Bearer ${tecnicoToken}` };
+    const suf = Date.now();
+
+    const prov = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `SubProv-${suf}` })).body.data.id;
+
+    const root = await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `RootSub2-${suf}` });
+    const ram = await request(app).post("/api/v1/catalogos").set(auth).send({
+      nombre: `RAMSub2-${suf}`,
+      parentId: root.body.data.id,
+      tagsCompatibilidad: ["DDR5"],
+    });
+    const ramId = ram.body.data.id;
+
+    const a = (
+      await request(app).post("/api/v1/productos").set(auth).send({
+        categoriaId: 1, sku: `SUB2A-${suf}`, nombre: "RAM orig 2", precioCompra: 5, precioVenta: 10, catalogoId: ramId, especificaciones: ["DDR5"],
+      })
+    ).body.data.id;
+    const b = (
+      await request(app).post("/api/v1/productos").set(auth).send({
+        categoriaId: 1, sku: `SUB2B-${suf}`, nombre: "RAM sust 2", precioCompra: 6, precioVenta: 12, catalogoId: ramId, especificaciones: ["DDR5"],
+      })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 1 WHERE id = $1", [a]);
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [b]);
+    await pool.query("UPDATE productos SET proveedor_favorito_id = $1 WHERE id = $2", [prov, a]);
+
+    const orden = await request(app).post("/api/v1/ordenes").set(auth).send({ clienteId, tipoEquipo: "laptop", marca: "Dell", modelo: "XPS", fallaReportada: "Falla", fechaPrometida: todayPlus(3) });
+    const ordenId = orden.body.data.id;
+    await request(app)
+      .post(`/api/v1/ordenes/${ordenId}/cotizaciones`)
+      .set(authT)
+      .send({ lineas: [{ tipoLinea: "refaccion", productoId: a, cantidad: 1 }] });
+    const det = (await request(app).get(`/api/v1/ordenes/${ordenId}`).set(auth)).body.data;
+    const lineaId = det.cotizaciones[0].lineas[0].id;
+    const cotizacionId = det.cotizaciones[0].id;
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [a]);
+
+    const prop = await request(app)
+      .post(`/api/v1/ordenes/${ordenId}/sustituciones`)
+      .set(authT)
+      .send({ cotizacionId, lineaId, sustitutoId: b });
+    const sid = prop.body.data.id;
+
+    // Cliente rechaza → se genera solicitud de reabastecimiento del original
+    const rechazada = await request(app)
+      .post(`/api/v1/ordenes/${ordenId}/sustituciones/${sid}/rechazar`)
+      .set(authT)
+      .send({ motivo: "Prefiere la original" });
+    expect(rechazada.status).toBe(200);
+    expect(rechazada.body.data.estado).toBe("rechazada");
+    const solId = rechazada.body.data.solicitudId;
+    expect(solId).toBeTruthy();
+    const ordenAfter = (await request(app).get(`/api/v1/ordenes/${ordenId}`).set(auth)).body.data;
+    expect(ordenAfter.estado).toBe("cotizado");
+
+    // Admin aprueba la solicitud → crea OC; se envía y se recibe
+    const aprobada = await request(app).post("/api/v1/compras/solicitudes/aprobar").set(auth).send({ solicitudes: [solId] });
+    expect(aprobada.status).toBe(200);
+    expect(aprobada.body.data.compras.length).toBe(1);
+    const compraId = aprobada.body.data.compras[0].id;
+    await request(app).post(`/api/v1/compras/${compraId}/enviar`).set(auth);
+    const recibida = await request(app).post(`/api/v1/compras/${compraId}/recibir`).set(auth);
+    expect(recibida.status).toBe(200);
+
+    // La solicitud queda "entregada" y la orden se actualiza en su historial
+    const sol = await pool.query("SELECT estado FROM solicitudes_reabastecimiento WHERE id = $1", [solId]);
+    expect(sol.rows[0]?.estado).toBe("entregada");
+    const hist = await pool.query("SELECT nota FROM historial_orden WHERE orden_id = $1 ORDER BY id DESC LIMIT 1", [ordenId]);
+    expect(String(hist.rows[0]?.nota ?? "")).toContain("llegó");
+  });
+
   it("USUARIOS: alta, login, edición, desactivación y RBAC", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const authV = { Authorization: `Bearer ${vendedorToken}` };

@@ -22,4 +22,16 @@ describe("máquina de estados de orden", () => {
     expect(() => validarTransicion("cotizado", "en_reparacion", "tecnico", false)).toThrow();
     expect(() => validarTransicion("cotizado", "en_reparacion", "tecnico", true)).not.toThrow();
   });
+
+  it("permite el ciclo de sustitución con validación del cliente", () => {
+    expect(() => validarTransicion("cotizado", "sustitucion_pendiente", "tecnico")).not.toThrow();
+    expect(() => validarTransicion("en_reparacion", "sustitucion_pendiente", "tecnico")).not.toThrow();
+    expect(() => validarTransicion("sustitucion_pendiente", "cotizado", "tecnico")).not.toThrow();
+    expect(() => validarTransicion("sustitucion_pendiente", "en_reparacion", "tecnico")).not.toThrow();
+    expect(() => validarTransicion("sustitucion_pendiente", "cancelado", "vendedor")).not.toThrow();
+  });
+
+  it("rechaza sustitución pendiente con rol no autorizado", () => {
+    expect(() => validarTransicion("sustitucion_pendiente", "en_reparacion", "vendedor")).toThrow(AppError);
+  });
 });
