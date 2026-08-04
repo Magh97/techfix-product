@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FileSearch } from "lucide-react";
 import { useState } from "react";
+import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -22,11 +23,13 @@ const estadoVariant: Record<string, "success" | "danger" | "warning"> = {
 export default function VentasPage() {
   const toast = useToast();
   const [folio, setFolio] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [ticket, setTicket] = useState<Venta | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["ventas-historial"],
-    queryFn: () => ventasApi.list({ pageSize: 50 }),
+    queryKey: ["ventas-historial", page, pageSize],
+    queryFn: () => ventasApi.list({ page, pageSize }),
   });
 
   function buscarFolio() {
@@ -95,6 +98,17 @@ export default function VentasPage() {
               </tbody>
             </Table>
           )}
+          <Pagination
+            page={page}
+            totalPages={data?.meta.totalPages ?? 1}
+            totalItems={data?.meta.totalItems}
+            pageSize={pageSize}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+            onPageChange={setPage}
+          />
         </CardBody>
       </Card>
 

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useState } from "react";
+import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -25,11 +26,13 @@ export default function UsuariosPage() {
   const [nuevo, setNuevo] = useState(false);
   const [editando, setEditando] = useState<Usuario | null>(null);
   const [soloActivos, setSoloActivos] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [form, setForm] = useState({ nombre: "", usuario: "", password: "", rol: "vendedor" });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["usuarios", soloActivos],
-    queryFn: () => usuariosApi.list({ isActive: soloActivos ? true : undefined, pageSize: 100 }),
+    queryKey: ["usuarios", soloActivos, page, pageSize],
+    queryFn: () => usuariosApi.list({ isActive: soloActivos ? true : undefined, page, pageSize }),
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["usuarios"] });
@@ -90,7 +93,14 @@ export default function UsuariosPage() {
       </div>
 
       <label className="flex w-fit items-center gap-2 text-sm">
-        <input type="checkbox" checked={soloActivos} onChange={(e) => setSoloActivos(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={soloActivos}
+          onChange={(e) => {
+            setSoloActivos(e.target.checked);
+            setPage(1);
+          }}
+        />
         Solo activos
       </label>
 
@@ -140,6 +150,17 @@ export default function UsuariosPage() {
               </tbody>
             </Table>
           )}
+          <Pagination
+            page={page}
+            totalPages={data?.meta.totalPages ?? 1}
+            totalItems={data?.meta.totalItems}
+            pageSize={pageSize}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+            onPageChange={setPage}
+          />
         </CardBody>
       </Card>
 

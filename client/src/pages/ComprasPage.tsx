@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -25,10 +26,12 @@ export default function ComprasPage() {
   const esAdmin = getSessionUser()?.rol === "admin";
   const [folio, setFolio] = useState("");
   const [estado, setEstado] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["compras", folio, estado],
-    queryFn: () => comprasApi.list({ folio: folio || undefined, estado: estado || undefined, pageSize: 50 }),
+    queryKey: ["compras", folio, estado, page, pageSize],
+    queryFn: () => comprasApi.list({ folio: folio || undefined, estado: estado || undefined, page, pageSize }),
   });
 
   return (
@@ -43,10 +46,20 @@ export default function ComprasPage() {
       </div>
 
       <div className="flex max-w-md gap-2">
-        <Input placeholder="Buscar por folio…" value={folio} onChange={(e) => setFolio(e.target.value)} />
+        <Input
+          placeholder="Buscar por folio…"
+          value={folio}
+          onChange={(e) => {
+            setFolio(e.target.value);
+            setPage(1);
+          }}
+        />
         <select
           value={estado}
-          onChange={(e) => setEstado(e.target.value)}
+          onChange={(e) => {
+            setEstado(e.target.value);
+            setPage(1);
+          }}
           className="h-10 rounded-md border border-border-line bg-surface px-2 text-sm"
         >
           <option value="">Todos</option>
@@ -91,6 +104,17 @@ export default function ComprasPage() {
               </tbody>
             </Table>
           )}
+          <Pagination
+            page={page}
+            totalPages={data?.meta.totalPages ?? 1}
+            totalItems={data?.meta.totalItems}
+            pageSize={pageSize}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+            onPageChange={setPage}
+          />
         </CardBody>
       </Card>
     </div>

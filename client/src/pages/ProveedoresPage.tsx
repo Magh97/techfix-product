@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useState } from "react";
+import { Pagination } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
@@ -18,13 +19,15 @@ export default function ProveedoresPage() {
   const qc = useQueryClient();
   const esAdmin = getSessionUser()?.rol === "admin";
   const [busqueda, setBusqueda] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [editando, setEditando] = useState<Proveedor | null>(null);
   const [nuevo, setNuevo] = useState(false);
   const [form, setForm] = useState({ nombre: "", contacto: "", condicionesPago: "" });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["proveedores", busqueda],
-    queryFn: () => proveedoresApi.list({ q: busqueda || undefined, pageSize: 50 }),
+    queryKey: ["proveedores", busqueda, page, pageSize],
+    queryFn: () => proveedoresApi.list({ q: busqueda || undefined, page, pageSize }),
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["proveedores"] });
@@ -85,7 +88,15 @@ export default function ProveedoresPage() {
         )}
       </div>
 
-      <Input placeholder="Buscar por nombre o contacto…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="max-w-sm" />
+      <Input
+        placeholder="Buscar por nombre o contacto…"
+        value={busqueda}
+        onChange={(e) => {
+          setBusqueda(e.target.value);
+          setPage(1);
+        }}
+        className="max-w-sm"
+      />
 
       <Card>
         <CardBody className="p-0">
@@ -121,6 +132,17 @@ export default function ProveedoresPage() {
               </tbody>
             </Table>
           )}
+          <Pagination
+            page={page}
+            totalPages={data?.meta.totalPages ?? 1}
+            totalItems={data?.meta.totalItems}
+            pageSize={pageSize}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+            onPageChange={setPage}
+          />
         </CardBody>
       </Card>
 

@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -35,6 +36,8 @@ export default function CotizacionesPage() {
   const toast = useToast();
   const qc = useQueryClient();
   const [filtro, setFiltro] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [crearAbierto, setCrearAbierto] = useState(false);
   const [detalle, setDetalle] = useState<CotizacionVenta | null>(null);
   const [convertirAbierto, setConvertirAbierto] = useState(false);
@@ -50,8 +53,8 @@ export default function CotizacionesPage() {
   const [motivoDescuento, setMotivoDescuento] = useState("");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["cotizaciones-venta", filtro],
-    queryFn: () => quoteApi.list({ estado: filtro || undefined, pageSize: 50 }),
+    queryKey: ["cotizaciones-venta", filtro, page, pageSize],
+    queryFn: () => quoteApi.list({ estado: filtro || undefined, page, pageSize }),
   });
   const catalogo = useQuery({
     queryKey: ["productos", "quote"],
@@ -154,7 +157,10 @@ export default function CotizacionesPage() {
         {FILTROS.map((f) => (
           <button
             key={f.value}
-            onClick={() => setFiltro(f.value)}
+            onClick={() => {
+              setFiltro(f.value);
+              setPage(1);
+            }}
             className={cn(
               "flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors",
               filtro === f.value ? "bg-surface text-foreground shadow-sm" : "text-muted hover:text-foreground"
@@ -204,6 +210,17 @@ export default function CotizacionesPage() {
               </tbody>
             </Table>
           )}
+          <Pagination
+            page={page}
+            totalPages={data?.meta.totalPages ?? 1}
+            totalItems={data?.meta.totalItems}
+            pageSize={pageSize}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+            onPageChange={setPage}
+          />
         </CardBody>
       </Card>
 

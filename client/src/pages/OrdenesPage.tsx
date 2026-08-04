@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Pagination } from "@/components/Pagination";
 import { StatusBadge } from "@/components/orden/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -28,11 +29,20 @@ export default function OrdenesPage() {
   const navigate = useNavigate();
   const [filtro, setFiltro] = useState("");
   const [folio, setFolio] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [nueva, setNueva] = useState(false);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["ordenes", filtro, folio],
-    queryFn: () => ordenesApi.list({ estado: filtro && filtro !== "retrasadas" ? filtro : undefined, retrasadas: filtro === "retrasadas" ? true : undefined, folio: folio || undefined, pageSize: 50 }),
+    queryKey: ["ordenes", filtro, folio, page, pageSize],
+    queryFn: () =>
+      ordenesApi.list({
+        estado: filtro && filtro !== "retrasadas" ? filtro : undefined,
+        retrasadas: filtro === "retrasadas" ? true : undefined,
+        folio: folio || undefined,
+        page,
+        pageSize,
+      }),
   });
 
   return (
@@ -48,7 +58,10 @@ export default function OrdenesPage() {
         {FILTROS.map((f) => (
           <button
             key={f.key}
-            onClick={() => setFiltro(f.key)}
+            onClick={() => {
+              setFiltro(f.key);
+              setPage(1);
+            }}
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
               filtro === f.key ? "bg-accent text-white" : "border border-border-line bg-surface text-muted hover:bg-surface-2"
             }`}
@@ -56,7 +69,15 @@ export default function OrdenesPage() {
             {f.label}
           </button>
         ))}
-        <Input placeholder="Buscar folio…" value={folio} onChange={(e) => setFolio(e.target.value)} className="ml-auto max-w-[180px]" />
+        <Input
+          placeholder="Buscar folio…"
+          value={folio}
+          onChange={(e) => {
+            setFolio(e.target.value);
+            setPage(1);
+          }}
+          className="ml-auto max-w-[180px]"
+        />
       </div>
 
       <Card>
@@ -103,6 +124,17 @@ export default function OrdenesPage() {
               </tbody>
             </Table>
           )}
+          <Pagination
+            page={page}
+            totalPages={data?.meta.totalPages ?? 1}
+            totalItems={data?.meta.totalItems}
+            pageSize={pageSize}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+            onPageChange={setPage}
+          />
         </CardBody>
       </Card>
 

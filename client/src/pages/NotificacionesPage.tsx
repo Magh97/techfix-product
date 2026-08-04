@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save } from "lucide-react";
 import { useState } from "react";
+import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -29,9 +30,14 @@ export default function NotificacionesPage() {
   const toast = useToast();
   const qc = useQueryClient();
   const [tab, setTab] = useState<"historial" | "plantillas">("historial");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [drafts, setDrafts] = useState<Record<string, { asunto: string; cuerpo: string }>>({});
 
-  const historial = useQuery({ queryKey: ["notif-historial"], queryFn: () => notificacionesApi.historial({ pageSize: 50 }) });
+  const historial = useQuery({
+    queryKey: ["notif-historial", page, pageSize],
+    queryFn: () => notificacionesApi.historial({ page, pageSize }),
+  });
   const plantillas = useQuery({ queryKey: ["notif-plantillas"], queryFn: notificacionesApi.plantillas });
 
   const save = useMutation({
@@ -87,6 +93,17 @@ export default function NotificacionesPage() {
                   ))}
                 </tbody>
               </Table>
+              <Pagination
+                page={page}
+                totalPages={historial.data?.meta.totalPages ?? 1}
+                totalItems={historial.data?.meta.totalItems}
+                pageSize={pageSize}
+                onPageSizeChange={(s) => {
+                  setPageSize(s);
+                  setPage(1);
+                }}
+                onPageChange={setPage}
+              />
             </CardBody>
           </Card>
         ))}

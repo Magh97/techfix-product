@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cpu, Download, FileSpreadsheet, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
+import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -30,6 +31,8 @@ export default function ProductosPage() {
   const qc = useQueryClient();
   const esAdmin = getSessionUser()?.rol === "admin";
   const [busqueda, setBusqueda] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [abierto, setAbierto] = useState(false);
   const [importAbierto, setImportAbierto] = useState(false);
   const [importando, setImportando] = useState(false);
@@ -60,8 +63,8 @@ export default function ProductosPage() {
   });
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["productos", busqueda],
-    queryFn: () => productsApi.list({ q: busqueda || undefined, pageSize: 50 }),
+    queryKey: ["productos", busqueda, page, pageSize],
+    queryFn: () => productsApi.list({ q: busqueda || undefined, page, pageSize }),
   });
 
   const catalogosQuery = useQuery({ queryKey: ["catalogos-lista"], queryFn: catalogosApi.list, enabled: abierto });
@@ -274,7 +277,10 @@ export default function ProductosPage() {
       <Input
         placeholder="Buscar por nombre o SKU…"
         value={busqueda}
-        onChange={(e) => setBusqueda(e.target.value)}
+        onChange={(e) => {
+          setBusqueda(e.target.value);
+          setPage(1);
+        }}
         className="max-w-sm"
       />
 
@@ -339,6 +345,17 @@ export default function ProductosPage() {
               </tbody>
             </Table>
           )}
+          <Pagination
+            page={page}
+            totalPages={data?.meta.totalPages ?? 1}
+            totalItems={data?.meta.totalItems}
+            pageSize={pageSize}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+            onPageChange={setPage}
+          />
         </CardBody>
       </Card>
 
