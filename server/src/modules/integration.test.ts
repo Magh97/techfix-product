@@ -1422,4 +1422,67 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(hist.status).toBe(200);
     expect(Array.isArray(hist.body.data)).toBe(true);
   });
+
+  it("CONFIG: GET devuelve parámetros, PUT valida y respeta RBAC", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+
+    const get = await request(app).get("/api/v1/configuracion").set(auth);
+    expect(get.status).toBe(200);
+    expect(typeof get.body.data.ivaRate).toBe("number");
+    expect(typeof get.body.data.limiteCreditoDefault).toBe("number");
+    expect(typeof get.body.data.descuentoVendedorMax).toBe("number");
+    expect(typeof get.body.data.diasDevolucion).toBe("number");
+    expect(typeof get.body.data.diasGarantiaServicio).toBe("number");
+    expect(typeof get.body.data.toleranciaRetrasoDias).toBe("number");
+
+    // Vendedor no puede escribir
+    const v = await request(app).put("/api/v1/configuracion").set(authV).send({ clave: "iva.rate", valor: 0.1 });
+    expect(v.status).toBe(403);
+
+    // Fuera de rango → 400
+    const bad = await request(app).put("/api/v1/configuracion").set(auth).send({ clave: "iva.rate", valor: 1.5 });
+    expect(bad.status).toBe(400);
+
+    try {
+      const put = await request(app).put("/api/v1/configuracion").set(auth).send({ clave: "iva.rate", valor: 0.08 });
+      expect(put.status).toBe(200);
+      const get2 = await request(app).get("/api/v1/configuracion").set(auth);
+      expect(get2.body.data.ivaRate).toBe(0.08);
+    } finally {
+      await request(app).put("/api/v1/configuracion").set(auth).send({ clave: "iva.rate", valor: 0.16 });
+    }
+  });
+
+  it("CONFIG: descuento vendedor y límite crédito default usan configuración", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+
+    try {
+      await request(app).put("/api/v1/configuracion").set(auth).send({ clave: "credito.limite_default", valor: 800 });
+      await request(app).put("/api/v1/configuracion").set(auth).send({ clave: "ventas.descuento_vendedor_max", valor: 0.5 });
+
+      // Cliente sin límite explícito usa el default configurado
+      const c = await request(app)
+        .post("/api/v1/clientes")
+        .set(auth)
+        .send({ nombre: "Cliente Default", telefono: "5588990011" });
+      expect(c.status).toBe(201);
+      expect(c.body.data.limiteCredito).toBe(800);
+
+      // Vendedor puede aplicar 50% con el límite ampliado
+      const prod = await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `CFG-${Date.now()}`, nombre: "Prod config", precioCompra: 5, precioVenta: 100 });
+      const productoId = prod.body.data.id;
+      await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+      const body = { lineas: [{ tipo: "producto", productoId, cantidad: 1 }], descuento: 50, tipoPago: "contado", metodoPago: "efectivo" };
+      const resV = await request(app).post("/api/v1/ventas").set(authV).send(body);
+      expect(resV.status).toBe(201);
+    } finally {
+      await request(app).put("/api/v1/configuracion").set(auth).send({ clave: "credito.limite_default", valor: 3000 });
+      await request(app).put("/api/v1/configuracion").set(auth).send({ clave: "ventas.descuento_vendedor_max", valor: 0.1 });
+    }
+  });
 });
