@@ -16,6 +16,7 @@ import OrdenDetallePage from "@/pages/OrdenDetallePage";
 import OrdenesPage from "@/pages/OrdenesPage";
 import ProductosPage from "@/pages/ProductosPage";
 import ProveedoresPage from "@/pages/ProveedoresPage";
+import ReportesPage from "@/pages/ReportesPage";
 import VentaPage from "@/pages/VentaPage";
 import type { ReactNode } from "react";
 
@@ -49,6 +50,7 @@ const router = createBrowserRouter([
       { path: "compras", element: <ComprasPage /> },
       { path: "compras/nueva", element: <NuevaCompraPage /> },
       { path: "compras/:id", element: <CompraDetallePage /> },
+      { path: "reportes", element: <ReportesPage /> },
     ],
   },
 ]);

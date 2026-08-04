@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Download, FileSpreadsheet, Plus } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,13 +71,28 @@ export default function ProductosPage() {
     });
   }
 
+  function exportar(formato: "csv" | "xlsx") {
+    productsApi
+      .exportar(formato)
+      .then(() => toast.success("Exportación iniciada"))
+      .catch((e) => toast.error("Error al exportar", e instanceof Error ? e.message : ""));
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Productos</h1>
-        <Button onClick={() => setAbierto(true)}>
-          <Plus className="h-4 w-4" /> Nuevo producto
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => exportar("csv")}>
+            <Download className="h-4 w-4" /> CSV
+          </Button>
+          <Button variant="outline" onClick={() => exportar("xlsx")}>
+            <FileSpreadsheet className="h-4 w-4" /> Excel
+          </Button>
+          <Button onClick={() => setAbierto(true)}>
+            <Plus className="h-4 w-4" /> Nuevo producto
+          </Button>
+        </div>
       </div>
 
       <Input

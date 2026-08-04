@@ -1,4 +1,6 @@
 import { AppError } from "../../shared/errors";
+import type { Response } from "express";
+import { sendExport, type ExportColumn } from "../../shared/export";
 import * as repo from "./products.repository";
 
 export interface ProductDTO {
@@ -107,4 +109,33 @@ export async function deactivate(id: number) {
   const row = await repo.deactivateProduct(id);
   if (!row) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
   return mapProduct(row);
+}
+
+export async function exportarCatalogo(res: Response, formato: "csv" | "xlsx") {
+  const rows = await repo.listProducts({ limit: 100_000, offset: 0 });
+  const columns: ExportColumn[] = [
+    { header: "SKU", key: "sku" },
+    { header: "Codigo barras", key: "codigo_barras" },
+    { header: "Nombre", key: "nombre" },
+    { header: "Marca", key: "marca" },
+    { header: "Modelo", key: "modelo" },
+    { header: "Categoria", key: "categoria" },
+    { header: "Stock", key: "stock" },
+    { header: "Stock minimo", key: "stock_minimo" },
+    { header: "Precio compra", key: "precio_compra" },
+    { header: "Precio venta", key: "precio_venta" },
+  ];
+  const data = rows.map((r) => ({
+    sku: r.sku,
+    codigo_barras: r.codigo_barras,
+    nombre: r.nombre,
+    marca: r.marca,
+    modelo: r.modelo,
+    categoria: r.categoria,
+    stock: r.stock,
+    stock_minimo: r.stock_minimo,
+    precio_compra: Number(r.precio_compra),
+    precio_venta: Number(r.precio_venta),
+  }));
+  return sendExport(res, { formato, filename: "catalogo-productos", columns, rows: data });
 }
