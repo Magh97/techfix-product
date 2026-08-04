@@ -9,6 +9,7 @@ import type {
   CxcItem,
   CxpItem,
   EstadoOrden,
+  ImportResult,
   LoginResponse,
   OrdenServicio,
   Paginated,
@@ -70,6 +71,8 @@ export const productsApi = {
   },
   create: (input: CreateProducto) => api<{ data: Producto }>("/productos", { method: "POST", body: JSON.stringify(input) }),
   exportar: (formato: "csv" | "xlsx") => downloadExport("/productos/exportar", `catalogo-productos.${formato}`, { formato }),
+  plantilla: (formato: "csv" | "xlsx") => downloadExport("/productos/plantilla", `plantilla-productos.${formato}`, { formato }),
+  importar: (file: File) => uploadFile<ImportResult>("/productos/importar", "archivo", file),
 };
 
 export const clientesApi = {
@@ -226,6 +229,17 @@ export async function downloadExport(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+export async function uploadFile<T>(path: string, field: string, file: File): Promise<T> {
+  const fd = new FormData();
+  fd.append(field, file);
+  const res = await fetch(`${API_URL}${path}`, { method: "POST", headers: authHeader(), body: fd });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new ApiError(res.status, body?.error?.code ?? "ERROR", body?.error?.message ?? "Error", body?.error?.details);
+  }
+  return body.data as T;
 }
 
 export const reportsApi = {

@@ -307,3 +307,9 @@ export interface ReporteServicios {
   porTecnico: { tecnico: string; ordenes: number }[];
   porTipoEquipo: { tipoEquipo: string; ordenes: number }[];
 }
+
+export interface ImportResult {
+  importados: number;
+  omitidos: { fila: number; sku: string; motivo: string }[];
+  errores: { fila: number; sku: string; motivo: string }[];
+}
