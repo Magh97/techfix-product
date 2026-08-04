@@ -16,15 +16,10 @@ import { getSessionUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import type { CreateProducto, ImportResult, Movimiento, Producto, Sugerencias } from "@/lib/types";
 
-const CATS: Record<string, string> = {
-  componente: "Componente",
-  periferico: "Periférico",
-  equipo_completo: "Equipo",
-  refaccion: "Refacción",
-  usado: "Usado",
-};
-
 const mxn = (n: number) => n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const labelCategoria = (s: string) =>
+  s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 export default function ProductosPage() {
   const toast = useToast();
@@ -48,27 +43,47 @@ export default function ProductosPage() {
   const [ajustando, setAjustando] = useState(false);
   const [movimientosProducto, setMovimientosProducto] = useState<Producto | null>(null);
   const [movimientos, setMovimientos] = useState<Movimiento[] | null>(null);
+  const [filtroRuta, setFiltroRuta] = useState<number[]>([]);
+  const [tagInput, setTagInput] = useState("");
   const [form, setForm] = useState({
     sku: "",
     nombre: "",
     codigoBarras: "",
     marca: "",
     modelo: "",
-    categoriaId: 1,
     catalogoId: "",
-    especificaciones: {} as Record<string, string>,
+    especificaciones: [] as string[],
     precioCompra: "",
     precioVenta: "",
     stockMinimo: "0",
   });
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["productos", busqueda, page, pageSize],
-    queryFn: () => productsApi.list({ q: busqueda || undefined, page, pageSize }),
+    queryKey: ["productos", busqueda, filtroRuta, page, pageSize],
+    queryFn: () =>
+      productsApi.list({
+        q: busqueda || undefined,
+        catalogoId: filtroRuta.length ? filtroRuta[filtroRuta.length - 1] : undefined,
+        page,
+        pageSize,
+      }),
   });
 
-  const catalogosQuery = useQuery({ queryKey: ["catalogos-lista"], queryFn: catalogosApi.list, enabled: abierto });
+  const catalogosQuery = useQuery({ queryKey: ["catalogos-lista"], queryFn: catalogosApi.list });
   const catalogos = catalogosQuery.data?.data ?? [];
+
+  const generalId = catalogos.find((c) => c.parentId === null && c.nombre === "General")?.id ?? null;
+
+  function raizDe(catalogoId: number | null): number {
+    if (!catalogoId) return generalId ?? 0;
+    let c = catalogos.find((x) => x.id === catalogoId);
+    while (c && c.parentId != null) c = catalogos.find((x) => x.id === c!.parentId);
+    return c?.id ?? generalId ?? 0;
+  }
+
+  function hijosDe(parentId: number | null): typeof catalogos {
+    return catalogos.filter((c) => (c.parentId ?? null) === parentId);
+  }
 
   function arbolAplano(): { id: number; label: string; prof: number }[] {
     const out: { id: number; label: string; prof: number }[] = [];
@@ -84,6 +99,9 @@ export default function ProductosPage() {
   }
 
   const catalogoSeleccionado = catalogos.find((c) => c.id === Number(form.catalogoId));
+  const categoriaAuto = labelCategoria(
+    catalogos.find((c) => c.id === raizDe(form.catalogoId ? Number(form.catalogoId) : null))?.nombre ?? "General"
+  );
 
   const catalogo = useQuery({
     queryKey: ["productos", "catalogo"],
@@ -96,7 +114,8 @@ export default function ProductosPage() {
     onSuccess: () => {
       toast.success("Producto creado");
       setAbierto(false);
-      setForm({ sku: "", nombre: "", codigoBarras: "", marca: "", modelo: "", categoriaId: 1, catalogoId: "", especificaciones: {}, precioCompra: "", precioVenta: "", stockMinimo: "0" });
+      setForm({ sku: "", nombre: "", codigoBarras: "", marca: "", modelo: "", catalogoId: "", especificaciones: [], precioCompra: "", precioVenta: "", stockMinimo: "0" });
+      setTagInput("");
       qc.invalidateQueries({ queryKey: ["productos"] });
     },
     onError: (e) => toast.error("Error al crear", e instanceof Error ? e.message : "Intenta de nuevo"),
@@ -104,12 +123,9 @@ export default function ProductosPage() {
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const especificaciones: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(form.especificaciones)) {
-      if (v !== undefined && v !== "") especificaciones[k] = v;
-    }
+    const especificaciones = form.especificaciones.filter((t) => t.trim() !== "");
     create.mutate({
-      categoriaId: Number(form.categoriaId),
+      categoriaId: raizDe(form.catalogoId ? Number(form.catalogoId) : null),
       sku: form.sku,
       nombre: form.nombre,
       codigoBarras: form.codigoBarras || null,
@@ -274,6 +290,45 @@ export default function ProductosPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        {Array.from({ length: Math.max(1, filtroRuta.length) }).map((_, nivel) => {
+          const parentId = nivel === 0 ? null : filtroRuta[nivel - 1] ?? null;
+          const opciones = hijosDe(parentId);
+          const valor = filtroRuta[nivel] ?? "";
+          return (
+            <select
+              key={nivel}
+              value={valor}
+              onChange={(e) => {
+                const v = e.target.value;
+                setFiltroRuta(v ? [...filtroRuta.slice(0, nivel), Number(v)] : filtroRuta.slice(0, nivel));
+                setPage(1);
+              }}
+              className="h-10 rounded-md border border-border-line bg-surface px-2 text-sm"
+            >
+              <option value="">{nivel === 0 ? "Todas las categorías" : "— Todos —"}</option>
+              {opciones.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.nombre}
+                </option>
+              ))}
+            </select>
+          );
+        })}
+        {filtroRuta.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFiltroRuta([]);
+              setPage(1);
+            }}
+          >
+            Limpiar
+          </Button>
+        )}
+      </div>
+
       <Input
         placeholder="Buscar por nombre o SKU…"
         value={busqueda}
@@ -315,7 +370,7 @@ export default function ProductosPage() {
                       {p.isKit && <Badge variant="accent" className="ml-2">Kit</Badge>}
                     </TD>
                     <TD>
-                      <Badge variant="default">{CATS[p.categoria] ?? p.categoria}</Badge>
+                      <Badge variant="default">{labelCategoria(p.categoria)}</Badge>
                     </TD>
                     <TD className="text-right">${mxn(p.precioVenta)}</TD>
                     <TD className="text-right">
@@ -375,34 +430,20 @@ export default function ProductosPage() {
               <Input value={form.codigoBarras} onChange={(e) => setForm({ ...form, codigoBarras: e.target.value })} />
             </div>
             <div>
-              <Label>Categoría</Label>
-              <select
-                value={form.categoriaId}
-                onChange={(e) => setForm({ ...form, categoriaId: Number(e.target.value) })}
-                className="h-10 w-full rounded-md border border-border-line bg-surface px-3 text-sm"
-              >
-                {Object.keys(CATS).map((k, i) => (
-                  <option key={k} value={i + 1}>
-                    {CATS[k]}
-                  </option>
-                ))}
-              </select>
+              <Label>Categoría (automática)</Label>
+              <div className="flex h-10 items-center rounded-md border border-border-line bg-surface-2 px-3 text-sm text-muted">
+                {categoriaAuto}
+              </div>
             </div>
           </div>
           <div>
             <Label>Catálogo (subcategoría)</Label>
             <select
               value={form.catalogoId}
-              onChange={(e) => {
-                const id = e.target.value;
-                const cat = catalogos.find((c) => c.id === Number(id));
-                const specs: Record<string, string> = {};
-                if (cat) for (const campo of cat.camposEspecificacion) specs[campo.clave] = form.especificaciones[campo.clave] ?? "";
-                setForm({ ...form, catalogoId: id, especificaciones: specs });
-              }}
+              onChange={(e) => setForm({ ...form, catalogoId: e.target.value })}
               className="h-10 w-full rounded-md border border-border-line bg-surface px-3 text-sm"
             >
-              <option value="">Sin catálogo</option>
+              <option value="">Sin catálogo (cae en "General")</option>
               {arbolAplano().map((c) => (
                 <option key={c.id} value={c.id}>
                   {"\u00A0".repeat(c.prof * 2)}{c.label}
@@ -410,21 +451,55 @@ export default function ProductosPage() {
               ))}
             </select>
           </div>
-          {catalogoSeleccionado && catalogoSeleccionado.camposEspecificacion.length > 0 && (
-            <div className="grid grid-cols-2 gap-3">
-              {catalogoSeleccionado.camposEspecificacion.map((campo) => (
-                <div key={campo.clave}>
-                  <Label>{campo.etiqueta}</Label>
-                  <Input
-                    value={form.especificaciones[campo.clave] ?? ""}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, especificaciones: { ...f.especificaciones, [campo.clave]: e.target.value } }))
-                    }
-                  />
-                </div>
+          <div>
+            <Label>Especificaciones (tags)</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              {form.especificaciones.map((t, i) => (
+                <span key={i} className="flex items-center gap-1 rounded-full border border-border-line bg-surface-2 px-2.5 py-1 text-xs">
+                  {t}
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, especificaciones: f.especificaciones.filter((_, j) => j !== i) }))}
+                  >
+                    ×
+                  </button>
+                </span>
               ))}
+              <Input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const t = tagInput.trim();
+                    if (t && !form.especificaciones.includes(t))
+                      setForm((f) => ({ ...f, especificaciones: [...f.especificaciones, t] }));
+                    setTagInput("");
+                  }
+                }}
+                placeholder="Escribe y presiona Enter…"
+                className="h-8 max-w-xs flex-1 text-xs"
+              />
             </div>
-          )}
+            {catalogoSeleccionado && catalogoSeleccionado.tagsSugeridas.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {catalogoSeleccionado.tagsSugeridas.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() =>
+                      setForm((f) =>
+                        f.especificaciones.includes(t) ? f : { ...f, especificaciones: [...f.especificaciones, t] }
+                      )
+                    }
+                    className="rounded-full border border-dashed border-border-line px-2.5 py-1 text-xs text-muted hover:bg-surface-2 hover:text-foreground"
+                  >
+                    + {t}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Precio compra</Label>

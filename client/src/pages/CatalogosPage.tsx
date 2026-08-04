@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, FolderPlus, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, FolderPlus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,16 +10,54 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast";
 import { catalogosApi } from "@/lib/api";
-import type { Catalogo, EspecificacionCampo } from "@/lib/types";
+import type { Catalogo } from "@/lib/types";
 
 interface FormCatalogo {
   nombre: string;
   parentId: string;
-  campos: EspecificacionCampo[];
-  clavesCompatibilidad: string[];
+  tagsSugeridas: string[];
+  tagsCompatibilidad: string[];
 }
 
-const formVacio: FormCatalogo = { nombre: "", parentId: "", campos: [], clavesCompatibilidad: [] };
+const formVacio: FormCatalogo = { nombre: "", parentId: "", tagsSugeridas: [], tagsCompatibilidad: [] };
+
+function EditorTags({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+  placeholder: string;
+}) {
+  const [draft, setDraft] = useState("");
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {value.map((t, i) => (
+        <span key={i} className="flex items-center gap-1 rounded-full border border-border-line bg-surface-2 px-2.5 py-1 text-xs">
+          {t}
+          <button type="button" onClick={() => onChange(value.filter((_, j) => j !== i))}>
+            ×
+          </button>
+        </span>
+      ))}
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            const t = draft.trim();
+            if (t && !value.includes(t)) onChange([...value, t]);
+            setDraft("");
+          }
+        }}
+        placeholder={placeholder}
+        className="h-8 max-w-xs flex-1 text-xs"
+      />
+    </div>
+  );
+}
 
 export default function CatalogosPage() {
   const toast = useToast();
@@ -42,8 +80,8 @@ export default function CatalogosPage() {
       const payload = {
         nombre: form.nombre,
         parentId: form.parentId ? Number(form.parentId) : null,
-        camposEspecificacion: form.campos.filter((c) => c.clave && c.etiqueta),
-        clavesCompatibilidad: form.clavesCompatibilidad,
+        tagsSugeridas: form.tagsSugeridas,
+        tagsCompatibilidad: form.tagsCompatibilidad,
       };
       return editando ? catalogosApi.update(editando.id, payload) : catalogosApi.create(payload);
     },
@@ -79,23 +117,10 @@ export default function CatalogosPage() {
     setForm({
       nombre: c.nombre,
       parentId: c.parentId ? String(c.parentId) : "",
-      campos: c.camposEspecificacion.map((x) => ({ ...x })),
-      clavesCompatibilidad: c.clavesCompatibilidad,
+      tagsSugeridas: [...c.tagsSugeridas],
+      tagsCompatibilidad: [...c.tagsCompatibilidad],
     });
     setAbierto(true);
-  }
-
-  function setCampo(i: number, campo: Partial<EspecificacionCampo>) {
-    setForm((f) => ({ ...f, campos: f.campos.map((c, j) => (j === i ? { ...c, ...campo } : c)) }));
-  }
-
-  function toggleClave(clave: string) {
-    setForm((f) => ({
-      ...f,
-      clavesCompatibilidad: f.clavesCompatibilidad.includes(clave)
-        ? f.clavesCompatibilidad.filter((k) => k !== clave)
-        : [...f.clavesCompatibilidad, clave],
-    }));
   }
 
   function renderArbol(nodos: Catalogo[], profundidad: number) {
@@ -107,11 +132,11 @@ export default function CatalogosPage() {
         >
           <ChevronRight className="h-4 w-4 text-muted" />
           <span className="font-medium">{n.nombre}</span>
-          {n.camposEspecificacion.length > 0 && (
-            <Badge variant="default">{n.camposEspecificacion.length} campos</Badge>
+          {n.tagsSugeridas.length > 0 && (
+            <Badge variant="default">{n.tagsSugeridas.length} tags</Badge>
           )}
-          {n.clavesCompatibilidad.length > 0 && (
-            <Badge variant="accent">compat: {n.clavesCompatibilidad.join(", ")}</Badge>
+          {n.tagsCompatibilidad.length > 0 && (
+            <Badge variant="accent">compat: {n.tagsCompatibilidad.join(", ")}</Badge>
           )}
           <div className="ml-auto flex gap-1">
             <Button size="sm" variant="ghost" onClick={() => abrirEdicion(n)}>Editar</Button>
@@ -187,55 +212,22 @@ export default function CatalogosPage() {
           </div>
 
           <div>
-            <Label>Campos de especificación</Label>
-            <div className="space-y-2">
-              {form.campos.map((c, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <Input
-                    placeholder="clave (ej. tipo_memoria)"
-                    value={c.clave}
-                    onChange={(e) => setCampo(i, { clave: e.target.value })}
-                    className="flex-1 font-mono text-xs"
-                  />
-                  <Input
-                    placeholder="Etiqueta (ej. Tipo de memoria)"
-                    value={c.etiqueta}
-                    onChange={(e) => setCampo(i, { etiqueta: e.target.value })}
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setForm((f) => ({ ...f, campos: f.campos.filter((_, j) => j !== i) }))}
-                  >
-                    <Trash2 className="h-4 w-4 text-danger" />
-                  </Button>
-                </div>
-              ))}
-              <Button type="button" variant="outline" size="sm" onClick={() => setForm((f) => ({ ...f, campos: [...f.campos, { clave: "", etiqueta: "" }] }))}>
-                <Plus className="h-4 w-4" /> Agregar campo
-              </Button>
-            </div>
+            <Label>Tags sugeridas (al dar de alta un producto)</Label>
+            <EditorTags
+              value={form.tagsSugeridas}
+              onChange={(tagsSugeridas) => setForm((f) => ({ ...f, tagsSugeridas }))}
+              placeholder="Ej. SO-DIMM, 16 GB…"
+            />
           </div>
 
-          {form.campos.some((c) => c.clave) && (
-            <div>
-              <Label>Claves de compatibilidad (deben coincidir para sustituir)</Label>
-              <div className="flex flex-wrap gap-2">
-                {form.campos.filter((c) => c.clave).map((c) => (
-                  <label key={c.clave} className="flex items-center gap-1.5 rounded-md border border-border-line px-2.5 py-1.5 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.clavesCompatibilidad.includes(c.clave)}
-                      onChange={() => toggleClave(c.clave)}
-                    />
-                    {c.etiqueta || c.clave}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
+          <div>
+            <Label>Tags de compatibilidad (deben coincidir para sugerir sustitutos)</Label>
+            <EditorTags
+              value={form.tagsCompatibilidad}
+              onChange={(tagsCompatibilidad) => setForm((f) => ({ ...f, tagsCompatibilidad }))}
+              placeholder="Ej. DDR4, DDR5…"
+            />
+          </div>
 
           <div className="flex justify-end gap-2 pt-2">
             {editando && (
