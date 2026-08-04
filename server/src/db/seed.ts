@@ -30,6 +30,43 @@ async function main() {
 
   await pool.query(`INSERT INTO configuracion (clave, valor) VALUES ('iva', '{"rate":0.16}') ON CONFLICT (clave) DO NOTHING`);
 
+  // --- Catálogos (taxonomía) ---
+  const rootIds = new Map<string, number>();
+  for (const nombre of categorias) {
+    await pool.query(
+      `INSERT INTO catalogos (nombre) SELECT $1::text WHERE NOT EXISTS (SELECT 1 FROM catalogos WHERE nombre = $1::text AND parent_id IS NULL)`,
+      [nombre]
+    );
+    const r = await pool.query<{ id: number }>("SELECT id FROM catalogos WHERE nombre = $1 AND parent_id IS NULL", [nombre]);
+    rootIds.set(nombre, r.rows[0]!.id);
+  }
+
+  const subcategorias: { parent: string; nombre: string; campos: { clave: string; etiqueta: string }[]; claves: string[] }[] = [
+    { parent: "componente", nombre: "RAM", campos: [{ clave: "tipo_memoria", etiqueta: "Tipo de memoria" }, { clave: "capacidad", etiqueta: "Capacidad" }, { clave: "factor", etiqueta: "Factor" }], claves: ["tipo_memoria", "factor"] },
+    { parent: "componente", nombre: "Procesador", campos: [{ clave: "socket", etiqueta: "Socket" }, { clave: "nucleos", etiqueta: "Núcleos" }], claves: ["socket"] },
+    { parent: "componente", nombre: "Almacenamiento", campos: [{ clave: "interfaz", etiqueta: "Interfaz" }, { clave: "capacidad", etiqueta: "Capacidad" }, { clave: "formato", etiqueta: "Formato" }], claves: ["interfaz", "formato"] },
+    { parent: "componente", nombre: "Tarjeta de video", campos: [{ clave: "vram", etiqueta: "VRAM" }, { clave: "tipo_memoria", etiqueta: "Tipo de memoria" }], claves: ["tipo_memoria"] },
+    { parent: "componente", nombre: "Placa madre", campos: [{ clave: "socket", etiqueta: "Socket" }, { clave: "chipset", etiqueta: "Chipset" }, { clave: "formato", etiqueta: "Formato" }], claves: ["socket", "chipset"] },
+    { parent: "componente", nombre: "Fuente de poder", campos: [{ clave: "potencia", etiqueta: "Potencia (W)" }, { clave: "certificacion", etiqueta: "Certificación" }], claves: [] },
+    { parent: "periferico", nombre: "Monitor", campos: [{ clave: "tamano", etiqueta: "Tamaño (pulg)" }, { clave: "resolucion", etiqueta: "Resolución" }, { clave: "tasa_refresco", etiqueta: "Tasa de refresco" }], claves: ["resolucion"] },
+    { parent: "periferico", nombre: "Teclado", campos: [{ clave: "layout", etiqueta: "Layout" }, { clave: "tipo_switch", etiqueta: "Tipo de switch" }], claves: [] },
+    { parent: "periferico", nombre: "Ratón", campos: [{ clave: "sensor", etiqueta: "Sensor" }], claves: [] },
+    { parent: "equipo_completo", nombre: "Laptop", campos: [], claves: [] },
+    { parent: "equipo_completo", nombre: "Desktop", campos: [], claves: [] },
+  ];
+  const catIds = new Map<string, number>();
+  for (const s of subcategorias) {
+    const parentId = rootIds.get(s.parent)!;
+    await pool.query(
+      `INSERT INTO catalogos (parent_id, nombre, campos_especificacion, claves_compatibilidad)
+       SELECT $1::integer, $2::varchar, $3::jsonb, $4::jsonb
+       WHERE NOT EXISTS (SELECT 1 FROM catalogos WHERE parent_id = $1::integer AND nombre = $2::varchar)`,
+      [parentId, s.nombre, JSON.stringify(s.campos), JSON.stringify(s.claves)]
+    );
+    const r = await pool.query<{ id: number }>("SELECT id FROM catalogos WHERE parent_id = $1 AND nombre = $2", [parentId, s.nombre]);
+    catIds.set(`${s.parent}/${s.nombre}`, r.rows[0]!.id);
+  }
+
   const plantillas = [
     {
       tipo: "NOT-02",
@@ -66,17 +103,18 @@ async function main() {
   }
 
   const productos = [
-    { sku: "PROC-001", codigo: "7501221234101", nombre: "Procesador Intel i5-12400", categoriaId: 1, precioCompra: 2800, precioVenta: 3180, stock: 8, stockMin: 3 },
-    { sku: "RAM-001", codigo: "7501221234103", nombre: "Memoria RAM 16GB DDR4 3200", categoriaId: 1, precioCompra: 900, precioVenta: 1180, stock: 12, stockMin: 5 },
-    { sku: "SSD-001", codigo: "7501221234104", nombre: "SSD NVMe 1TB Gen4", categoriaId: 1, precioCompra: 1100, precioVenta: 1390, stock: 6, stockMin: 3 },
-    { sku: "TEC-001", codigo: "7501221234109", nombre: "Teclado mecánico RGB", categoriaId: 2, precioCompra: 600, precioVenta: 850, stock: 10, stockMin: 4 },
-    { sku: "MON-001", codigo: "7501221234108", nombre: "Monitor 24\" FHD 144Hz", categoriaId: 2, precioCompra: 1800, precioVenta: 2350, stock: 5, stockMin: 2 },
+    { sku: "PROC-001", codigo: "7501221234101", nombre: "Procesador Intel i5-12400", categoriaId: 1, precioCompra: 2800, precioVenta: 3180, stock: 8, stockMin: 3, catalogo: "componente/Procesador", specs: { socket: "LGA1700" } },
+    { sku: "RAM-001", codigo: "7501221234103", nombre: "Memoria RAM 16GB DDR4 3200", categoriaId: 1, precioCompra: 900, precioVenta: 1180, stock: 12, stockMin: 5, catalogo: "componente/RAM", specs: { tipo_memoria: "DDR4", capacidad: "16GB", factor: "DIMM" } },
+    { sku: "SSD-001", codigo: "7501221234104", nombre: "SSD NVMe 1TB Gen4", categoriaId: 1, precioCompra: 1100, precioVenta: 1390, stock: 6, stockMin: 3, catalogo: "componente/Almacenamiento", specs: { interfaz: "NVMe", capacidad: "1TB", formato: "M.2" } },
+    { sku: "TEC-001", codigo: "7501221234109", nombre: "Teclado mecánico RGB", categoriaId: 2, precioCompra: 600, precioVenta: 850, stock: 10, stockMin: 4, catalogo: "periferico/Teclado", specs: { layout: "ES", tipo_switch: "mecanico" } },
+    { sku: "MON-001", codigo: "7501221234108", nombre: "Monitor 24\" FHD 144Hz", categoriaId: 2, precioCompra: 1800, precioVenta: 2350, stock: 5, stockMin: 2, catalogo: "periferico/Monitor", specs: { tamano: "24", resolucion: "1920x1080", tasa_refresco: "144Hz" } },
   ];
   for (const p of productos) {
+    const catalogoId = catIds.get(p.catalogo);
     await pool.query(
-      `INSERT INTO productos (categoria_id, sku, codigo_barras, nombre, precio_compra, precio_venta, stock, stock_minimo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (sku) DO NOTHING`,
-      [p.categoriaId, p.sku, p.codigo, p.nombre, p.precioCompra, p.precioVenta, p.stock, p.stockMin]
+      `INSERT INTO productos (categoria_id, sku, codigo_barras, nombre, precio_compra, precio_venta, stock, stock_minimo, catalogo_id, especificaciones)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb) ON CONFLICT (sku) DO NOTHING`,
+      [p.categoriaId, p.sku, p.codigo, p.nombre, p.precioCompra, p.precioVenta, p.stock, p.stockMin, catalogoId ?? null, JSON.stringify(p.specs)]
     );
   }
 

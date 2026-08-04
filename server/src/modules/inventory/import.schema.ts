@@ -11,6 +11,9 @@ export const importRowSchema = z.object({
   precioVenta: z.coerce.number().nonnegative(),
   stockMinimo: z.coerce.number().int().nonnegative().default(0),
   stock: z.coerce.number().int().nonnegative().default(0),
+  catalogoId: z.coerce.number().int().positive().optional().nullable(),
+  catalogo: z.string().optional().nullable(),
+  especificaciones: z.string().optional().nullable(),
 });
 
 export const plantillaQuerySchema = z.object({

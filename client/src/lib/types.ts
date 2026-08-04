@@ -44,6 +44,37 @@ export interface CreateProducto {
   precioCompra: number;
   precioVenta: number;
   stockMinimo?: number;
+  catalogoId?: number | null;
+  especificaciones?: Record<string, unknown>;
+}
+
+export interface EspecificacionCampo {
+  clave: string;
+  etiqueta: string;
+}
+
+export interface Catalogo {
+  id: number;
+  parentId: number | null;
+  nombre: string;
+  camposEspecificacion: EspecificacionCampo[];
+  clavesCompatibilidad: string[];
+}
+
+export interface Sustituto {
+  id: number;
+  sku: string;
+  nombre: string;
+  precioVenta: number;
+  stock: number;
+  especificaciones: Record<string, unknown>;
+}
+
+export interface Sugerencias {
+  producto: { id: number; nombre: string; catalogoId: number | null; catalogoNombre: string | null };
+  componenteCorto: { productoId: number; nombre: string; stock: number; requerido: number } | null;
+  sustitutos: Sustituto[];
+  sustitutosComponente: Sustituto[];
 }
 
 export interface Cliente {

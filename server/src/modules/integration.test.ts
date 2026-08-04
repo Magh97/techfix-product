@@ -1114,4 +1114,151 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(res.status).toBe(200);
     expect(res.headers["content-disposition"]).toBeTruthy();
   });
+
+  it("CATALOGOS: CRUD, anti-ciclos y RBAC", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    const suf = Date.now();
+
+    // Solo admin puede listar
+    expect((await request(app).get("/api/v1/catalogos").set(authV)).status).toBe(403);
+
+    const root = await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `Raiz-${suf}` });
+    expect(root.status).toBe(201);
+    const rootId = root.body.data.id;
+
+    const ram = await request(app).post("/api/v1/catalogos").set(auth).send({
+      nombre: `RAM-${suf}`,
+      parentId: rootId,
+      camposEspecificacion: [
+        { clave: "tipo_memoria", etiqueta: "Tipo de memoria" },
+        { clave: "capacidad", etiqueta: "Capacidad" },
+      ],
+      clavesCompatibilidad: ["tipo_memoria"],
+    });
+    expect(ram.status).toBe(201);
+    const ramId = ram.body.data.id;
+
+    // Hermano duplicado → 409
+    const dup = await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `ram-${suf}`, parentId: rootId });
+    expect(dup.status).toBe(409);
+
+    // Mover RAM dentro de sí misma → 400 (ciclo)
+    const ciclo = await request(app).put(`/api/v1/catalogos/${ramId}`).set(auth).send({ parentId: ramId });
+    expect(ciclo.status).toBe(400);
+    expect(ciclo.body.error.code).toBe("CICLO_CATALOGO");
+
+    // Eliminar con producto asignado → 409
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `CATPROD-${suf}`, nombre: "Prod con catalogo", precioCompra: 5, precioVenta: 10, catalogoId: ramId });
+    expect(prod.status).toBe(201);
+    const del = await request(app).delete(`/api/v1/catalogos/${ramId}`).set(auth);
+    expect(del.status).toBe(409);
+  });
+
+  it("TAXONOMÍA: sustituye producto con misma compatibilidad (32GB → 16GB DDR5)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+
+    const root = await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `RootTax-${suf}` });
+    const ram = await request(app).post("/api/v1/catalogos").set(auth).send({
+      nombre: `RAM-Tax-${suf}`,
+      parentId: root.body.data.id,
+      camposEspecificacion: [
+        { clave: "tipo_memoria", etiqueta: "Tipo de memoria" },
+        { clave: "capacidad", etiqueta: "Capacidad" },
+      ],
+      clavesCompatibilidad: ["tipo_memoria"],
+    });
+    const ramId = ram.body.data.id;
+
+    async function crearRam(sku: string, specs: Record<string, unknown>, stock: number) {
+      const r = await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku, nombre: `RAM ${sku}`, precioCompra: 5, precioVenta: 10, catalogoId: ramId, especificaciones: specs, stockMinimo: 1 });
+      await pool.query("UPDATE productos SET stock = $2 WHERE id = $1", [r.body.data.id, stock]);
+      return r.body.data.id;
+    }
+
+    const a = await crearRam(`A32-${suf}`, { tipo_memoria: "DDR5", capacidad: "32GB" }, 5);
+    const b = await crearRam(`B16-${suf}`, { tipo_memoria: "DDR5", capacidad: "16GB" }, 3);
+    const c = await crearRam(`C-DDR4-${suf}`, { tipo_memoria: "DDR4", capacidad: "16GB" }, 3);
+
+    const res = await request(app).get(`/api/v1/productos/${a}/sugerencias`).set(auth);
+    expect(res.status).toBe(200);
+    const ids = res.body.data.sustitutos.map((s: { id: number }) => s.id);
+    expect(ids).toContain(b);
+    expect(ids).not.toContain(c);
+  });
+
+  it("TAXONOMÍA: kit con componente corto sugiere sustituto del componente", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+
+    const root = await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `RootKit-${suf}` });
+    const ram = await request(app).post("/api/v1/catalogos").set(auth).send({
+      nombre: `RAM-Kit-${suf}`,
+      parentId: root.body.data.id,
+      camposEspecificacion: [{ clave: "tipo_memoria", etiqueta: "Tipo" }],
+      clavesCompatibilidad: ["tipo_memoria"],
+    });
+    const ramId = ram.body.data.id;
+
+    async function crearRam(sku: string, specs: Record<string, unknown>, stock: number) {
+      const r = await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku, nombre: `RAM ${sku}`, precioCompra: 5, precioVenta: 10, catalogoId: ramId, especificaciones: specs });
+      await pool.query("UPDATE productos SET stock = $2 WHERE id = $1", [r.body.data.id, stock]);
+      return r.body.data.id;
+    }
+
+    const corto = await crearRam(`Corto-${suf}`, { tipo_memoria: "DDR5" }, 0);
+    const sustituto = await crearRam(`Sust-${suf}`, { tipo_memoria: "DDR5" }, 4);
+
+    const kit = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `KITTAX-${suf}`, nombre: "Kit Taxonomía", precioCompra: 5, precioVenta: 10 });
+    await request(app).put(`/api/v1/productos/${kit.body.data.id}/bom`).set(auth).send({ componentes: [{ productoId: corto, cantidad: 1 }], manoObra: 0 });
+
+    const res = await request(app).get(`/api/v1/productos/${kit.body.data.id}/sugerencias`).set(auth);
+    expect(res.status).toBe(200);
+    expect(res.body.data.componenteCorto.productoId).toBe(corto);
+    const ids = res.body.data.sustitutosComponente.map((s: { id: number }) => s.id);
+    expect(ids).toContain(sustituto);
+  });
+
+  it("IMPORT: crea producto con catálogo y especificaciones desde CSV", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+
+    const root = await request(app).post("/api/v1/catalogos").set(auth).send({ nombre: `RootImp-${suf}` });
+    const imp = await request(app).post("/api/v1/catalogos").set(auth).send({
+      nombre: `RAM-Imp-${suf}`,
+      parentId: root.body.data.id,
+      camposEspecificacion: [{ clave: "tipo_memoria", etiqueta: "Tipo" }],
+      clavesCompatibilidad: [],
+    });
+    const catalogoNombre = imp.body.data.nombre;
+
+    const csv = `SKU,CodigoBarras,Nombre,Marca,Modelo,CategoriaId,Catalogo,Especificaciones,PrecioCompra,PrecioVenta,StockMinimo,Stock\n` +
+      `IMP-${suf},,RAM Importada,,,1,${catalogoNombre},{"tipo_memoria":"DDR5"},500,800,1,10\n`;
+    const res = await request(app)
+      .post("/api/v1/productos/importar")
+      .set(auth)
+      .attach("archivo", Buffer.from(csv, "utf-8"), `import-${suf}.csv`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.importados).toBe(1);
+
+    const prod = await pool.query<{ catalogo_id: number | null; especificaciones: Record<string, unknown> }>(
+      "SELECT catalogo_id, especificaciones FROM productos WHERE sku = $1",
+      [`IMP-${suf}`]
+    );
+    expect(prod.rows[0]?.catalogo_id).toBe(imp.body.data.id);
+    expect(prod.rows[0]?.especificaciones?.tipo_memoria).toBe("DDR5");
+  });
 });

@@ -1,6 +1,7 @@
 import type {
   Bom,
   Caja,
+  Catalogo,
   Cliente,
   Compra,
   Corte,
@@ -12,6 +13,7 @@ import type {
   CxcItem,
   CxpItem,
   DashboardResumen,
+  EspecificacionCampo,
   EstadoOrden,
   ImportResult,
   LoginResponse,
@@ -25,6 +27,7 @@ import type {
   ReporteRentabilidad,
   ReporteVenta,
   ReporteServicios,
+  Sugerencias,
   Usuario,
   Venta,
 } from "./types";
@@ -81,6 +84,15 @@ export const dashboardApi = {
   resumen: () => api<{ data: DashboardResumen }>("/dashboard/resumen"),
 };
 
+export const catalogosApi = {
+  list: () => api<{ data: Catalogo[] }>("/catalogos"),
+  create: (input: { nombre: string; parentId?: number | null; camposEspecificacion?: EspecificacionCampo[]; clavesCompatibilidad?: string[] }) =>
+    api<{ data: Catalogo }>("/catalogos", { method: "POST", body: JSON.stringify(input) }),
+  update: (id: number, input: { nombre?: string; parentId?: number | null; camposEspecificacion?: EspecificacionCampo[]; clavesCompatibilidad?: string[] }) =>
+    api<{ data: Catalogo }>(`/catalogos/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  remove: (id: number) => api<{ data: { id: number } }>(`/catalogos/${id}`, { method: "DELETE" }),
+};
+
 export const productsApi = {
   list: (params?: { q?: string; page?: number; pageSize?: number }) => {
     const qs = new URLSearchParams();
@@ -97,6 +109,7 @@ export const productsApi = {
   getBom: (id: number) => api<{ data: Bom }>(`/productos/${id}/bom`),
   setBom: (id: number, input: { componentes: { productoId: number; cantidad: number }[]; manoObra?: number }) =>
     api<{ data: Bom }>(`/productos/${id}/bom`, { method: "PUT", body: JSON.stringify(input) }),
+  sugerencias: (id: number) => api<{ data: Sugerencias }>(`/productos/${id}/sugerencias`),
 };
 
 export const clientesApi = {
