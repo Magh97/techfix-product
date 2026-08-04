@@ -1,6 +1,8 @@
 import { BarChart3, Bell, Building2, ClipboardList, Cpu, FileText, FolderTree, LayoutDashboard, LineChart, LogOut, Package, Receipt, Settings, ShieldCheck, ShoppingCart, Truck, UserCog, Users, Wallet } from "lucide-react";
+import { useEffect } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { clearSession, getSessionUser } from "@/lib/auth";
+import { authApi } from "@/lib/api";
+import { clearSession, getRefreshToken, getSessionUser, SESSION_EXPIRED_EVENT } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -28,7 +30,16 @@ export default function Layout() {
   const navigate = useNavigate();
   const visibleNav = nav.filter((item) => !item.adminOnly || user?.rol === "admin");
 
+  // Sesión expirada (refresh fallido) → redirige sin recargar
+  useEffect(() => {
+    const onExpired = () => navigate("/login", { replace: true });
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, [navigate]);
+
   function logout() {
+    const rt = getRefreshToken();
+    if (rt) authApi.logout(rt).catch(() => {});
     clearSession();
     navigate("/login");
   }

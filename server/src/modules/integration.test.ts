@@ -1621,4 +1621,18 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     );
     expect(auditCompra.rows[0]?.accion).toBe("CREAR");
   });
+
+  it("AUTH: login y refresh exponen expiresIn", async () => {
+    const login = await request(app).post("/api/v1/auth/login").send({ usuario: "admin", password: "admin1234" });
+    expect(login.status).toBe(200);
+    expect(login.body.data.expiresIn).toBeGreaterThan(0);
+
+    const refresh = await request(app)
+      .post("/api/v1/auth/refresh")
+      .send({ refreshToken: login.body.data.refreshToken });
+    expect(refresh.status).toBe(200);
+    expect(refresh.body.data.token).toBeTruthy();
+    expect(refresh.body.data.refreshToken).toBeTruthy();
+    expect(refresh.body.data.expiresIn).toBeGreaterThan(0);
+  });
 });

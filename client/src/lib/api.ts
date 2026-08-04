@@ -1,3 +1,4 @@
+import { clearSession, getRefreshToken, notifySessionExpired, setTokens } from "./auth";
 import type {
   Bom,
   BusinessConfig,
@@ -56,13 +57,86 @@ function authHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+interface RefreshResult {
+  token: string;
+  expiresIn: number;
+}
+
+let refreshPromise: Promise<RefreshResult | null> | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Single-flight: varias peticiones 401 comparten el mismo refresh
+function refreshAccessToken(): Promise<RefreshResult | null> {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const rt = getRefreshToken();
+      if (!rt) return null;
+      try {
+        const res = await fetch(`${API_URL}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: rt }),
+        });
+        if (!res.ok) return null;
+        const body = await res.json();
+        setTokens(body.data.token, body.data.refreshToken);
+        return { token: body.data.token, expiresIn: body.data.expiresIn };
+      } catch {
+        return null;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+  }
+  return refreshPromise;
+}
+
+// Refresh proactivo: se agenda ~1 min antes de que expire el access token
+export function agendarAutoRefresh(expiresIn: number) {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  const delayMs = Math.max(0, (expiresIn - 60) * 1000);
+  refreshTimer = setTimeout(async () => {
+    const r = await refreshAccessToken();
+    if (r) agendarAutoRefresh(r.expiresIn);
+  }, delayMs);
+}
+
+// Multi-pestaña: si otra pestaña ya rotó el refresh token, cancelamos el timer propio
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === "ts_refresh" && refreshTimer) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+  });
+}
+
+async function authFetch(path: string, init: RequestInit = {}, retried = false): Promise<Response> {
+  const headers: Record<string, string> = {
+    ...((init.headers as Record<string, string>) ?? {}),
+    ...authHeader(),
+  };
+  const res = await fetch(`${API_URL}${path}`, { ...init, headers });
+
+  if (res.status === 401 && !retried && !path.startsWith("/auth/")) {
+    const r = await refreshAccessToken();
+    if (r) {
+      agendarAutoRefresh(r.expiresIn);
+      return authFetch(path, init, true);
+    }
+    clearSession();
+    notifySessionExpired();
+    throw new ApiError(401, "SESSION_EXPIRED", "Sesión expirada, inicia sesión nuevamente");
+  }
+  return res;
+}
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...authHeader(),
     ...((options.headers as Record<string, string>) ?? {}),
   };
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const res = await authFetch(path, { ...options, headers });
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     const err = body?.error;
@@ -74,6 +148,13 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 export const authApi = {
   login: (usuario: string, password: string) =>
     api<{ data: LoginResponse }>("/auth/login", { method: "POST", body: JSON.stringify({ usuario, password }) }),
+  refresh: (refreshToken: string) =>
+    api<{ data: { token: string; refreshToken: string; expiresIn: number } }>("/auth/refresh", {
+      method: "POST",
+      body: JSON.stringify({ refreshToken }),
+    }),
+  logout: (refreshToken: string) =>
+    api<{ data: unknown }>("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }),
 };
 
 export const usuariosApi = {
@@ -325,7 +406,7 @@ export async function downloadExport(
     }
   }
   const s = qs.toString();
-  const res = await fetch(`${API_URL}${path}${s ? `?${s}` : ""}`, { headers: authHeader() });
+  const res = await authFetch(`${path}${s ? `?${s}` : ""}`, { method: "GET" });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new ApiError(res.status, body?.error?.code ?? "ERROR", body?.error?.message ?? "Error al exportar");
@@ -344,7 +425,7 @@ export async function downloadExport(
 export async function uploadFile<T>(path: string, field: string, file: File): Promise<T> {
   const fd = new FormData();
   fd.append(field, file);
-  const res = await fetch(`${API_URL}${path}`, { method: "POST", headers: authHeader(), body: fd });
+  const res = await authFetch(path, { method: "POST", body: fd });
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     throw new ApiError(res.status, body?.error?.code ?? "ERROR", body?.error?.message ?? "Error", body?.error?.details);
