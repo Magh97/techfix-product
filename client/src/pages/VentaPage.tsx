@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Minus, Plus, Search, Trash2 } from "lucide-react";
+import { Minus, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { useToast } from "@/components/ui/toast";
 import { getSessionUser } from "@/lib/auth";
 import { clientesApi, productsApi, ventasApi } from "@/lib/api";
 import { cn, mxn } from "@/lib/utils";
-import type { Venta } from "@/lib/types";
+import type { Producto, Sugerencias, Sustituto, Venta } from "@/lib/types";
 
 interface CartItem {
   productoId: number;
@@ -20,6 +20,10 @@ interface CartItem {
   precio: number;
   qty: number;
   maxQty?: number;
+}
+
+function sustitutosVacios(s: Sugerencias) {
+  return s.sustitutos.length === 0 && s.sustitutosComponente.length === 0;
 }
 
 export default function VentaPage() {
@@ -36,6 +40,8 @@ export default function VentaPage() {
   const [metodo, setMetodo] = useState("efectivo");
   const [montoRecibido, setMontoRecibido] = useState("");
   const [ticket, setTicket] = useState<Venta | null>(null);
+  const [sugerencias, setSugerencias] = useState<Sugerencias | null>(null);
+  const [sugerenciaDe, setSugerenciaDe] = useState<Producto | null>(null);
 
   const { data: productos, isLoading } = useQuery({
     queryKey: ["productos", "pos", busqueda],
@@ -95,6 +101,33 @@ export default function VentaPage() {
   const cambio = metodo === "efectivo" ? Math.max(0, (Number(montoRecibido) || montos.total) - montos.total) : 0;
   const cobrarDisabled = !cart.length || !descOk || (tipoPago === "credito" && !clienteId) || venta.isPending;
 
+  function verSustitutos(p: Producto) {
+    setSugerenciaDe(p);
+    setSugerencias(null);
+    productsApi
+      .sugerencias(p.id)
+      .then((r) => setSugerencias(r.data))
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : ""));
+  }
+
+  function usarSustituto(s: Sustituto) {
+    const esKit = !!sugerencias?.componenteCorto;
+    if (!esKit && sugerenciaDe) {
+      const srcId = sugerenciaDe.id;
+      const enCarrito = cart.some((x) => x.productoId === srcId);
+      if (enCarrito) {
+        setCart((c) => c.map((x) => (x.productoId === srcId ? { ...x, productoId: s.id, nombre: s.nombre, precio: s.precioVenta } : x)));
+      } else {
+        setCart((c) => [...c, { productoId: s.id, nombre: s.nombre, precio: s.precioVenta, qty: 1 }]);
+      }
+    } else {
+      setCart((c) => [...c, { productoId: s.id, nombre: s.nombre, precio: s.precioVenta, qty: 1 }]);
+    }
+    toast.success(`Añadido sustituto: ${s.nombre}`);
+    setSugerencias(null);
+    setSugerenciaDe(null);
+  }
+
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
       <div className="space-y-4">
@@ -130,9 +163,27 @@ export default function VentaPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <span>{mxn(p.precioVenta)}</span>
-                      <Button size="sm" variant="outline" disabled={p.isKit ? (p.kitDisponible ?? 0) <= 0 : p.stock <= 0} onClick={() => add(p)}>
-                        <Plus className="h-3.5 w-3.5" />
-                      </Button>
+                      {p.isKit ? (
+                        <>
+                          {(p.kitDisponible ?? 0) <= 0 && (
+                            <Button size="sm" variant="ghost" onClick={() => verSustitutos(p)} title="Sustitutos">
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          <Button size="sm" variant="outline" disabled={(p.kitDisponible ?? 0) <= 0} onClick={() => add(p)}>
+                            <Plus className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button size="sm" variant="ghost" disabled={p.stock > 0} onClick={() => verSustitutos(p)} title="Sustitutos">
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={p.stock <= 0} onClick={() => add(p)}>
+                            <Plus className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -232,6 +283,66 @@ export default function VentaPage() {
           </Button>
         </CardBody>
       </Card>
+
+      <Dialog open={!!sugerencias} onClose={() => { setSugerencias(null); setSugerenciaDe(null); }} title={`Sustitutos · ${sugerenciaDe?.nombre ?? ""}`}>
+        <div className="space-y-4">
+          {sugerencias?.componenteCorto && (
+            <div className="rounded-md bg-warning-soft p-3 text-sm text-warning">
+              Falta <strong>{sugerencias.componenteCorto.nombre}</strong> (requerido {sugerencias.componenteCorto.requerido}, hay{" "}
+              {sugerencias.componenteCorto.stock}).
+            </div>
+          )}
+
+          {(sugerencias?.sustitutos.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-semibold">Sustitutos compatibles</p>
+              <div className="space-y-1">
+                {sugerencias!.sustitutos.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between gap-2 rounded-md border border-border-line px-3 py-2 text-sm">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold">{s.nombre}</p>
+                      <p className="font-mono text-xs text-muted">{s.sku} · {s.stock} disp.</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">{mxn(s.precioVenta)}</span>
+                      <Button size="sm" onClick={() => usarSustituto(s)}>Usar</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(sugerencias?.sustitutosComponente.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-semibold">Sustitutos del componente faltante</p>
+              <div className="space-y-1">
+                {sugerencias!.sustitutosComponente.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between gap-2 rounded-md border border-border-line px-3 py-2 text-sm">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold">{s.nombre}</p>
+                      <p className="font-mono text-xs text-muted">{s.sku} · {s.stock} disp.</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">{mxn(s.precioVenta)}</span>
+                      <Button size="sm" onClick={() => usarSustituto(s)}>Usar</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {sugerencias &&
+            sustitutosVacios(sugerencias) && (
+              <p className="text-sm text-muted">Sin sustitutos disponibles con stock.</p>
+            )}
+
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => { setSugerencias(null); setSugerenciaDe(null); }}>Cerrar</Button>
+          </div>
+        </div>
+      </Dialog>
 
       <Dialog open={!!ticket} onClose={() => setTicket(null)} title="Ticket de venta">
         {ticket && (

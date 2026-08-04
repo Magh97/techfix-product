@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cpu, Download, FileSpreadsheet, Plus, Trash2, Upload } from "lucide-react";
+import { Cpu, Download, FileSpreadsheet, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,9 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
-import { productsApi } from "@/lib/api";
+import { catalogosApi, productsApi } from "@/lib/api";
 import { getSessionUser } from "@/lib/auth";
-import type { CreateProducto, ImportResult, Producto } from "@/lib/types";
+import type { CreateProducto, ImportResult, Producto, Sugerencias } from "@/lib/types";
 
 const CATS: Record<string, string> = {
   componente: "Componente",
@@ -37,6 +37,8 @@ export default function ProductosPage() {
   const [bomDraft, setBomDraft] = useState<{ productoId: string; cantidad: string }[]>([]);
   const [bomManoObra, setBomManoObra] = useState("");
   const [bomGuardando, setBomGuardando] = useState(false);
+  const [sustitutos, setSustitutos] = useState<Sugerencias | null>(null);
+  const [sustitutosDe, setSustitutosDe] = useState("");
   const [form, setForm] = useState({
     sku: "",
     nombre: "",
@@ -44,6 +46,8 @@ export default function ProductosPage() {
     marca: "",
     modelo: "",
     categoriaId: 1,
+    catalogoId: "",
+    especificaciones: {} as Record<string, string>,
     precioCompra: "",
     precioVenta: "",
     stockMinimo: "0",
@@ -53,6 +57,24 @@ export default function ProductosPage() {
     queryKey: ["productos", busqueda],
     queryFn: () => productsApi.list({ q: busqueda || undefined, pageSize: 50 }),
   });
+
+  const catalogosQuery = useQuery({ queryKey: ["catalogos-lista"], queryFn: catalogosApi.list, enabled: abierto });
+  const catalogos = catalogosQuery.data?.data ?? [];
+
+  function arbolAplano(): { id: number; label: string; prof: number }[] {
+    const out: { id: number; label: string; prof: number }[] = [];
+    const hijosDe = (parentId: number | null) => catalogos.filter((c) => (c.parentId ?? null) === parentId);
+    const walk = (parentId: number | null, prof: number) => {
+      for (const c of hijosDe(parentId)) {
+        out.push({ id: c.id, label: c.nombre, prof });
+        walk(c.id, prof + 1);
+      }
+    };
+    walk(null, 0);
+    return out;
+  }
+
+  const catalogoSeleccionado = catalogos.find((c) => c.id === Number(form.catalogoId));
 
   const catalogo = useQuery({
     queryKey: ["productos", "catalogo"],
@@ -65,7 +87,7 @@ export default function ProductosPage() {
     onSuccess: () => {
       toast.success("Producto creado");
       setAbierto(false);
-      setForm({ sku: "", nombre: "", codigoBarras: "", marca: "", modelo: "", categoriaId: 1, precioCompra: "", precioVenta: "", stockMinimo: "0" });
+      setForm({ sku: "", nombre: "", codigoBarras: "", marca: "", modelo: "", categoriaId: 1, catalogoId: "", especificaciones: {}, precioCompra: "", precioVenta: "", stockMinimo: "0" });
       qc.invalidateQueries({ queryKey: ["productos"] });
     },
     onError: (e) => toast.error("Error al crear", e instanceof Error ? e.message : "Intenta de nuevo"),
@@ -73,6 +95,10 @@ export default function ProductosPage() {
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    const especificaciones: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(form.especificaciones)) {
+      if (v !== undefined && v !== "") especificaciones[k] = v;
+    }
     create.mutate({
       categoriaId: Number(form.categoriaId),
       sku: form.sku,
@@ -83,7 +109,35 @@ export default function ProductosPage() {
       precioCompra: Number(form.precioCompra),
       precioVenta: Number(form.precioVenta),
       stockMinimo: Number(form.stockMinimo || 0),
+      catalogoId: form.catalogoId ? Number(form.catalogoId) : null,
+      especificaciones,
     });
+  }
+
+  function verSustitutos(p: Producto) {
+    setSustitutosDe(p.nombre);
+    setSustitutos(null);
+    productsApi
+      .sugerencias(p.id)
+      .then((r) => setSustitutos(r.data))
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : ""));
+  }
+
+  function sugerirSustituto(i: number) {
+    const sel = catalogo.data?.data.find((x) => x.id === Number(bomDraft[i]?.productoId));
+    if (!sel) return;
+    productsApi
+      .sugerencias(sel.id)
+      .then((r) => {
+        const s = r.data.sustitutos[0];
+        if (s) {
+          setBomDraft((d) => d.map((r2, j) => (j === i ? { ...r2, productoId: String(s.id) } : r2)));
+          toast.success(`Sustituto sugerido: ${s.nombre}`);
+        } else {
+          toast.info("Sin sustitutos", "No hay productos compatibles con stock.");
+        }
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : ""));
   }
 
   function exportar(formato: "csv" | "xlsx") {
@@ -233,8 +287,11 @@ export default function ProductosPage() {
                       {p.lowStock && <Badge variant="warning" className="ml-2">bajo</Badge>}
                     </TD>
                     <TD className="text-right">
+                      <Button size="sm" variant="outline" onClick={() => verSustitutos(p)}>
+                        <RefreshCw className="h-3.5 w-3.5" /> Sustitutos
+                      </Button>
                       {esAdmin && (
-                        <Button size="sm" variant="outline" onClick={() => abrirBom(p)}>
+                        <Button size="sm" variant="outline" className="ml-1" onClick={() => abrirBom(p)}>
                           <Cpu className="h-3.5 w-3.5" /> Componentes
                         </Button>
                       )}
@@ -277,6 +334,42 @@ export default function ProductosPage() {
               </select>
             </div>
           </div>
+          <div>
+            <Label>Catálogo (subcategoría)</Label>
+            <select
+              value={form.catalogoId}
+              onChange={(e) => {
+                const id = e.target.value;
+                const cat = catalogos.find((c) => c.id === Number(id));
+                const specs: Record<string, string> = {};
+                if (cat) for (const campo of cat.camposEspecificacion) specs[campo.clave] = form.especificaciones[campo.clave] ?? "";
+                setForm({ ...form, catalogoId: id, especificaciones: specs });
+              }}
+              className="h-10 w-full rounded-md border border-border-line bg-surface px-3 text-sm"
+            >
+              <option value="">Sin catálogo</option>
+              {arbolAplano().map((c) => (
+                <option key={c.id} value={c.id}>
+                  {"\u00A0".repeat(c.prof * 2)}{c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {catalogoSeleccionado && catalogoSeleccionado.camposEspecificacion.length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              {catalogoSeleccionado.camposEspecificacion.map((campo) => (
+                <div key={campo.clave}>
+                  <Label>{campo.etiqueta}</Label>
+                  <Input
+                    value={form.especificaciones[campo.clave] ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, especificaciones: { ...f.especificaciones, [campo.clave]: e.target.value } }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Precio compra</Label>
@@ -344,7 +437,16 @@ export default function ProductosPage() {
                     className="w-20"
                     placeholder="Cant."
                   />
-                  {sel && <span className="w-24 text-right text-xs text-muted">${mxn(sel.precioVenta * (Number(row.cantidad) || 0))}</span>}
+                  {sel && (
+                    <div className="flex w-32 flex-col items-end">
+                      <span className="text-xs text-muted">{mxn(sel.precioVenta * (Number(row.cantidad) || 0))}</span>
+                      {sel.stock < (Number(row.cantidad) || 0) && (
+                        <button type="button" className="text-xs text-accent hover:underline" onClick={() => sugerirSustituto(i)}>
+                          Sugerir sustituto
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <Button
                     type="button"
                     size="sm"
@@ -506,6 +608,62 @@ export default function ProductosPage() {
               )}
             </div>
           )}
+        </div>
+      </Dialog>
+      <Dialog open={!!sustitutos} onClose={() => setSustitutos(null)} title={`Sustitutos · ${sustitutosDe}`}>
+        <div className="space-y-4">
+          {sustitutos?.componenteCorto && (
+            <div className="rounded-md bg-warning-soft p-3 text-sm text-warning">
+              Kit sin stock de componentes: falta <strong>{sustitutos.componenteCorto.nombre}</strong> (requerido{" "}
+              {sustitutos.componenteCorto.requerido}, hay {sustitutos.componenteCorto.stock}).
+            </div>
+          )}
+
+          {(sustitutos?.sustitutos.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-semibold">Sustitutos compatibles</p>
+              <div className="space-y-1">
+                {sustitutos!.sustitutos.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between rounded-md border border-border-line px-3 py-2 text-sm">
+                    <div>
+                      <p className="font-semibold">{s.nombre}</p>
+                      <p className="font-mono text-xs text-muted">{s.sku} · {s.stock} disp.</p>
+                    </div>
+                    <span className="font-semibold">{mxn(s.precioVenta)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(sustitutos?.sustitutosComponente.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-semibold">Sustitutos del componente faltante</p>
+              <div className="space-y-1">
+                {sustitutos!.sustitutosComponente.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between rounded-md border border-border-line px-3 py-2 text-sm">
+                    <div>
+                      <p className="font-semibold">{s.nombre}</p>
+                      <p className="font-mono text-xs text-muted">{s.sku} · {s.stock} disp.</p>
+                    </div>
+                    <span className="font-semibold">{mxn(s.precioVenta)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {sustitutos &&
+            sustitutos.sustitutos.length === 0 &&
+            sustitutos.sustitutosComponente.length === 0 && (
+              <p className="text-sm text-muted">
+                Sin sustitutos disponibles. Asigna un catálogo y especificaciones al producto para habilitar sugerencias.
+              </p>
+            )}
+
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setSustitutos(null)}>Cerrar</Button>
+          </div>
         </div>
       </Dialog>
     </div>
