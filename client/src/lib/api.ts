@@ -7,6 +7,7 @@ import type {
   Catalogo,
   Cliente,
   Compra,
+  ComparacionPrecios,
   Corte,
   CotizacionVenta,
   CreateCotizacionVenta,
@@ -316,6 +317,7 @@ export const comprasApi = {
       body: JSON.stringify(input),
     }),
   cxp: () => api<{ data: CxpItem[] }>("/compras/cxp"),
+  comparacionPrecios: (productoId: number) => api<{ data: ComparacionPrecios }>(`/compras/comparacion-precios?productoId=${productoId}`),
   reabastecimiento: () => api<{ data: { grupos: ReabastecimientoGrupo[] } }>("/compras/reabastecimiento"),
   solicitudes: {
     list: (params?: { estado?: string; ordenId?: number; page?: number; pageSize?: number }) => {

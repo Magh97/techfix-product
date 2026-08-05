@@ -443,6 +443,24 @@ export interface CxpItem {
   estado: "vigente" | "vencido" | "pagado";
 }
 
+export interface ComparacionProveedor {
+  proveedorId: number;
+  proveedorNombre: string;
+  ultimoPrecio: number;
+  ultimaFecha: string;
+  folioOC: string;
+  cantidad: number;
+  esFavorito: boolean;
+  esInactivo: boolean;
+  esMasBarato: boolean;
+  porDebajoDelActual: boolean;
+}
+
+export interface ComparacionPrecios {
+  producto: { id: number; sku: string; nombre: string; precioCompra: number; proveedorFavoritoId: number | null };
+  proveedores: ComparacionProveedor[];
+}
+
 export interface ReporteInventario {
   id: number;
   sku: string;
