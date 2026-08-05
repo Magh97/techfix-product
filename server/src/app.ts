@@ -12,6 +12,7 @@ import { dashboardRouter } from "./modules/dashboard/dashboard.routes";
 import { cajaRouter, finanzasRouter } from "./modules/finance/finance.routes";
 import { garantiasRouter } from "./modules/garantias/garantias.routes";
 import { productsRouter } from "./modules/inventory/products.routes";
+import { usadosRouter } from "./modules/inventory/usados.routes";
 import { notificacionesRouter } from "./modules/notifications/notifications.routes";
 import { quoteRouter } from "./modules/quote/quote.routes";
 import { reportsRouter } from "./modules/reports/reports.routes";
@@ -42,6 +43,7 @@ export function createApp() {
   app.use("/api/v1/auth/login", authLimiter);
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1/productos", productsRouter);
+  app.use("/api/v1/usados", usadosRouter);
   app.use("/api/v1/clientes", clientesRouter);
   app.use("/api/v1/ventas", ventasRouter);
   app.use("/api/v1/ordenes", ordenesRouter);
