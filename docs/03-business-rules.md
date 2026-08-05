@@ -136,12 +136,16 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 |-------|------------|
 | BR-COM-01 | Orden de compra: estados `borrador → enviada → recibida` (y `cancelada`). |
 | BR-COM-02 | Al registrar la entrada de mercancía: `stock += cantidad` y se genera `Movimiento ENTRADA` con el costo de compra. |
-| BR-COM-03 | La recepción genera la CxP por el monto total neto de la compra (sin IVA); pagos parciales permitidos. |
+| BR-COM-03 | La CxP se acumula **por lo recibido**: `compras.total_recibido` = Σ (cantidad recibida × precio unitario); el saldo = `total_recibido − Σ pagos`. Se puede pagar desde la primera recepción parcial (no hace falta que la OC esté `recibida`). |
 | BR-COM-04 | Comparación de precios usa el historial de compras por producto/proveedor. |
 | BR-COM-05 | Solo el **admin** crea/recibe órdenes de compra. |
 | BR-COM-06 | **Solicitudes de reabastecimiento:** un técnico (o admin) crea una solicitud de un producto solo si `stock < cantidad` requerida (422 `STOCK_SUFICIENTE` en caso contrario). |
 | BR-COM-07 | Estados de solicitud: `pendiente → aprobada → entregada` (o `rechazada` / `cancelada`). El **admin** aprueba (crea la OC por proveedor) o rechaza con motivo. El técnico autor puede **cancelar** su solicitud solo en `pendiente`. |
 | BR-COM-08 | Al **recibir** una OC, las solicitudes **aprobadas** de cada producto pasan a `entregada` y se inserta en el historial de la orden: "Refacción {producto} llegó · OC {folio}". |
+| BR-COM-09 | **Recepción parcial por línea:** `POST /compras/:id/recibir` sin body recibe todo lo pendiente; con body `{ lineas: [{ detalleCompraId, cantidadRecibida }] }` recibe por líneas. La OC se mantiene en `enviada` (con `total_recibido > 0` y badge "Recepción parcial") hasta que **todas** las líneas estén completas → `recibida`. |
+| BR-COM-10 | **Sobrerecepción bloqueada:** no se puede recibir más de lo pendiente de una línea (422 `SOBRE_RECEPCION`); tampoco líneas de otra OC (422 `LINEA_NO_EN_COMPRA`). |
+| BR-COM-11 | Las solicitudes aprobadas de un producto pasan a `entregada` **solo cuando su línea queda completamente recibida** y **solo las ligadas a esa OC** (`solicitudes.compra_id = compraId`). |
+| BR-COM-12 | **Cancelar con recepción parcial:** se puede cancelar una OC en `enviada` aunque ya tenga `total_recibido > 0`; se conservan el stock ya recibido y la CxP acumulada (el resto no llega). |
 
 ## 11. Caja (Corte y Cierre)
 

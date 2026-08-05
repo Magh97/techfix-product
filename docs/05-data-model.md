@@ -600,6 +600,7 @@ TABLE compras {
   folio            VARCHAR(20) UNIQUE NOT NULL
   estado           estado_compra NOT NULL DEFAULT 'borrador'
   total_neto       NUMERIC(19,4) NOT NULL DEFAULT 0
+  total_recibido   NUMERIC(19,4) NOT NULL DEFAULT 0 CHECK(total_recibido >= 0)  -- base de la CxP (recepción parcial)
   fecha_vencimiento DATE
   creada_por       INTEGER NOT NULL FK→usuarios.id ON DELETE RESTRICT
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -611,6 +612,7 @@ TABLE detalle_compra {
   compra_id       INTEGER NOT NULL FK→compras.id ON DELETE CASCADE
   producto_id     INTEGER NOT NULL FK→productos.id ON DELETE RESTRICT
   cantidad        INT NOT NULL CHECK(cantidad > 0)
+  cantidad_recibida INT NOT NULL DEFAULT 0 CHECK(cantidad_recibida >= 0 AND cantidad_recibida <= cantidad)
   precio_unitario NUMERIC(19,4) NOT NULL CHECK(precio_unitario >= 0)
 }
 
@@ -771,6 +773,7 @@ cajas                 idx_cajas_usuario_fecha            (usuario_id, fecha)    
 - **Dinero:** `NUMERIC(19,4)` en BD; el redondeo a 2 decimales ocurre solo en impresión/ticket. IVA calculado centralmente.
 - **Precios sin IVA:** catálogo guarda netos; `subtotal`, `iva`, `total` se calculan al emitir cotización/venta (BR-MON-02/03).
 - **CxC/CxP derivadas:** no hay tablas de saldos; el saldo = `total − Σ pagos`, con `fecha_vencimiento` para detectar vencidos. Evita doble fuente de verdad.
+- **Recepción parcial:** `detalle_compra.cantidad_recibida` acumula lo recibido por línea y `compras.total_recibido` es la base de la CxP; la OC pasa a `recibida` solo cuando todas las líneas están completas (migración `0012`).
 - **Límite de crédito default:** `clientes.limite_credito` = $3,000 MXN al crear el cliente; se amplía individualmente (BR-CRE-01).
 - **Firma de recepción:** `ordenes_servicio.firma_recepcion` guarda el PNG (base64) de la firma capturada en canvas táctil (BR-SER-01).
 - **Soft delete:** `is_active` en usuarios, clientes, productos, proveedores. Ordenes/ventas/movimientos nunca se eliminan (BR-DAT-02/03).

@@ -130,7 +130,10 @@ Refaccion · Usado · General  (raíces sin hijos)
 ### Compras (admin)
 1. **Nueva compra**: proveedor + líneas (producto, cantidad, precio unitario).
 2. La OC nace en **borrador** → **Enviada** → al **Recibir** mercancía entra al inventario y se genera la **cuenta por pagar**.
-3. Registra **pagos** al proveedor desde el detalle.
+3. **Recepción por parciales**: en el detalle, el botón **Recibir mercancía** abre un diálogo para indicar cuánto llega de cada línea. Usa **"Recibir todo"** para la mercancía completa, o captura cantidades y **"Recibir selección"** si llega en varios envíos. Mientras falten líneas, la OC queda **"Enviada"** con el sello **"Recepción parcial"**; solo pasa a **Recibida** cuando todo está completo. La columna **Recibido** muestra el avance (ej. `5/10`).
+4. La **cuenta por pagar** se acumula por lo recibido: puedes **pagar** desde la primera recepción parcial. Las tarjetas muestran **Total pedido / Recibido / Pagado / Saldo**.
+5. Si el proveedor no enviará el resto (faltante), puedes **Cancelar** la OC con recepción parcial: se conservan el stock ya recibido y la CxP acumulada.
+6. **Sobrerecepción**: no se puede registrar más de lo pedido en una línea.
 
 ### Reabastecimiento (`/reabastecimiento`, solo admin)
 

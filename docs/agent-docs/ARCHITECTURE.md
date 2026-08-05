@@ -65,7 +65,7 @@ Worker ──SMTP──► Correo (sin SMTP → simulado en consola)
    Cliente rechaza → POST /sustituciones/:sid/rechazar → crea solicitud reabastecimiento (NOT-05) → orden vuelve
 7. Técnico → PATCH estado (en_reparacion) → POST /consumo (SALIDA_CONSUMO, libera reserva)
 8. Técnico → PATCH estado (listo) → vendedor notifica (NOT-02)
-9. Admin recibe OC → solicitudes aprobadas → entregada + historial "Refacción X llegó · OC …"
+9. Admin recibe OC (completa o por parciales) → stock += , CxP por lo recibido; al completarse la línea las solicitudes aprobadas de esa OC → entregada + historial "Refacción X llegó · OC …"
 10. Vendedor → POST /ordenes/:id/entregar (firma PNG base64) → garantía
 ```
 
