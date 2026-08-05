@@ -11,12 +11,18 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 ### Added
 - Ensamblado de PCs por BOM (ADR-0003): definición de kits con componentes y mano de obra de ensamble (`PUT /productos/:id/bom`), precio recalculado como suma de componentes + ensamble, y venta de kits que desglosa líneas por componente y descuenta el stock real de cada pieza (US-SER-12, US-VEN-03).
 - Migración `0003_ensamble` (columna `productos.mano_obra`).
-- UI de gestión de BOM en el catálogo y soporte de kits en el punto de venta.
-- Cotizaciones de venta (US-VEN-04..06): folio `CV-`, vigencia configurable, sin reserva de stock al cotizar, descuentos con BR-VEN-05, y conversión a venta con validación de stock y método de pago (`/cotizaciones-venta`).
-- Migración `0004_cotizaciones_venta` (tablas `cotizaciones_venta` y `detalle_cotizacion_venta`).
-- Página de Cotizaciones en el frontend (listado, creación, aprobación y conversión a venta).
-
----
+- Cotizaciones de venta (US-VEN-04..06): folio `CV-`, vigencia configurable, descuentos con BR-VEN-05 y conversión a venta con validación de stock y método de pago (`/cotizaciones-venta`). Migración `0004_cotizaciones_venta`.
+- **Sustitución de piezas con validación del cliente (A1b):** propuesta de sustituto desde `cotizado`/`en_reparacion` (solo sin stock y con sustituto sugerido con stock); estado `sustitucion_pendiente` en la máquina de estados; al aceptar se reemplaza la línea con el precio del sustituto y se recalculan totales; al rechazar se genera solicitud de reabastecimiento del original; NOT-06 al admin; al recibir la OC, las solicitudes pasan a `entregada` y se registra en el historial de la orden.
+- Migración `0011_sustituciones` (tabla `sustituciones` + `estado_orden 'sustitucion_pendiente'`).
+- **Reabastecimiento (A1a):** sugerencias por proveedor (`stock_maximo`/`stock_minimo ×2`, favorito → último proveedor → sin proveedor, "Ya en OC"), creación de OC agrupada por proveedor; **solicitudes de reabastecimiento** de técnicos (pendiente/aprobada/entregada/rechazada/cancelada) con NOT-05 y aprobación que crea OC.
+- Migración `0010_reabastecimiento` (`stock_maximo`, `proveedor_favorito_id`, `solicitudes_reabastecimiento`).
+- **Taxonomía unificada (B1):** categorías = raíces del árbol de catálogos (máx 4 niveles), especificaciones como tags con índice GIN, `tags_sugeridas`/`tags_compatibilidad`, raíz "General", sustitución por tags y seed de 4 niveles.
+- Migraciones `0008_unify_taxonomia` y `0009_especificaciones_tags`.
+- **Auditoría (B3):** módulo `auditoria` con listado paginado y filtros para admin (BR-ROL-05).
+- **Paginación (B4):** componente `Pagination` con selector 10/25/50 en todas las tablas de listado.
+- **Housekeeping de sesiones (B2):** tabla `refresh_tokens` con rotación/revocación y worker diario que elimina tokens vencidos/revocados; migración `0007_refresh_tokens`.
+- Usuario demo `tecnico/tecnico1234` en el seed.
+- Manual de usuario en `docs/08-manual-usuario.md`.
 
 ## [0.1.0] — 2026-08-03
 

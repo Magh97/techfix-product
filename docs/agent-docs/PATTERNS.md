@@ -1,94 +1,120 @@
 # PATTERNS
 
-Convenciones a implementar (proyecto en fase de diseño; sin código aún).
-
 ## Controller-Service-Repository
 ```ts
-// router: validación zod en el borde
-router.post('/ordenes', requireRole('vendedor'), validate(createOrdenSchema), services.crearOrden)
+// routes: validación zod en el borde + requireRole
+ordenesRouter.post("/:id/sustituciones", requireRole("tecnico", "admin"),
+  validate(idParams, "params"), validate(crearSustitucionSchema),
+  async (req: AuthedRequest, res) => {
+    created(res, await service.crearSustitucion(id, getValidated<never>(req, "body"), req.user!));
+  });
+
 // service: negocio + transacciones; lanza AppError con código de negocio
-async function crearOrden(input: CreateOrdenInput) {
-  // BEGIN
-  const cliente = await repo.clientePorId(input.clienteId)
-  if (!cliente) throw AppError.notFound('CUSTOMER_NOT_FOUND')
-  const folio = await nextFolio('OS')
-  const orden = await repo.insertarOrden({ ...input, folio, estado: 'pendiente' })
-  // COMMIT
-  return orden
+export async function crearSustitucion(id, input, user) {
+  const orden = await repo.findOrden(id);                       // validar estado
+  if (!["cotizado", "en_reparacion"].includes(orden.estado)) throw AppError.conflict(...);
+  const sustituto = await repo.findProducto(input.productoId);  // stock
+  // BEGIN → insert sustitucion + reserva/liberación → cambiarEstado + historial + NOT-06 → COMMIT
 }
-// repository: solo SQL (pg), devuelve filas crudas
+
+// repository: solo SQL (pg). Cada operación transaccional recibe client: PoolClient.
+export function insertSustitucion(client, input) { return client.query(`INSERT INTO sustituciones ...`) }
 ```
 
-## Validación (Zod) + Error
+## State Machine
 ```ts
-export const createOrdenSchema = z.object({
-  clienteId: z.number().int().positive(),
-  tipoEquipo: z.enum(['laptop','desktop','all_in_one','periferico','componente','otro']),
-  fallaReportada: z.string().min(1),
-  fechaPrometida: z.coerce.date().optional(),
-})
-export class AppError extends Error {
-  constructor(public code: string, public status: number, message: string, public details?: unknown[]) { super(message) }
-  static notFound(code: string, message: string) { return new AppError(code, 404, message) }
-  static business(code: string, message: string) { return new AppError(code, 422, message) }
-}
-```
-
-## Estado de Orden (validación de transición)
-```ts
-const TRANSICIONES: Record<EstadoOrden, EstadoOrden[]> = {
-  pendiente: ['en_diagnostico', 'cancelado'],
-  en_diagnostico: ['cotizado', 'cancelado'],
-  cotizado: ['en_reparacion', 'cancelado'],
-  en_reparacion: ['listo', 'cancelado', 'en_diagnostico'],
-  listo: ['entregado', 'cancelado'],
-  entregado: [],
-  cancelado: [],
-}
-function validarTransicion(actual: EstadoOrden, nuevo: EstadoOrden) {
-  if (!TRANSICIONES[actual].includes(nuevo)) throw new AppError('ORDER_STATE_INVALID', 409, `No se puede pasar de ${actual} a ${nuevo}`)
-}
-```
-
-## Reserva/Consumo de Stock (transaccional)
-```ts
-// al aprobar cotización: dentro de una transacción
-await tx('SELECT stock FROM productos WHERE id=$1 FOR UPDATE', [productoId])
-// INSERT movimiento RESERVA + detalle_orden estado_linea='reservada'
-// al consumir: verificar reserva, INSERT SALIDA_CONSUMO, UPDATE productos SET stock = stock - qty
-// UPDATE detalle_orden SET estado_linea='consumida' → si stock quedara < 0, ROLLBACK
+// services/estados.ts
+const TRANSICIONES: Record<EstadoOrden, { to: EstadoOrden; roles: Rol[]; condicion?: "cotizacion_aprobada" }[]> = {
+  cotizado: [
+    { to: "en_reparacion", roles: ["tecnico"], condicion: "cotizacion_aprobada" },
+    { to: "sustitucion_pendiente", roles: ["tecnico"] },
+    { to: "cancelado", roles: ["vendedor", "admin"] },
+  ],
+  sustitucion_pendiente: [
+    { to: "en_reparacion", roles: ["tecnico"] },
+    { to: "cotizado", roles: ["tecnico"] },
+    { to: "cancelado", roles: ["vendedor", "admin"] },
+  ],
+  // ...
+};
+export function validarTransicion(actual, nuevo, rol, cotizacionAprobada = false) { ... }
+// TODO cambio de estado → historial_orden con usuario/fecha/nota
 ```
 
 ## Auth Middleware
 ```ts
-function requireRole(...roles: Rol[]) {
-  return (req, res, next) => {
-    const payload = verificarJwt(req.headers.authorization) // throws UNAUTHORIZED
-    if (!roles.includes(payload.rol)) throw new AppError('FORBIDDEN', 403, 'Sin permisos')
-    req.user = payload
-    next()
-  }
+export function requireAuth(req, _res, next) {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) throw AppError.unauthorized();
+  const payload = verifyAccess(header.slice(7));
+  req.user = { id: payload.sub, usuario: payload.usuario, rol: payload.rol };
+  next();
+}
+export function requireRole(...roles: string[]) {
+  return (req, _res, next) => {
+    if (!req.user) throw AppError.unauthorized();
+    if (!roles.includes(req.user.rol)) throw AppError.forbidden();
+    next();
+  };
 }
 ```
 
-## Money (nunca float)
+## Error Class
 ```ts
-// calcMoney(net): { subtotal, iva, total } con NUMERIC(19,4) → string/Decimal; redondeo solo en ticket
+// shared/errors.ts
+export class AppError extends Error {
+  constructor(message, public statusCode = 500, public code = "INTERNAL_ERROR", public details?: unknown[]) { super(message) }
+  static badRequest(code, msg, d?) / unauthorized(msg) / forbidden(msg) / notFound(code?, msg?) / conflict(code, msg) / business(code, msg, d?)
+}
+// errorHandler → { error: { code, message, details? } } con el status del AppError; 500 sin stack.
 ```
 
-## Componente Controlado (React)
+## Money (nunca float para IVA/totales)
+```ts
+// shared/money.ts
+export function calcMoney(subtotal: number, descuento = 0, ivaRate = 0.16) {
+  const net = Math.max(0, subtotal - descuento);
+  return { subtotal, descuento, iva: net * ivaRate, total: net + net * ivaRate };
+}
+export function round2(n: number) { return Math.round(n * 100) / 100; } // solo impresión
+```
+
+## Data Fetching (TanStack Query)
+```ts
+const sustituciones = useQuery({
+  queryKey: ["sustituciones", id],
+  queryFn: () => ordenesApi.sustituciones.list(id),
+});
+// mutations con invalidación:
+const mut = useMutation({ mutationFn: () => ordenesApi.sustituciones.aceptar(s.id),
+  onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["orden", id] }); toast.success("..."); } });
+```
+
+## State Machine en UI (StatusBadge)
 ```tsx
-const [qty, setQty] = useState(1)
-<input type="number" min={1} value={qty} onChange={(e) => setQty(+e.target.value)} />
-// submit en <form onSubmit>, labels con htmlFor, error con role="alert"
+const MAP: Record<string, { label: string; variant: "default" | "success" | "danger" | "warning" | "accent" }> = {
+  pendiente: "default", en_diagnostico: "accent", cotizado: "warning",
+  en_reparacion: "accent", sustitucion_pendiente: "warning", listo: "success",
+  entregado: "success", cancelado: "danger",
+};
+// retrasada → <Badge variant="danger">Retrasada</Badge>
+```
+
+## Pagination
+```tsx
+<Pagination page={meta.page} pageSize={meta.pageSize} totalItems={meta.totalItems}
+  onChange={(p, ps) => setParams((s) => ({ ...s, page: p, pageSize: ps }))} />
+// presets pageSize: 10 / 25 / 50 · rango "X–Y de Z"
 ```
 
 ## File Naming
 ```
-Componente: PascalCase.tsx · Hook: useX.ts · Util: camelCase.ts · Schema: <modulo>.schema.ts · Test: <file>.test.ts · CSS: nunca (Tailwind)
+Componente: PascalCase.tsx · Hook: useX.ts · Util: camelCase.ts · Schema: <modulo>.schema.ts
+Test: <file>.test.ts · CSS: nunca (Tailwind) · API client: client/src/lib/api.ts
 ```
 
 ## Test (AAA)
 ```ts
-// Arrange: preparar cliente+producto · Act: POST /ventas · Assert: 201, stock descontado, movimiento SALIDA_VENTA
+// Arrange: cliente+producto+orden · Act: POST /ordenes/:id/sustituciones → POST :sid/aceptar · Assert: 200, línea con precio del sustituto, total recalculado, stock reservado
+// Integración con DB real: RUN_DB_TESTS=true + DATABASE_URL (ver WORKFLOWS)
 ```
