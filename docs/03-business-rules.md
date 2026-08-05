@@ -137,7 +137,7 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | BR-COM-01 | Orden de compra: estados `borrador → enviada → recibida` (y `cancelada`). |
 | BR-COM-02 | Al registrar la entrada de mercancía: `stock += cantidad` y se genera `Movimiento ENTRADA` con el costo de compra. |
 | BR-COM-03 | La CxP se acumula **por lo recibido**: `compras.total_recibido` = Σ (cantidad recibida × precio unitario); el saldo = `total_recibido − Σ pagos`. Se puede pagar desde la primera recepción parcial (no hace falta que la OC esté `recibida`). |
-| BR-COM-04 | Comparación de precios usa el historial de compras por producto/proveedor. |
+| BR-COM-04 | **Comparación de precios** (`GET /compras/comparacion-precios?productoId=`): toma el **último precio por proveedor** desde OCs `enviada`/`recibida`, ordenado asc; incluye el `precio_compra` actual como referencia y marca favorito, más barato, inactivo y proveedores por debajo del precio actual. |
 | BR-COM-05 | Solo el **admin** crea/recibe órdenes de compra. |
 | BR-COM-06 | **Solicitudes de reabastecimiento:** un técnico (o admin) crea una solicitud de un producto solo si `stock < cantidad` requerida (422 `STOCK_SUFICIENTE` en caso contrario). |
 | BR-COM-07 | Estados de solicitud: `pendiente → aprobada → entregada` (o `rechazada` / `cancelada`). El **admin** aprueba (crea la OC por proveedor) o rechaza con motivo. El técnico autor puede **cancelar** su solicitud solo en `pendiente`. |
