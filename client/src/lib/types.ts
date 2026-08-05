@@ -398,6 +398,9 @@ export interface CompraLinea {
   sku: string;
   nombre: string;
   cantidad: number;
+  cantidadRecibida: number;
+  pendiente: number;
+  recibida: boolean;
   precioUnitario: number;
   subtotal: number;
 }
@@ -418,6 +421,8 @@ export interface Compra {
   estado: EstadoCompra;
   estadoLabel: string;
   total: number;
+  totalRecibido: number;
+  pagado: number;
   saldo: number;
   fechaVencimiento: string | null;
   creadaPor: number;

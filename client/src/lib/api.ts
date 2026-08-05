@@ -304,7 +304,11 @@ export const comprasApi = {
   create: (input: { proveedorId: number; fechaVencimiento?: string | null; lineas: { productoId: number; cantidad: number; precioUnitario: number }[] }) =>
     api<{ data: Compra }>("/compras", { method: "POST", body: JSON.stringify(input) }),
   enviar: (id: number) => api<{ data: Compra }>(`/compras/${id}/enviar`, { method: "POST" }),
-  recibir: (id: number) => api<{ data: Compra }>(`/compras/${id}/recibir`, { method: "POST" }),
+  recibir: (id: number, lineas?: { detalleCompraId: number; cantidadRecibida: number }[]) =>
+    api<{ data: Compra }>(`/compras/${id}/recibir`, {
+      method: "POST",
+      ...(lineas ? { body: JSON.stringify({ lineas }) } : {}),
+    }),
   cancelar: (id: number) => api<{ data: Compra }>(`/compras/${id}/cancelar`, { method: "POST" }),
   pagar: (id: number, input: { monto: number; metodo: string }) =>
     api<{ data: { compraId: number; monto: number; saldoPendiente: number } }>(`/compras/${id}/pagos`, {
