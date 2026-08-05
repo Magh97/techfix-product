@@ -1,4 +1,4 @@
-import { BarChart3, Bell, Building2, ClipboardList, Cpu, FileText, FolderTree, LayoutDashboard, LineChart, LogOut, Package, Receipt, ScrollText, Settings, ShieldCheck, ShoppingCart, Truck, UserCog, Users, Wallet } from "lucide-react";
+import { BarChart3, Bell, Building2, ClipboardList, Cpu, FileText, FolderTree, LayoutDashboard, LineChart, LogOut, Package, PackageOpen, Receipt, ScrollText, Settings, ShieldCheck, ShoppingCart, Truck, UserCog, Users, Wallet } from "lucide-react";
 import { useEffect } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { authApi } from "@/lib/api";
@@ -13,6 +13,7 @@ const nav = [
   { to: "/ordenes", label: "Órdenes", icon: ClipboardList },
   { to: "/clientes", label: "Clientes", icon: Users },
   { to: "/productos", label: "Productos", icon: Package },
+  { to: "/usados", label: "Equipos usados", icon: PackageOpen },
   { to: "/compras", label: "Compras", icon: Truck },
   { to: "/reabastecimiento", label: "Reabastecimiento", icon: Package, adminOnly: true },
   { to: "/proveedores", label: "Proveedores", icon: Building2 },

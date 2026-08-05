@@ -46,6 +46,7 @@ proveedores(id, nombre, contacto, condiciones_pago, is_active)
 compras(id, proveedor_id FK RESTRICT, folio UNIQUE, estado, total_neto, total_recibido, fecha_vencimiento, creada_por)
 detalle_compra(id, compra_id FK CASCADE, producto_id, cantidad, cantidad_recibida CHECK<=cantidad, precio_unitario)
 solicitudes_reabastecimiento(id, producto_id FK CASCADE, cantidad, orden_id FK SET NULL, solicitado_por, motivo, estado VARCHAR, rechazo_motivo, compra_id FK SET NULL, resuelto_por, created_at, resuelto_at)
+equipos_usados(id, producto_id FK CASCADE UNIQUE, cliente_origen_id FK SET NULL, orden_id FK SET NULL, valor_trade_in, origen VARCHAR, observaciones, created_by, created_at)
 movimientos_inventario(id, producto_id FK RESTRICT, tipo, cantidad CHECK<>0, referencia_id, referencia_tipo, usuario_id, caja_id, motivo)
 pagos(id, venta_id FK RESTRICT, monto, metodo, usuario_id, caja_id)
 pagos_proveedor(id, compra_id FK RESTRICT, monto, metodo, usuario_id)
@@ -83,4 +84,5 @@ garantias   idx_garantias_fin                     (fin) WHERE fin > NOW()       
 - `estado_orden` es ENUM (con `sustitucion_pendiente` vía ALTER TYPE ADD VALUE); `estado_solicitud`/`estado_sustitucion` son VARCHAR controlados por la API.
 - Dinero NUMERIC(19,4); redondeo solo en impresión. CxC/CxP derivadas (total − Σ pagos).
 - Recepción parcial: `detalle_compra.cantidad_recibida` + `compras.total_recibido` (base CxP); OC → `recibida` solo con todas las líneas completas.
+- Equipos usados: producto bajo la raíz "Usado" + `equipos_usados` (origen, cliente, valor_trade_in); estado derivado del stock.
 - Soft delete is_active en usuarios/clientes/productos/proveedores. Taxonomía unificada: categoría = raíz de `catalogos` (trigger `check_categoria_es_raiz`).

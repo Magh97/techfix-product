@@ -126,6 +126,11 @@ Refaccion · Usado · General  (raíces sin hijos)
 - **Comparar precios** (admin): botón **Comparar** en cada producto abre la comparativa de **último precio por proveedor** (desde las OCs enviadas/recibidas), con el **precio de compra actual** como referencia y badges de **favorito**, **más barato**, **inactivo** y **↓ actual** (cotiza por debajo del precio actual) — útil para negociar el siguiente pedido.
 - Alerta visual de **stock bajo** (stock ≤ mínimo).
 
+### Equipos usados (`/usados`)
+- Lista los equipos usados con su **origen** (parte de pago / reparación / otro), **cliente que lo entregó**, **valor de parte de pago** (costo), precio de venta, stock y **estado** (Disponible si hay stock, Vendido si no). Filtra por estado, origen o búsqueda.
+- **Registrar usado** (admin): captura SKU/nombre, valor de parte de pago y precio de venta, stock (default 1), origen y cliente opcional. El sistema crea el producto bajo la categoría **"Usado"** y registra la entrada al inventario.
+- Los usados se venden igual que cualquier producto (POS); la garantía automática al venderlos está pendiente como feature general.
+
 ## 9. Compras y Reabastecimiento
 
 ### Compras (admin)

@@ -190,6 +190,17 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | BR-SUS-06 | **Rechazar:** se crea automáticamente una **solicitud de reabastecimiento** del original (BR-COM-06) y la orden vuelve a su estado previo. |
 | BR-SUS-07 | **Cancelar** la propuesta la retira y devuelve la orden a su estado; solo técnico/admin con motivo. |
 
+## 16. Equipos Usados
+
+| Regla | Definición |
+|-------|------------|
+| BR-US-01 | Un equipo usado es un **producto** clasificado bajo la categoría raíz **"Usado"** del catálogo (reutiliza stock, movimientos, ventas y reportes). |
+| BR-US-02 | Al registrar un usado se guarda su **origen** (`parte_de_pago` \| `reparacion` \| `otro`), el **cliente origen** (opcional), el **valor de parte de pago** (costo de adquisición → `precio_compra`) y observaciones. |
+| BR-US-03 | El **estado** del usado es **derivado del stock**: `disponible` si `stock > 0`, `vendido` si `stock = 0`. No hay columna de estado. |
+| BR-US-04 | El stock inicial por defecto es **1** y es editable al registrar (a veces llegan varias unidades). |
+| BR-US-05 | Al registrar se genera un `Movimiento ENTRADA` con `referencia_tipo = 'usado'` (auditoría de inventario). Solo el **admin** puede registrar/editar; el listado lo ve cualquier rol autenticado. |
+| BR-US-06 | La venta de un usado no genera garantía automática por ahora (pendiente feature general de garantías por venta de producto). |
+
 ## 13. Retención de Datos y Respaldo
 
 | Regla | Definición |

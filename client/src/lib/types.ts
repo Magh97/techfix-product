@@ -461,6 +461,43 @@ export interface ComparacionPrecios {
   proveedores: ComparacionProveedor[];
 }
 
+export type OrigenUsado = "parte_de_pago" | "reparacion" | "otro";
+
+export interface EquipoUsado {
+  id: number;
+  productoId: number;
+  sku: string;
+  nombre: string;
+  marca: string | null;
+  modelo: string | null;
+  precioCompra: number;
+  precioVenta: number;
+  stock: number;
+  estado: "disponible" | "vendido";
+  clienteOrigenId: number | null;
+  clienteOrigenNombre: string | null;
+  ordenId: number | null;
+  valorTradeIn: number;
+  origen: OrigenUsado;
+  observaciones: string | null;
+  creadoPorNombre: string;
+  createdAt: string;
+}
+
+export interface CrearEquipoUsado {
+  sku: string;
+  nombre: string;
+  codigoBarras?: string | null;
+  marca?: string | null;
+  modelo?: string | null;
+  valorTradeIn: number;
+  precioVenta: number;
+  stock?: number;
+  origen: OrigenUsado;
+  clienteId?: number | null;
+  observaciones?: string;
+}
+
 export interface ReporteInventario {
   id: number;
   sku: string;

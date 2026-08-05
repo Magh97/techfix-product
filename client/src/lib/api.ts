@@ -10,6 +10,7 @@ import type {
   ComparacionPrecios,
   Corte,
   CotizacionVenta,
+  CrearEquipoUsado,
   CreateCotizacionVenta,
   CreateOrden,
   CreateProducto,
@@ -17,6 +18,7 @@ import type {
   CxcItem,
   CxpItem,
   DashboardResumen,
+  EquipoUsado,
   EstadoOrden,
   Garantia,
   ImportResult,
@@ -271,6 +273,23 @@ export const finanzasApi = {
   registrarEgreso: (input: { concepto: string; categoria: string; monto: number; metodo: string }) =>
     api<{ data: unknown }>("/finanzas/egresos", { method: "POST", body: JSON.stringify(input) }),
   cxc: () => api<{ data: CxcItem[] }>("/finanzas/cxc"),
+};
+
+export const usadosApi = {
+  list: (params?: { estado?: string; origen?: string; clienteId?: number; q?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.estado) qs.set("estado", params.estado);
+    if (params?.origen) qs.set("origen", params.origen);
+    if (params?.clienteId) qs.set("clienteId", String(params.clienteId));
+    if (params?.q) qs.set("q", params.q);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<EquipoUsado>>(`/usados${s ? `?${s}` : ""}`);
+  },
+  create: (input: CrearEquipoUsado) => api<{ data: EquipoUsado }>("/usados", { method: "POST", body: JSON.stringify(input) }),
+  update: (id: number, input: { valorTradeIn?: number; precioVenta?: number; origen?: string; observaciones?: string | null }) =>
+    api<{ data: EquipoUsado }>(`/usados/${id}`, { method: "PUT", body: JSON.stringify(input) }),
 };
 
 export const proveedoresApi = {

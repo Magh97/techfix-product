@@ -1186,6 +1186,108 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(sinHistorial.body.data.proveedores).toHaveLength(0);
   });
 
+  it("USADOS: registrar crea producto bajo 'Usado' + metadatos + movimiento ENTRADA (stock editable)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const cliente = (await pool.query<{ id: number }>("INSERT INTO clientes (nombre, telefono) VALUES ($1,$2) RETURNING id", [`Cliente Usado ${suf}`, `55${suf}`.slice(0, 10)])).rows[0]!.id;
+
+    const res = await request(app)
+      .post("/api/v1/usados")
+      .set(auth)
+      .send({
+        sku: `USO-${suf}`,
+        nombre: "Laptop usada",
+        marca: "Dell",
+        modelo: "Latitude",
+        valorTradeIn: 500,
+        precioVenta: 1200,
+        stock: 1,
+        origen: "parte_de_pago",
+        clienteId: cliente,
+        observaciones: "Recibida en parte de pago",
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.data.estado).toBe("disponible");
+    expect(res.body.data.valorTradeIn).toBeCloseTo(500, 2);
+    expect(res.body.data.clienteOrigenNombre).toBe(`Cliente Usado ${suf}`);
+    const equipoId = res.body.data.id;
+    const productoId = res.body.data.productoId;
+
+    // El producto quedó bajo la raíz "Usado" con el valor como costo y stock editable
+    const prod = await pool.query<{ categoria_id: number; stock: number; precio_compra: string }>(
+      "SELECT categoria_id, stock, precio_compra FROM productos WHERE id = $1",
+      [productoId]
+    );
+    expect(Number(prod.rows[0]?.precio_compra)).toBeCloseTo(500, 2);
+    expect(prod.rows[0]?.stock).toBe(1);
+    const raiz = await pool.query<{ nombre: string }>("SELECT c.nombre FROM catalogos c WHERE c.id = $1", [
+      prod.rows[0]?.categoria_id,
+    ]);
+    expect(raiz.rows[0]?.nombre).toBe("Usado");
+
+    // Metadatos y movimiento ENTRADA
+    const meta = await pool.query<{ origen: string }>("SELECT origen FROM equipos_usados WHERE id = $1", [equipoId]);
+    expect(meta.rows[0]?.origen).toBe("parte_de_pago");
+    const mov = await pool.query<{ tipo: string }>(
+      "SELECT tipo FROM movimientos_inventario WHERE producto_id = $1 AND referencia_tipo = 'usado'",
+      [productoId]
+    );
+    expect(mov.rows[0]?.tipo).toBe("ENTRADA");
+
+    // Stock editable
+    const otro = await request(app)
+      .post("/api/v1/usados")
+      .set(auth)
+      .send({ sku: `USO2-${suf}`, nombre: "Monitores usados", valorTradeIn: 300, precioVenta: 600, stock: 3, origen: "otro" });
+    expect(otro.status).toBe(201);
+    expect(otro.body.data.stock).toBe(3);
+  });
+
+  it("USADOS: listado con estado derivado (disponible/vendido) y filtros", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const base = `LIS-${suf}`;
+    const vendido = (await request(app).post("/api/v1/usados").set(auth).send({ sku: `${base}-V`, nombre: "Usado vendido", valorTradeIn: 100, precioVenta: 200, origen: "otro" })).body.data;
+    const disponible = (await request(app).post("/api/v1/usados").set(auth).send({ sku: `${base}-D`, nombre: "Usado disponible", valorTradeIn: 100, precioVenta: 200, origen: "reparacion" })).body.data;
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [vendido.productoId]);
+
+    const vendidos = await request(app).get("/api/v1/usados?estado=vendido").set(auth);
+    expect(vendidos.body.data.some((u: { id: number }) => u.id === vendido.id)).toBe(true);
+    expect(vendidos.body.data.some((u: { id: number }) => u.id === disponible.id)).toBe(false);
+
+    const disp = await request(app).get("/api/v1/usados?estado=disponible").set(auth);
+    expect(disp.body.data.some((u: { id: number }) => u.id === disponible.id)).toBe(true);
+    expect(disp.body.data.some((u: { id: number }) => u.id === vendido.id)).toBe(false);
+
+    const porOrigen = await request(app).get("/api/v1/usados?origen=reparacion").set(auth);
+    expect(porOrigen.body.data.some((u: { id: number }) => u.id === disponible.id)).toBe(true);
+    expect(porOrigen.body.data.some((u: { id: number }) => u.id === vendido.id)).toBe(false);
+
+    const porQ = await request(app).get(`/api/v1/usados?q=${base}`).set(auth);
+    expect(porQ.body.data.length).toBe(2);
+    expect(porQ.body.meta.totalItems).toBe(2);
+  });
+
+  it("USADOS: vendedor no crea (403) y edición actualiza valores", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    const suf = Date.now();
+
+    const vendedor = await request(app)
+      .post("/api/v1/usados")
+      .set(authV)
+      .send({ sku: `NOP-${suf}`, nombre: "Sin permiso", valorTradeIn: 100, precioVenta: 200, origen: "otro" });
+    expect(vendedor.status).toBe(403);
+
+    const creado = (await request(app).post("/api/v1/usados").set(auth).send({ sku: `EDI-${suf}`, nombre: "Editable", valorTradeIn: 400, precioVenta: 900, origen: "otro" })).body.data;
+    const editado = await request(app).put(`/api/v1/usados/${creado.id}`).set(auth).send({ valorTradeIn: 450, precioVenta: 1300 });
+    expect(editado.status).toBe(200);
+    expect(editado.body.data.valorTradeIn).toBeCloseTo(450, 2);
+    expect(editado.body.data.precioVenta).toBeCloseTo(1300, 2);
+    const prod = await pool.query<{ precio_compra: string }>("SELECT precio_compra FROM productos WHERE id = $1", [creado.productoId]);
+    expect(Number(prod.rows[0]?.precio_compra)).toBeCloseTo(450, 2);
+  });
+
   it("DASHBOARD: resumen devuelve la estructura esperada", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const res = await request(app).get("/api/v1/dashboard/resumen").set(auth);

@@ -1197,6 +1197,112 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /usados:
+    get:
+      tags: [Productos]
+      summary: Listar equipos usados (estado derivado del stock)
+      operationId: listUsados
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: estado
+          in: query
+          schema: { type: string, enum: [disponible, vendido] }
+        - name: origen
+          in: query
+          schema: { type: string, enum: [parte_de_pago, reparacion, otro] }
+        - name: clienteId
+          in: query
+          schema: { type: integer }
+        - name: q
+          in: query
+          description: Búsqueda por nombre o SKU
+          schema: { type: string }
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/EquipoUsado" }
+                  meta: { $ref: "#/components/schemas/PaginationMeta" }
+    post:
+      tags: [Productos]
+      summary: Registrar equipo usado (admin; crea producto bajo la raíz "Usado")
+      operationId: createUsado
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sku, nombre, valorTradeIn, precioVenta, origen]
+              properties:
+                sku: { type: string }
+                nombre: { type: string }
+                codigoBarras: { type: string }
+                marca: { type: string }
+                modelo: { type: string }
+                valorTradeIn: { type: number, minimum: 0, description: "Costo de adquisición (precio_compra)" }
+                precioVenta: { type: number, minimum: 0.01 }
+                stock: { type: integer, minimum: 1, default: 1 }
+                origen: { type: string, enum: [parte_de_pago, reparacion, otro], default: otro }
+                clienteId: { type: integer }
+                ordenId: { type: integer }
+                observaciones: { type: string }
+      responses:
+        "201":
+          description: Equipo usado registrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/EquipoUsado" }
+        "422":
+          description: No existe la categoría 'Usado' o cliente inválido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /usados/{usadoId}:
+    put:
+      tags: [Productos]
+      summary: Editar equipo usado (admin)
+      operationId: updateUsado
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/usadoId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                valorTradeIn: { type: number, minimum: 0 }
+                precioVenta: { type: number, minimum: 0.01 }
+                origen: { type: string, enum: [parte_de_pago, reparacion, otro] }
+                observaciones: { type: [string, "null"] }
+      responses:
+        "200":
+          description: Equipo usado actualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/EquipoUsado" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1237,6 +1343,11 @@ components:
       schema: { type: integer }
     sustitucionId:
       name: sustitucionId
+      in: path
+      required: true
+      schema: { type: integer }
+    usadoId:
+      name: usadoId
       in: path
       required: true
       schema: { type: integer }
@@ -1461,6 +1572,28 @@ components:
         pageSize: { type: integer }
         totalItems: { type: integer }
         totalPages: { type: integer }
+
+    EquipoUsado:
+      type: object
+      properties:
+        id: { type: integer }
+        productoId: { type: integer }
+        sku: { type: string }
+        nombre: { type: string }
+        marca: { type: [string, "null"] }
+        modelo: { type: [string, "null"] }
+        precioCompra: { type: number }
+        precioVenta: { type: number }
+        stock: { type: integer }
+        estado: { type: string, enum: [disponible, vendido], description: "Derivado del stock" }
+        clienteOrigenId: { type: [integer, "null"] }
+        clienteOrigenNombre: { type: [string, "null"] }
+        ordenId: { type: [integer, "null"] }
+        valorTradeIn: { type: number }
+        origen: { type: string, enum: [parte_de_pago, reparacion, otro] }
+        observaciones: { type: [string, "null"] }
+        creadoPorNombre: { type: string }
+        createdAt: { type: string, format: date-time }
 
     ErrorResponse:
       type: object

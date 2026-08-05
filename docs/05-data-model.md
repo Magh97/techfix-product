@@ -663,6 +663,18 @@ TABLE solicitudes_reabastecimiento {
   resuelto_at    TIMESTAMPTZ
 }
 
+TABLE equipos_usados {
+  id                SERIAL PK
+  producto_id       INTEGER NOT NULL UNIQUE FK→productos.id ON DELETE CASCADE  -- el usado ES un producto (raíz "Usado")
+  cliente_origen_id INTEGER FK→clientes.id ON DELETE SET NULL
+  orden_id          INTEGER FK→ordenes_servicio.id ON DELETE SET NULL
+  valor_trade_in    NUMERIC(19,4) NOT NULL DEFAULT 0 CHECK(valor_trade_in >= 0)
+  origen            VARCHAR(20) NOT NULL DEFAULT 'otro' CHECK(origen IN ('parte_de_pago','reparacion','otro'))
+  observaciones     TEXT
+  created_by        INTEGER NOT NULL FK→usuarios.id
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+}
+
 TABLE cajas {
   id            SERIAL PK
   usuario_id    INTEGER NOT NULL FK→usuarios.id ON DELETE RESTRICT
@@ -747,6 +759,7 @@ historial_orden       idx_historial_orden                (orden_id, created_at D
 sustituciones         idx_sustituciones_orden            (orden_id)                                 B-tree    sustituciones por orden
 solicitudes_reabastecimiento idx_solicitudes_estado       (estado)                                   B-tree    cola de aprobación admin
 solicitudes_reabastecimiento idx_solicitudes_producto     (producto_id)                              B-tree    "Ya en OC" y entregada al recibir
+equipos_usados        idx_equipos_usados_estado           (origen)                                  B-tree    filtro por origen de usados
 cotizaciones          idx_cotizaciones_vigencia          (vigencia_hasta) WHERE estado='emitida'    PARTIAL   expiración automática
 detalle_orden         idx_detalle_orden_orden            (orden_id)                                 B-tree    JOIN orden→piezas
 detalle_orden         idx_detalle_orden_reserva          (producto_id) WHERE estado_linea='reservada' PARTIAL  validación de reservas vs stock
@@ -774,6 +787,7 @@ cajas                 idx_cajas_usuario_fecha            (usuario_id, fecha)    
 - **Precios sin IVA:** catálogo guarda netos; `subtotal`, `iva`, `total` se calculan al emitir cotización/venta (BR-MON-02/03).
 - **CxC/CxP derivadas:** no hay tablas de saldos; el saldo = `total − Σ pagos`, con `fecha_vencimiento` para detectar vencidos. Evita doble fuente de verdad.
 - **Recepción parcial:** `detalle_compra.cantidad_recibida` acumula lo recibido por línea y `compras.total_recibido` es la base de la CxP; la OC pasa a `recibida` solo cuando todas las líneas están completas (migración `0012`).
+- **Equipos usados:** el usado es un `producto` bajo la raíz "Usado" + metadatos en `equipos_usados` (origen, cliente, valor de parte de pago); el estado es derivado del stock (migración `0013`).
 - **Límite de crédito default:** `clientes.limite_credito` = $3,000 MXN al crear el cliente; se amplía individualmente (BR-CRE-01).
 - **Firma de recepción:** `ordenes_servicio.firma_recepcion` guarda el PNG (base64) de la firma capturada en canvas táctil (BR-SER-01).
 - **Soft delete:** `is_active` en usuarios, clientes, productos, proveedores. Ordenes/ventas/movimientos nunca se eliminan (BR-DAT-02/03).
