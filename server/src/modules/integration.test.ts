@@ -1122,6 +1122,70 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(estado.rows[0]?.estado).toBe("entregada");
   });
 
+  it("COMPARACIÓN: devuelve el último precio por proveedor y destaca el más barato/favorito", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const provA = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `CompA-${suf}` })).body.data.id;
+    const provB = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `CompB-${suf}` })).body.data.id;
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `CMP-${suf}`, nombre: "Prod comparar", precioCompra: 10, precioVenta: 22, proveedorFavoritoId: provB })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [prod]);
+
+    // OC A (enviada) a $10 y OC B (enviada) a $8 → el más reciente/barato es B
+    const ocA = await request(app)
+      .post("/api/v1/compras")
+      .set(auth)
+      .send({ proveedorId: provA, lineas: [{ productoId: prod, cantidad: 3, precioUnitario: 10 }] });
+    await request(app).post(`/api/v1/compras/${ocA.body.data.id}/enviar`).set(auth);
+    const ocB = await request(app)
+      .post("/api/v1/compras")
+      .set(auth)
+      .send({ proveedorId: provB, lineas: [{ productoId: prod, cantidad: 2, precioUnitario: 8 }] });
+    await request(app).post(`/api/v1/compras/${ocB.body.data.id}/enviar`).set(auth);
+
+    const res = await request(app).get(`/api/v1/compras/comparacion-precios?productoId=${prod}`).set(auth);
+    expect(res.status).toBe(200);
+    expect(res.body.data.producto.precioCompra).toBeCloseTo(10, 2);
+    expect(res.body.data.proveedores).toHaveLength(2);
+    const [b, a] = res.body.data.proveedores;
+    expect(b.proveedorId).toBe(provB);
+    expect(b.ultimoPrecio).toBeCloseTo(8, 2);
+    expect(b.esMasBarato).toBe(true);
+    expect(b.esFavorito).toBe(true);
+    expect(b.porDebajoDelActual).toBe(true);
+    expect(a.proveedorId).toBe(provA);
+    expect(a.ultimoPrecio).toBeCloseTo(10, 2);
+    expect(a.esMasBarato).toBe(false);
+    expect(a.esFavorito).toBe(false);
+  });
+
+  it("COMPARACIÓN: solo admin, 404 de producto inexistente y lista vacía sin historial", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    const suf = Date.now();
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `CMV-${suf}`, nombre: "Prod sin historial", precioCompra: 10, precioVenta: 20 })
+    ).body.data.id;
+
+    const vendedor = await request(app).get(`/api/v1/compras/comparacion-precios?productoId=${prod}`).set(authV);
+    expect(vendedor.status).toBe(403);
+
+    const inexistente = await request(app).get("/api/v1/compras/comparacion-precios?productoId=999999999").set(auth);
+    expect(inexistente.status).toBe(404);
+    expect(inexistente.body.error.code).toBe("PRODUCT_NOT_FOUND");
+
+    const sinHistorial = await request(app).get(`/api/v1/compras/comparacion-precios?productoId=${prod}`).set(auth);
+    expect(sinHistorial.status).toBe(200);
+    expect(sinHistorial.body.data.proveedores).toHaveLength(0);
+  });
+
   it("DASHBOARD: resumen devuelve la estructura esperada", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const res = await request(app).get("/api/v1/dashboard/resumen").set(auth);
