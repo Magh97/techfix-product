@@ -475,3 +475,41 @@ export async function cancelarSolicitud(id: number, motivo: string, user: { id: 
   await repo.resolverSolicitud(id, { estado: "cancelada", rechazoMotivo: motivo, resueltoPor: user.id });
   return mapSolicitud((await repo.findSolicitudById(id))!);
 }
+
+/* --- Comparación de precios entre proveedores (US-COM-05) --- */
+
+export async function comparacionPrecios(productoId: number) {
+  const producto = await findProductById(productoId);
+  if (!producto) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
+
+  const rows = await repo.ultimoPrecioPorProveedor(productoId);
+  const precios = rows.map((r) => toNum(r.ultimo_precio));
+  const minPrecio = precios.length ? Math.min(...precios) : null;
+
+  const proveedores = rows.map((r) => {
+    const precio = toNum(r.ultimo_precio);
+    return {
+      proveedorId: r.proveedor_id,
+      proveedorNombre: r.proveedor_nombre,
+      ultimoPrecio: precio,
+      ultimaFecha: String(r.ultima_fecha).slice(0, 10),
+      folioOC: r.folio_oc,
+      cantidad: r.cantidad,
+      esFavorito: r.proveedor_id === producto.proveedor_favorito_id,
+      esInactivo: !r.proveedor_is_active,
+      esMasBarato: precios.length > 1 && precio === minPrecio,
+      porDebajoDelActual: precio < toNum(producto.precio_compra),
+    };
+  });
+
+  return {
+    producto: {
+      id: producto.id,
+      sku: producto.sku,
+      nombre: producto.nombre,
+      precioCompra: toNum(producto.precio_compra),
+      proveedorFavoritoId: producto.proveedor_favorito_id,
+    },
+    proveedores,
+  };
+}

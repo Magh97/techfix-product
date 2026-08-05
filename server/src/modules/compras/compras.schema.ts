@@ -25,6 +25,10 @@ export const listComprasQuery = z.object({
   folio: z.string().optional(),
 });
 
+export const comparacionQuery = z.object({
+  productoId: z.coerce.number().int().positive(),
+});
+
 export const compraIdParams = z.object({ compraId: z.coerce.number().int().positive() });
 
 /* --- Recepción parcial por línea de OC --- */
