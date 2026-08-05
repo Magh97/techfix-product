@@ -872,6 +872,60 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /compras/comparacion-precios:
+    get:
+      tags: [Compras]
+      summary: Comparación de precios por proveedor para un producto (admin)
+      description: >-
+        Último precio por proveedor desde OCs enviadas/recibidas, ordenado asc; incluye el
+        precio_compra actual del producto como referencia y flags (favorito, más barato,
+        inactivo, por debajo del actual).
+      operationId: comparacionPrecios
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: productoId
+          in: query
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Comparativa de precios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      producto:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          sku: { type: string }
+                          nombre: { type: string }
+                          precioCompra: { type: number }
+                          proveedorFavoritoId: { type: [integer, "null"] }
+                      proveedores:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            proveedorId: { type: integer }
+                            proveedorNombre: { type: string }
+                            ultimoPrecio: { type: number }
+                            ultimaFecha: { type: string, format: date }
+                            folioOC: { type: string }
+                            cantidad: { type: integer }
+                            esFavorito: { type: boolean }
+                            esInactivo: { type: boolean }
+                            esMasBarato: { type: boolean }
+                            porDebajoDelActual: { type: boolean }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /compras/solicitudes:
     post:
       tags: [Compras]

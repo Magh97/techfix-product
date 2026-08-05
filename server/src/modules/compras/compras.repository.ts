@@ -247,6 +247,38 @@ export function listComprasConRecepcion() {
   ).then((r) => r.rows);
 }
 
+/* --- Comparación de precios entre proveedores (US-COM-05) --- */
+
+export interface ComparacionPrecioRow {
+  proveedor_id: number;
+  proveedor_nombre: string;
+  proveedor_is_active: boolean;
+  ultimo_precio: string;
+  ultima_fecha: string;
+  folio_oc: string;
+  cantidad: number;
+}
+
+// Último precio por proveedor desde OCs enviadas/recibidas (la más reciente por proveedor)
+export function ultimoPrecioPorProveedor(productoId: number) {
+  return query<ComparacionPrecioRow>(
+    `WITH precios AS (
+       SELECT dc.producto_id, c.proveedor_id, p.nombre AS proveedor_nombre, p.is_active AS proveedor_is_active,
+              dc.precio_unitario, c.folio AS folio_oc, dc.cantidad, c.created_at,
+              ROW_NUMBER() OVER (PARTITION BY c.proveedor_id ORDER BY c.created_at DESC, c.id DESC) AS rn
+       FROM detalle_compra dc
+       JOIN compras c ON c.id = dc.compra_id
+       JOIN proveedores p ON p.id = c.proveedor_id
+       WHERE dc.producto_id = $1 AND c.estado IN ('enviada','recibida')
+     )
+     SELECT proveedor_id, proveedor_nombre, proveedor_is_active, precio_unitario AS ultimo_precio,
+            created_at AS ultima_fecha, folio_oc, cantidad
+     FROM precios WHERE rn = 1
+     ORDER BY precio_unitario ASC, proveedor_nombre ASC`,
+    [productoId]
+  ).then((r) => r.rows);
+}
+
 /* --- Reabastecimiento sugerido --- */
 
 export interface ReabastecimientoRow {

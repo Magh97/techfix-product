@@ -123,6 +123,7 @@ Refaccion · Usado · General  (raíces sin hijos)
 - **Ajustar stock** (admin): corrección con motivo (se registra en el historial del producto).
 - **Importar/exportar** el catálogo (CSV/Excel).
 - **Sustitutos**: botón en cada producto que sugiere alternativas compatibles (por tags) y con stock — útil en POS y órdenes.
+- **Comparar precios** (admin): botón **Comparar** en cada producto abre la comparativa de **último precio por proveedor** (desde las OCs enviadas/recibidas), con el **precio de compra actual** como referencia y badges de **favorito**, **más barato**, **inactivo** y **↓ actual** (cotiza por debajo del precio actual) — útil para negociar el siguiente pedido.
 - Alerta visual de **stock bajo** (stock ≤ mínimo).
 
 ## 9. Compras y Reabastecimiento

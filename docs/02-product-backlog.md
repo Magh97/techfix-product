@@ -122,6 +122,7 @@
 - `[NOTA]` US-SER-09: el worker horario que marca retrasadas está implementado (no dispara NOT-01, que es P1 y queda pendiente del ADR-0007/Twilio).
 - `[NOTA]` US-VEN-09: el ticket se muestra en pantalla con formato térmico 80mm e imprime vía `window.print()` (`@media print` aísla el recibo); la reimpresión desde Ventas sale marcada "COPIA" (US-VEN-10).
 - `[NOTA]` US-COM-03/04: se implementó la **recepción parcial por línea de OC** — `POST /compras/:id/recibir` con body `{ lineas: [{ detalleCompraId, cantidadRecibida }] }` (sin body = recibir todo); CxP acumulada por lo recibido y pagos desde la primera recepción; la OC se mantiene `enviada` (badge "Recepción parcial") hasta completar todas las líneas.
+- `[NOTA]` US-COM-05: **comparación de precios** implementada — `GET /compras/comparacion-precios?productoId=` (admin) con último precio por proveedor (OCs enviadas/recibidas), referencia al precio actual y flags favorito/más barato/inactivo/por debajo del actual; botón "Comparar" en Productos.
 - `[ASSUMED]` US-VEN-09: folio de venta `VEN-XXXX` global (no por año).
 - `[NOTA]` US-SER-12 / US-VEN-03: ensamblado por BOM implementado (ADR-0003) — `PUT /productos/:id/bom`, venta con desglose de componentes + mano de obra de ensamble (migración `0003_ensamble`).
 - `[NOTA]` US-VEN-04..06: cotizaciones de venta implementadas — folio `CV-`, vigencia, sin reserva de stock al cotizar, conversión a venta con validación de stock, descuentos con BR-VEN-05 (migración `0004_cotizaciones_venta`).

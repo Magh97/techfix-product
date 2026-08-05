@@ -80,6 +80,7 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 | PUT / DELETE | /proveedores/:id | admin | campos / -- | proveedor (delete bloqueado con compras) |
 | GET / POST | /compras | admin | ?page&estado&proveedorId / {proveedorId, lineas[]} | lista / 201 |
 | GET | /compras/reabastecimiento | admin | -- | {grupos: [{proveedorId, lineas[{productoId, sku, stock, sugerido, enOC, folioOC}]}]} |
+| GET | /compras/comparacion-precios | admin | ?productoId | {producto{precioCompra, proveedorFavoritoId}, proveedores[{proveedorNombre, ultimoPrecio, ultimaFecha, folioOC, esFavorito, esInactivo, esMasBarato, porDebajoDelActual}]} |
 | POST / GET | /compras/solicitudes | tecnico/admin | {productoId, cantidad, ordenId?, motivo?} / ?page&estado&ordenId | 201 (NOT-05) / lista |
 | POST | /compras/solicitudes/aprobar | admin | {solicitudes[]} | {creadas[], yaNoPendientes[]} (OC por proveedor) |
 | POST | /compras/solicitudes/:id/rechazar | admin | {motivo} | solicitud |

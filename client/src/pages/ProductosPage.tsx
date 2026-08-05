@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cpu, Download, FileSpreadsheet, PackagePlus, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Cpu, Download, FileSpreadsheet, PackagePlus, Plus, RefreshCw, Scale, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import { useToast } from "@/components/ui/toast";
 import { catalogosApi, productsApi, proveedoresApi, comprasApi } from "@/lib/api";
 import { getSessionUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import type { CreateProducto, ImportResult, Movimiento, Producto, Sugerencias } from "@/lib/types";
+import type { ComparacionPrecios, CreateProducto, ImportResult, Movimiento, Producto, Sugerencias } from "@/lib/types";
 
 const mxn = (n: number) => n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -50,6 +50,9 @@ export default function ProductosPage() {
   const [solicitarProducto, setSolicitarProducto] = useState<Producto | null>(null);
   const [solicitud, setSolicitud] = useState({ cantidad: "1", motivo: "" });
   const [solicitando, setSolicitando] = useState(false);
+  const [comparando, setComparando] = useState<Producto | null>(null);
+  const [comparacion, setComparacion] = useState<ComparacionPrecios | null>(null);
+  const [comparandoCarga, setComparandoCarga] = useState(false);
   const [form, setForm] = useState({
     sku: "",
     nombre: "",
@@ -180,6 +183,17 @@ export default function ProductosPage() {
       .sugerencias(p.id)
       .then((r) => setSustitutos(r.data))
       .catch((e) => toast.error("Error", e instanceof Error ? e.message : ""));
+  }
+
+  function verComparacion(p: Producto) {
+    setComparando(p);
+    setComparacion(null);
+    setComparandoCarga(true);
+    comprasApi
+      .comparacionPrecios(p.id)
+      .then((r) => setComparacion(r.data))
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : ""))
+      .finally(() => setComparandoCarga(false));
   }
 
   function sugerirSustituto(i: number) {
@@ -415,6 +429,11 @@ export default function ProductosPage() {
                       <Button size="sm" variant="outline" onClick={() => verSustitutos(p)}>
                         <RefreshCw className="h-3.5 w-3.5" /> Sustitutos
                       </Button>
+                      {esAdmin && (
+                        <Button size="sm" variant="outline" className="ml-1" onClick={() => verComparacion(p)}>
+                          <Scale className="h-3.5 w-3.5" /> Comparar
+                        </Button>
+                      )}
                       {esAdmin && (
                         <Button size="sm" variant="outline" className="ml-1" onClick={() => { setAjustarProducto(p); setAjuste({ cantidad: "", motivo: "" }); }}>
                           Ajustar
@@ -867,6 +886,65 @@ export default function ProductosPage() {
 
           <div className="flex justify-end">
             <Button variant="outline" onClick={() => setSustitutos(null)}>Cerrar</Button>
+          </div>
+        </div>
+      </Dialog>
+      <Dialog open={!!comparando} onClose={() => setComparando(null)} title={`Comparación de precios · ${comparando?.nombre ?? ""}`}>
+        <div className="space-y-4">
+          {comparandoCarga ? (
+            <div className="grid place-items-center p-6">
+              <Spinner />
+            </div>
+          ) : comparacion ? (
+            <>
+              <div className="rounded-md bg-surface-2 p-3 text-sm">
+                <p className="font-mono text-xs text-muted">{comparacion.producto.sku}</p>
+                <div className="mt-1 flex justify-between">
+                  <span className="text-muted">Precio de compra actual</span>
+                  <span className="font-semibold">{mxn(comparacion.producto.precioCompra)}</span>
+                </div>
+              </div>
+              {comparacion.proveedores.length === 0 && (
+                <p className="text-sm text-muted">Sin historial de compras para este producto.</p>
+              )}
+              {comparacion.proveedores.length === 1 && (
+                <p className="text-sm text-muted">Solo un proveedor con historial; crea más OCs para comparar.</p>
+              )}
+              {comparacion.proveedores.length > 0 && (
+                <Table>
+                  <THead>
+                    <TR>
+                      <TH>Proveedor</TH>
+                      <TH className="text-right">Último precio</TH>
+                      <TH>Fecha</TH>
+                      <TH>OC</TH>
+                      <TH />
+                    </TR>
+                  </THead>
+                  <tbody>
+                    {comparacion.proveedores.map((pr) => (
+                      <TR key={pr.proveedorId}>
+                        <TD>
+                          {pr.proveedorNombre}
+                          {pr.esInactivo && <Badge className="ml-2">inactivo</Badge>}
+                        </TD>
+                        <TD className="text-right font-semibold">{mxn(pr.ultimoPrecio)}</TD>
+                        <TD className="text-muted">{pr.ultimaFecha}</TD>
+                        <TD className="font-mono text-xs text-muted">{pr.folioOC}</TD>
+                        <TD>
+                          {pr.esFavorito && <Badge variant="accent">favorito</Badge>}
+                          {pr.esMasBarato && <Badge variant="success" className="ml-1">más barato</Badge>}
+                          {pr.porDebajoDelActual && <Badge variant="warning" className="ml-1">↓ actual</Badge>}
+                        </TD>
+                      </TR>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </>
+          ) : null}
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setComparando(null)}>Cerrar</Button>
           </div>
         </div>
       </Dialog>

@@ -3,7 +3,7 @@ import { created, ok, paginated } from "../../shared/http";
 import { AppError } from "../../shared/errors";
 import { requireAuth, requireRole, type AuthedRequest } from "../../shared/middleware/auth";
 import { getValidated, validate } from "../../shared/validation";
-import { compraIdParams, crearCompraSchema, listComprasQuery, pagoCompraSchema, crearSolicitudSchema, listSolicitudesQuery, aprobarSolicitudesSchema, resolverSolicitudSchema, solicitudIdParams, recibirSchema } from "./compras.schema";
+import { compraIdParams, crearCompraSchema, listComprasQuery, pagoCompraSchema, crearSolicitudSchema, listSolicitudesQuery, aprobarSolicitudesSchema, resolverSolicitudSchema, solicitudIdParams, recibirSchema, comparacionQuery } from "./compras.schema";
 import * as compraService from "./compras.service";
 import {
   createProveedorSchema,
@@ -71,6 +71,12 @@ comprasRouter.get("/cxp", async (req: AuthedRequest, res) => {
 // Reabastecimiento sugerido (admin)
 comprasRouter.get("/reabastecimiento", requireRole("admin"), async (_req, res) => {
   ok(res, await compraService.reabastecimiento());
+});
+
+// Comparación de precios entre proveedores (admin)
+comprasRouter.get("/comparacion-precios", requireRole("admin"), validate(comparacionQuery, "query"), async (req: AuthedRequest, res) => {
+  const { productoId } = getValidated<{ productoId: number }>(req, "query");
+  ok(res, await compraService.comparacionPrecios(productoId));
 });
 
 // Solicitudes de reabastecimiento (tecnico/admin crean; admin resuelve)

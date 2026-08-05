@@ -182,6 +182,7 @@
 | GET | `/compras` | admin | `?page&pageSize&estado&proveedorId` | `{ data, meta }` | `FORBIDDEN` |
 | POST | `/compras` | admin | `{ proveedorId, lineas: [{ productoId, cantidad, precioUnitario }] }` | `201 { data: Compra }` | `VALIDATION_ERROR` |
 | GET | `/compras/reabastecimiento` | admin | -- | `{ data: { grupos: [{ proveedorId, proveedorNombre, esFavorito, lineas: [{ productoId, sku, nombre, stock, sugerido, enOC, folioOC }] }] } }` | `FORBIDDEN` |
+| GET | `/compras/comparacion-precios` | admin | `?productoId` | `{ data: { producto: { id, sku, nombre, precioCompra, proveedorFavoritoId }, proveedores: [{ proveedorId, proveedorNombre, ultimoPrecio, ultimaFecha, folioOC, cantidad, esFavorito, esInactivo, esMasBarato, porDebajoDelActual }] } }` | `FORBIDDEN`, `PRODUCT_NOT_FOUND` |
 | POST | `/compras/solicitudes` | tecnico/admin | `{ productoId, cantidad, ordenId?, motivo? }` (solo si `stock < cantidad`) | `201 { data: Solicitud }` (NOT-05 al admin) | `STOCK_SUFICIENTE`, `NOT_FOUND` |
 | GET | `/compras/solicitudes` | tecnico/admin | `?page&pageSize&estado&ordenId` (técnico debe enviar `ordenId`) | `{ data, meta }` | `VALIDATION_ERROR` |
 | POST | `/compras/solicitudes/aprobar` | admin | `{ solicitudes: number[] }` | `{ data: { creadas: [], yaNoPendientes: [] } }` (crea OC por proveedor) | `FORBIDDEN`, `NOT_FOUND` |
