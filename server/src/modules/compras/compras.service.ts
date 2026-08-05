@@ -27,6 +27,7 @@ function toNum(n: string | null | undefined): number {
 
 function mapCompra(c: repo.CompraRow, lineas: repo.CompraLineaRow[], pagos: repo.PagoProveedorRow[]) {
   const total = toNum(c.total_neto);
+  const totalRecibido = toNum(c.total_recibido);
   const pagado = pagos.reduce((a, p) => a + toNum(p.monto), 0);
   return {
     id: c.id,
@@ -36,7 +37,9 @@ function mapCompra(c: repo.CompraRow, lineas: repo.CompraLineaRow[], pagos: repo
     estado: c.estado,
     estadoLabel: ESTADO_COMPRA_LABEL[c.estado],
     total,
-    saldo: Math.max(0, total - pagado),
+    totalRecibido,
+    pagado,
+    saldo: Math.max(0, totalRecibido - pagado),
     fechaVencimiento: c.fecha_vencimiento ? String(c.fecha_vencimiento).slice(0, 10) : null,
     creadaPor: c.creada_por,
     creadorNombre: c.creador_nombre,
@@ -47,11 +50,24 @@ function mapCompra(c: repo.CompraRow, lineas: repo.CompraLineaRow[], pagos: repo
       sku: l.sku,
       nombre: l.nombre_producto,
       cantidad: l.cantidad,
+      cantidadRecibida: l.cantidad_recibida,
+      pendiente: Math.max(0, l.cantidad - l.cantidad_recibida),
+      recibida: l.cantidad_recibida >= l.cantidad,
       precioUnitario: toNum(l.precio_unitario),
       subtotal: l.cantidad * toNum(l.precio_unitario),
     })),
     pagos: pagos.map((p) => ({ id: p.id, monto: toNum(p.monto), metodo: p.metodo, usuario: p.usuario_nombre, fecha: p.created_at })),
   };
+}
+
+/** Pendiente de recepción de una línea. */
+export function lineaPendiente(cantidad: number, recibida: number): number {
+  return Math.max(0, cantidad - recibida);
+}
+
+/** True si todas las líneas están completamente recibidas. */
+export function compraCompleta(lineas: { cantidad: number; cantidad_recibida: number }[]): boolean {
+  return lineas.length > 0 && lineas.every((l) => l.cantidad_recibida >= l.cantidad);
 }
 
 export async function listar(f: { proveedorId?: number; estado?: string; folio?: string; page: number; pageSize: number }) {
@@ -107,7 +123,16 @@ export async function enviar(compraId: number, user: { id: number; rol: Rol }) {
   return getById(compraId);
 }
 
-export async function recibir(compraId: number, user: { id: number; rol: Rol }) {
+export interface RecibirLinea {
+  detalleCompraId: number;
+  cantidadRecibida: number;
+}
+
+export async function recibir(
+  compraId: number,
+  input: { lineas?: RecibirLinea[] },
+  user: { id: number; rol: Rol }
+) {
   const c = await repo.findCompraById(compraId);
   if (!c) throw AppError.notFound("PURCHASE_NOT_FOUND", "Compra no encontrada");
   validarTransicionCompra(c.estado, "recibida", user.rol);
@@ -115,13 +140,43 @@ export async function recibir(compraId: number, user: { id: number; rol: Rol }) 
   await withTransaction(async (client) => {
     const lineas = await repo.listCompraLineas(compraId);
     if (!lineas.length) throw AppError.business("PURCHASE_EMPTY", "La compra no tiene líneas");
+
+    // Sin body → recibir todo lo pendiente; con body → recepción por líneas
+    const recibos = new Map<number, number>();
+    if (input.lineas) {
+      if (!input.lineas.length) throw AppError.badRequest("VALIDATION_ERROR", "Envía al menos una línea o usa el cuerpo vacío para recibir todo");
+      const idsValidos = new Set(lineas.map((l) => l.id));
+      for (const r of input.lineas) {
+        if (!idsValidos.has(r.detalleCompraId)) {
+          throw AppError.business("LINEA_NO_EN_COMPRA", `La línea ${r.detalleCompraId} no pertenece a esta orden de compra`);
+        }
+        recibos.set(r.detalleCompraId, r.cantidadRecibida);
+      }
+    } else {
+      for (const l of lineas) recibos.set(l.id, Math.max(0, l.cantidad - l.cantidad_recibida));
+    }
+
+    let montoRecibido = 0;
+    // Acumulado de recepción por línea (en memoria; el pool no ve cambios sin commitear)
+    const acumulado = new Map(lineas.map((l) => [l.id, l.cantidad_recibida]));
     for (const l of lineas) {
+      const cantidad = recibos.get(l.id);
+      if (cantidad === undefined) continue; // línea no incluida en este lote
+      if (cantidad <= 0) throw AppError.business("CANTIDAD_INVALIDA", "La cantidad a recibir debe ser mayor a 0");
+      const pendiente = Math.max(0, l.cantidad - l.cantidad_recibida);
+      if (cantidad > pendiente) {
+        throw AppError.business(
+          "SOBRE_RECEPCION",
+          `${l.nombre_producto}: solo quedan ${pendiente} por recibir de ${l.cantidad}`
+        );
+      }
+
       const producto = await repo.findProductoCompra(client, l.producto_id);
       if (!producto) throw AppError.notFound("PRODUCT_NOT_FOUND", `Producto ${l.producto_id} no encontrado`);
-      await repo.incrementStockClient(client, l.producto_id, l.cantidad);
+      await repo.incrementStockClient(client, l.producto_id, cantidad);
       await repo.insertMovimientoEntrada(client, {
         productoId: l.producto_id,
-        cantidad: l.cantidad,
+        cantidad,
         usuarioId: user.id,
         compraId,
       });
@@ -137,18 +192,36 @@ export async function recibir(compraId: number, user: { id: number; rol: Rol }) 
         });
       }
 
-      // Al llegar el producto, las solicitudes aprobadas pasan a "entregada" y
-      // se actualiza el historial de la(s) orden(es) que esperaban la refacción
-      const llegaron = await repo.entregarSolicitudesProducto(client, l.producto_id, user.id);
-      for (const fila of llegaron) {
-        if (fila.orden_id) {
-          await repo.insertHistorialOrdenEntregada(client, fila.orden_id, l.nombre_producto, c.folio, user.id);
+      await repo.incrementCantidadRecibida(client, l.id, cantidad);
+      const nuevoRecibido = (acumulado.get(l.id) ?? 0) + cantidad;
+      acumulado.set(l.id, nuevoRecibido);
+      montoRecibido += cantidad * precioNuevo;
+
+      // Al completarse la línea, las solicitudes aprobadas de ESA OC quedan entregadas
+      if (nuevoRecibido >= l.cantidad) {
+        const llegaron = await repo.entregarSolicitudesProducto(client, l.producto_id, compraId, user.id);
+        for (const fila of llegaron) {
+          if (fila.orden_id) {
+            await repo.insertHistorialOrdenEntregada(client, fila.orden_id, l.nombre_producto, c.folio, user.id);
+          }
         }
       }
     }
-    await repo.updateCompraEstado(client, compraId, "recibida");
+    if (montoRecibido <= 0) throw AppError.badRequest("VALIDATION_ERROR", "No se recibió ninguna cantidad");
+
+    await repo.incrementTotalRecibido(client, compraId, montoRecibido);
+    const completa = lineas.every((l) => (acumulado.get(l.id) ?? l.cantidad_recibida) >= l.cantidad);
+    if (completa) {
+      await repo.updateCompraEstado(client, compraId, "recibida");
+    }
   });
-  await registrarAuditoria({ usuarioId: user.id, accion: "RECIBIR", entidad: "compra", entidadId: compraId });
+  await registrarAuditoria({
+    usuarioId: user.id,
+    accion: "RECIBIR",
+    entidad: "compra",
+    entidadId: compraId,
+    despues: { lineas: input.lineas ?? null },
+  });
   return getById(compraId);
 }
 
@@ -163,11 +236,12 @@ export async function cancelar(compraId: number, user: { id: number; rol: Rol })
 export async function registrarPago(compraId: number, input: { monto: number; metodo: string }, user: { id: number }) {
   const c = await repo.findCompraById(compraId);
   if (!c) throw AppError.notFound("PURCHASE_NOT_FOUND", "Compra no encontrada");
-  if (c.estado !== "recibida") {
-    throw AppError.conflict("PURCHASE_NOT_RECEIVED", "Solo se puede pagar una compra recibida");
+  const totalRecibido = toNum(c.total_recibido);
+  if (totalRecibido <= 0) {
+    throw AppError.conflict("PURCHASE_NOT_RECEIVED", "No hay mercancía recibida para pagar");
   }
   const pagado = await repo.sumPagosCompra(compraId);
-  const pendiente = Math.max(0, toNum(c.total_neto) - pagado);
+  const pendiente = Math.max(0, totalRecibido - pagado);
   if (input.monto <= 0 || input.monto > pendiente) {
     throw AppError.business("PAYMENT_INVALID", `Monto inválido: pendiente ${pendiente}`);
   }
@@ -177,7 +251,7 @@ export async function registrarPago(compraId: number, input: { monto: number; me
 }
 
 export async function cxp(estado?: string) {
-  const compras = await repo.listComprasRecibidas();
+  const compras = await repo.listComprasConRecepcion();
   const items: {
     compraId: number;
     folio: string;
@@ -191,7 +265,7 @@ export async function cxp(estado?: string) {
   const hoyF = today();
   for (const c of compras) {
     const pagado = await repo.sumPagosCompra(c.id);
-    const saldo = Math.max(0, toNum(c.total_neto) - pagado);
+    const saldo = Math.max(0, toNum(c.total_recibido) - pagado);
     const vencido = c.fecha_vencimiento && String(c.fecha_vencimiento).slice(0, 10) < hoyF && saldo > 0;
     const est = saldo <= 0 ? "pagado" : vencido ? "vencido" : "vigente";
     if (estado && est !== estado) continue;
@@ -200,7 +274,7 @@ export async function cxp(estado?: string) {
       folio: c.folio,
       proveedorId: c.proveedor_id,
       proveedorNombre: c.proveedor_nombre,
-      total: toNum(c.total_neto),
+      total: toNum(c.total_recibido),
       saldo,
       fechaVencimiento: c.fecha_vencimiento ? String(c.fecha_vencimiento).slice(0, 10) : null,
       estado: est,

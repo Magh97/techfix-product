@@ -950,6 +950,178 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(cxp.body.data.find((x: { compraId: number }) => x.compraId === compraId)).toBeUndefined();
   });
 
+  it("COMPRAS: recepción parcial mantiene la OC en enviada, acumula CxP y permite pagar", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const prov = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `Parcial-${suf}` })).body.data.id;
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `PAR-${suf}`, nombre: "Prod recepción parcial", precioCompra: 12, precioVenta: 25 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [prod]);
+
+    const oc = await request(app)
+      .post("/api/v1/compras")
+      .set(auth)
+      .send({ proveedorId: prov, lineas: [{ productoId: prod, cantidad: 5, precioUnitario: 12 }] });
+    const compraId = oc.body.data.id;
+    const detalleCompraId = oc.body.data.lineas[0].id;
+    await request(app).post(`/api/v1/compras/${compraId}/enviar`).set(auth);
+
+    // Recibir 2 de 5 → sigue enviada, stock 2, CxP por lo recibido
+    const parcial = await request(app)
+      .post(`/api/v1/compras/${compraId}/recibir`)
+      .set(auth)
+      .send({ lineas: [{ detalleCompraId, cantidadRecibida: 2 }] });
+    expect(parcial.status).toBe(200);
+    expect(parcial.body.data.estado).toBe("enviada");
+    expect(parcial.body.data.totalRecibido).toBeCloseTo(24, 2);
+    expect(parcial.body.data.lineas[0].cantidadRecibida).toBe(2);
+    expect(parcial.body.data.lineas[0].recibida).toBe(false);
+
+    const stock1 = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [prod]);
+    expect(Number(stock1.rows[0]?.stock)).toBe(2);
+
+    // CxP acumulada y pago parcial permitido con la OC aún enviada
+    const cxp1 = await request(app).get("/api/v1/compras/cxp").set(auth);
+    const item1 = cxp1.body.data.find((x: { compraId: number }) => x.compraId === compraId);
+    expect(item1.saldo).toBeCloseTo(24, 2);
+    const pago = await request(app).post(`/api/v1/compras/${compraId}/pagos`).set(auth).send({ monto: 10, metodo: "transferencia" });
+    expect(pago.status).toBe(200);
+    expect(pago.body.data.saldoPendiente).toBeCloseTo(14, 2);
+
+    // Completar el resto → recibida, stock 5, CxP 60
+    const resto = await request(app)
+      .post(`/api/v1/compras/${compraId}/recibir`)
+      .set(auth)
+      .send({ lineas: [{ detalleCompraId, cantidadRecibida: 3 }] });
+    expect(resto.status).toBe(200);
+    expect(resto.body.data.estado).toBe("recibida");
+    expect(resto.body.data.totalRecibido).toBeCloseTo(60, 2);
+    const stock2 = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [prod]);
+    expect(Number(stock2.rows[0]?.stock)).toBe(5);
+    const cxp2 = await request(app).get("/api/v1/compras/cxp").set(auth);
+    const item2 = cxp2.body.data.find((x: { compraId: number }) => x.compraId === compraId);
+    expect(item2.saldo).toBeCloseTo(50, 2);
+  });
+
+  it("COMPRAS: sobrerecepción rechazada (422 SOBRE_RECEPCION)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const prov = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `Sobre-${suf}` })).body.data.id;
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `SOB-${suf}`, nombre: "Prod sobrerecepción", precioCompra: 10, precioVenta: 20 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [prod]);
+    const oc = await request(app)
+      .post("/api/v1/compras")
+      .set(auth)
+      .send({ proveedorId: prov, lineas: [{ productoId: prod, cantidad: 5, precioUnitario: 10 }] });
+    const compraId = oc.body.data.id;
+    const detalleCompraId = oc.body.data.lineas[0].id;
+    await request(app).post(`/api/v1/compras/${compraId}/enviar`).set(auth);
+
+    const sobre = await request(app)
+      .post(`/api/v1/compras/${compraId}/recibir`)
+      .set(auth)
+      .send({ lineas: [{ detalleCompraId, cantidadRecibida: 6 }] });
+    expect(sobre.status).toBe(422);
+    expect(sobre.body.error.code).toBe("SOBRE_RECEPCION");
+
+    // La línea de otra compra no pertenece → 422 LINEA_NO_EN_COMPRA y sin cambios
+    const otra = await request(app)
+      .post("/api/v1/compras")
+      .set(auth)
+      .send({ proveedorId: prov, lineas: [{ productoId: prod, cantidad: 2, precioUnitario: 10 }] });
+    const otroDetalle = otra.body.data.lineas[0].id;
+    const ajeno = await request(app)
+      .post(`/api/v1/compras/${compraId}/recibir`)
+      .set(auth)
+      .send({ lineas: [{ detalleCompraId: otroDetalle, cantidadRecibida: 1 }] });
+    expect(ajeno.status).toBe(422);
+    expect(ajeno.body.error.code).toBe("LINEA_NO_EN_COMPRA");
+    const stock = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [prod]);
+    expect(Number(stock.rows[0]?.stock)).toBe(0);
+  });
+
+  it("COMPRAS: cancelar OC con recepción parcial conserva stock y CxP acumulada", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const prov = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `CancP-${suf}` })).body.data.id;
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `CP-${suf}`, nombre: "Prod cancelar parcial", precioCompra: 8, precioVenta: 20 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 0 WHERE id = $1", [prod]);
+    const oc = await request(app)
+      .post("/api/v1/compras")
+      .set(auth)
+      .send({ proveedorId: prov, lineas: [{ productoId: prod, cantidad: 4, precioUnitario: 8 }] });
+    const compraId = oc.body.data.id;
+    const detalleCompraId = oc.body.data.lineas[0].id;
+    await request(app).post(`/api/v1/compras/${compraId}/enviar`).set(auth);
+    await request(app)
+      .post(`/api/v1/compras/${compraId}/recibir`)
+      .set(auth)
+      .send({ lineas: [{ detalleCompraId, cantidadRecibida: 1 }] });
+
+    const cancelada = await request(app).post(`/api/v1/compras/${compraId}/cancelar`).set(auth);
+    expect(cancelada.status).toBe(200);
+    expect(cancelada.body.data.estado).toBe("cancelada");
+    expect(cancelada.body.data.totalRecibido).toBeCloseTo(8, 2);
+
+    // El stock recibido se conserva y la CxP por lo recibido sigue vigente
+    const stock = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [prod]);
+    expect(Number(stock.rows[0]?.stock)).toBe(1);
+    const cxp = await request(app).get("/api/v1/compras/cxp").set(auth);
+    const item = cxp.body.data.find((x: { compraId: number }) => x.compraId === compraId);
+    expect(item.saldo).toBeCloseTo(8, 2);
+  });
+
+  it("COMPRAS: solicitud pasa a entregada al completarse la línea (parcial no entrega)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authT = { Authorization: `Bearer ${tecnicoToken}` };
+    const suf = Date.now();
+    const prov = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `Ent-${suf}` })).body.data.id;
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `ENT-${suf}`, nombre: "Refacción entregada", precioCompra: 10, precioVenta: 22 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 0, proveedor_favorito_id = $2 WHERE id = $1", [prod, prov]);
+
+    const sol = (await request(app).post("/api/v1/compras/solicitudes").set(authT).send({ productoId: prod, cantidad: 2 })).body.data.id;
+    const aprobada = await request(app).post("/api/v1/compras/solicitudes/aprobar").set(auth).send({ solicitudes: [sol] });
+    const compraId = aprobada.body.data.compras[0].id;
+    const detalle = await request(app).get(`/api/v1/compras/${compraId}`).set(auth);
+    const detalleCompraId = detalle.body.data.lineas[0].id;
+    await request(app).post(`/api/v1/compras/${compraId}/enviar`).set(auth);
+
+    // Recepción parcial (1 de 2) → la solicitud sigue aprobada
+    await request(app)
+      .post(`/api/v1/compras/${compraId}/recibir`)
+      .set(auth)
+      .send({ lineas: [{ detalleCompraId, cantidadRecibida: 1 }] });
+    let estado = await pool.query<{ estado: string }>("SELECT estado FROM solicitudes_reabastecimiento WHERE id = $1", [sol]);
+    expect(estado.rows[0]?.estado).toBe("aprobada");
+
+    // Completar la línea → solicitud entregada
+    await request(app)
+      .post(`/api/v1/compras/${compraId}/recibir`)
+      .set(auth)
+      .send({ lineas: [{ detalleCompraId, cantidadRecibida: 1 }] });
+    estado = await pool.query<{ estado: string }>("SELECT estado FROM solicitudes_reabastecimiento WHERE id = $1", [sol]);
+    expect(estado.rows[0]?.estado).toBe("entregada");
+  });
+
   it("DASHBOARD: resumen devuelve la estructura esperada", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const res = await request(app).get("/api/v1/dashboard/resumen").set(auth);

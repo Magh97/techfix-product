@@ -24,6 +24,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 - Usuario demo `tecnico/tecnico1234` en el seed.
 - Manual de usuario en `docs/08-manual-usuario.md`.
 - **Impresión térmica del ticket (US-VEN-09/US-VEN-10):** formato de recibo 80mm (fuente mono, folio, líneas, subtotal/IVA/total, cambio, vencimiento) vía `window.print()` con `@media print` que aísla el recibo del resto de la app; reimpresión desde Ventas marcada como "COPIA".
+- **Recepción parcial por línea de OC (US-COM-03/04):** `POST /compras/:id/recibir` con body opcional (`{ lineas: [{ detalleCompraId, cantidadRecibida }] }`); sin body recibe todo lo pendiente. La OC se mantiene en `enviada` con badge "Recepción parcial" hasta completar todas las líneas. **CxP acumulada por lo recibido** (`compras.total_recibido`) y pagos habilitados desde la primera recepción; solicitudes aprobadas → `entregada` **al completarse la línea** y **solo las ligadas a esa OC**; cancelar una OC con recepción parcial conserva stock y CxP; sobrerecepción bloqueada (422 `SOBRE_RECEPCION`). Migración `0012_recepcion_parcial`.
 
 ## [0.1.0] — 2026-08-03
 

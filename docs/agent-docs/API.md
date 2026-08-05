@@ -84,7 +84,7 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 | POST | /compras/solicitudes/aprobar | admin | {solicitudes[]} | {creadas[], yaNoPendientes[]} (OC por proveedor) |
 | POST | /compras/solicitudes/:id/rechazar | admin | {motivo} | solicitud |
 | POST | /compras/solicitudes/:id/cancelar | tecnico/admin | {motivo} (técnico solo suya pendiente) | solicitud |
-| POST | /compras/:id/enviar · /recibir | admin | -- / {lineas[{detalleCompraId, cantidadRecibida}]} | compra (recibir: ENTRADA + CxP + solicitudes→entregada) |
+| POST | /compras/:id/enviar · /recibir | admin | -- / `{ lineas?: [{detalleCompraId, cantidadRecibida}] }` (sin body = todo) | compra (recibir: ENTRADA + CxP por lo recibido + solicitudes de la OC → entregada al completar línea) |
 | GET / POST | /compras/:id/pagos | admin | -- / {monto, metodo} | pagos / 201 |
 
 ## Caja / Finanzas
@@ -137,6 +137,8 @@ Tipos: NOT-02 listo · NOT-03 cotización · NOT-05 solicitud refacción · NOT-
 | QUOTE_NOT_APPROVED | 422 | reparación sin cotización aprobada |
 | INSUFFICIENT_STOCK | 422 | stock insuficiente |
 | STOCK_RESERVED | 422 | no hay reservas suficientes |
+| SOBRE_RECEPCION | 422 | recibir más de lo pendiente de la línea |
+| LINEA_NO_EN_COMPRA | 422 | línea que no pertenece a la OC |
 | STOCK_SUFICIENTE | 422 | hay stock; no aplica sustitución |
 | SUSTITUCION_NOT_FOUND / SUSTITUCION_CERRADA | 404 / 409 | sustitución inexistente / ya resuelta |
 | SOLICITUD_NOT_FOUND / SOLICITUD_NO_PENDIENTE | 404 / 409 | solicitud inexistente / no pendiente |

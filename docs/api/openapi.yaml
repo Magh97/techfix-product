@@ -791,13 +791,18 @@ paths:
   /compras/{compraId}/recibir:
     post:
       tags: [Compras]
-      summary: Registrar entrada de mercancía (inventario += , genera CxP)
+      summary: Registrar entrada de mercancía (inventario += , CxP por lo recibido)
+      description: >-
+        Sin body (o sin `lineas`) recibe todo lo pendiente de la OC. Con `lineas` recibe por líneas
+        (recepción parcial): la OC se mantiene en `enviada` con badge "Recepción parcial" hasta que
+        todas las líneas estén completas → `recibida`. Sobrerecepción bloqueada (422 SOBRE_RECEPCION);
+        líneas ajenas a la OC → 422 LINEA_NO_EN_COMPRA.
       operationId: recibirCompra
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/compraId"
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
@@ -810,16 +815,22 @@ paths:
                     required: [detalleCompraId, cantidadRecibida]
                     properties:
                       detalleCompraId: { type: integer }
-                      cantidadRecibida: { type: integer, minimum: 0 }
+                      cantidadRecibida: { type: integer, minimum: 1 }
       responses:
         "200":
-          description: Mercancía recibida (solicitudes aprobadas → entregada)
+          description: Mercancía recibida (CxP acumulada; solicitudes de la OC → entregada al completar la línea)
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data: { type: object }
+        "422":
+          description: Sobrerecepción o línea ajena a la OC
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /compras/reabastecimiento:
     get:

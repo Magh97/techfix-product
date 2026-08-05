@@ -69,6 +69,9 @@
 | `CATALOGO_CON_HIJOS` | 409 | No se elimina un nodo con hijos |
 | `CATALOGO_CON_PRODUCTOS` | 409 | No se elimina un nodo con productos asignados |
 | `SUPPLIER_HAS_PURCHASES` | 409 | No se desactiva un proveedor con compras activas |
+| `SOBRE_RECEPCION` | 422 | Recibir más de lo pendiente de la línea (BR-COM-10) |
+| `LINEA_NO_EN_COMPRA` | 422 | Línea de `detalle_compra` que no pertenece a la OC (BR-COM-10) |
+| `CANTIDAD_INVALIDA` | 422 | Cantidad a recibir no positiva |
 
 ---
 
@@ -185,11 +188,11 @@
 | POST | `/compras/solicitudes/:solicitudId/rechazar` | admin | `{ motivo }` | `{ data: Solicitud }` | `SOLICITUD_NO_PENDIENTE` |
 | POST | `/compras/solicitudes/:solicitudId/cancelar` | tecnico/admin | `{ motivo }` (técnico solo su propia solicitud `pendiente`) | `{ data: Solicitud }` | `SOLICITUD_NO_PENDIENTE`, `FORBIDDEN` |
 | POST | `/compras/:id/enviar` | admin | -- | `{ data }` (estado enviada) | `ORDER_STATE_INVALID` |
-| POST | `/compras/:id/recibir` | admin | `{ lineas: [{ detalleCompraId, cantidadRecibida }] }` | `{ data }` (ENTRADA + CxP; solicitudes aprobadas → `entregada`) | `CONFLICT` |
+| POST | `/compras/:id/recibir` | admin | `{ lineas?: [{ detalleCompraId, cantidadRecibida }] }` (sin body = recibir todo lo pendiente) | `{ data }` (ENTRADA + CxP por lo recibido; solicitudes de la OC → `entregada`; `recibida` solo si todas las líneas completas) | `SOBRE_RECEPCION`, `LINEA_NO_EN_COMPRA`, `CONFLICT` |
 | GET | `/compras/:id/pagos` | admin | -- | `{ data }` | `NOT_FOUND` |
 | POST | `/compras/:id/pagos` | admin | `{ monto, metodo }` | `201` | `VALIDATION_ERROR` |
 
-> Estados de solicitud: `pendiente → aprobada → entregada` (o `rechazada`/`cancelada`). Al **recibir** la OC, las solicitudes aprobadas del producto pasan a `entregada` y se registra el historial en la orden (BR-COM-08).
+> Estados de solicitud: `pendiente → aprobada → entregada` (o `rechazada`/`cancelada`). Al **recibir** la OC, las solicitudes aprobadas del producto pasan a `entregada` y se registra el historial en la orden (BR-COM-08). Con recepción parcial (BR-COM-09..11), la entrega ocurre **al completarse la línea** y **solo para las solicitudes ligadas a esa OC**.
 
 ## Finanzas y Caja
 
