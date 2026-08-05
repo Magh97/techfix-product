@@ -18,6 +18,14 @@ async function main() {
     [hashV]
   );
 
+  const hashT = await bcrypt.hash("tecnico1234", 10);
+  await pool.query(
+    `INSERT INTO usuarios (nombre, usuario, password_hash, rol)
+     VALUES ('Técnico', 'tecnico', $1, 'tecnico')
+     ON CONFLICT (usuario) DO NOTHING`,
+    [hashT]
+  );
+
   // --- Taxonomía: categorías = raíces del árbol de catálogos ---
   // Demo de 4 niveles: PC → Componentes → RAM → DDR5 (tags como especificaciones)
   interface NodoCatalogo {
@@ -237,7 +245,7 @@ async function main() {
     );
   }
 
-  console.log("Seed completado. Usuarios: admin/admin1234 · vendedor/vendedor1234");
+  console.log("Seed completado. Usuarios: admin/admin1234 · vendedor/vendedor1234 · tecnico/tecnico1234");
   await pool.end();
 }
 
