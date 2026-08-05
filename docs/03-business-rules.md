@@ -20,10 +20,14 @@
 |-------|------------|
 | BR-PRD-01 | Todo producto tiene `sku` único. El código de barras es único si se captura. |
 | BR-PRD-02 | Precio de compra y precio de venta > 0. `stock_minimo` >= 0. |
-| BR-PRD-03 | Categorías fijas por tipo: `componente`, `periférico`, `equipo_completo`, `refaccion`, `usado`. |
+| BR-PRD-03 | La clasificación es un **árbol de catálogos** (`catalogos`) de hasta **4 niveles**; la **raíz es la categoría obligatoria** del producto. Existe una raíz "General" por defecto. |
 | BR-PRD-04 | Baja de producto es **lógica** (`is_active=false`). No se elimina si tiene movimientos, ventas u órdenes. |
 | BR-PRD-05 | Cambios de precio quedan auditados (historial con usuario, fecha, valor anterior/nuevo). |
 | BR-PRD-06 | Un producto está en `low_stock` si `stock <= stock_minimo`. |
+| BR-PRD-07 | Todo producto tiene `stock_maximo` (opcional) usado para calcular la cantidad sugerida de reabastecimiento. |
+| BR-PRD-08 | Un producto puede tener un `proveedor_favorito_id`; es la primera opción al sugerir reabastecimiento. |
+| BR-PRD-09 | Los nodos de catálogo y productos usan **tags** (especificaciones y compatibilidad); los **sustitutos** se sugieren por coincidencia de tags de compatibilidad. |
+| BR-PRD-10 | Los **kits** (ensamblados BOM) se excluyen de las sugerencias de reabastecimiento. |
 
 ## 3. Inventario y Stock
 
@@ -43,8 +47,9 @@
 
 ```
 pendiente → en_diagnostico → cotizado → en_reparacion → listo → entregado
-                 │  └────────────┘      │                    │
-                 └─────── cancelado ◄───┴────────────────────┘
+                 │  └────────────┘      │        │            │
+                 │                       ▼        │            │
+                 └─────── cancelado ◄── sustitucion_pendiente ──┘
 ```
 
 | Transición | Quién | Condición adicional |
@@ -54,13 +59,19 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | `en_diagnostico → cancelado` | Vendedor/Admin | Motivo obligatorio |
 | `cotizado → en_reparacion` | Técnico | Cotización aprobada por el cliente |
 | `cotizado → cancelado` | Vendedor/Admin | Cotización rechazada o expirada; libera reservas |
+| `cotizado → sustitucion_pendiente` | Técnico | Se propone una sustitución de pieza sin stock (ver §15) |
 | `en_reparacion → listo` | Técnico | Reservas convertidas a consumo; mano de obra registrada |
 | `listo → entregado` | Vendedor | Cobro completado o CxC registrada; firma de recepción |
 | `listo → cancelado` | Admin | Motivo obligatorio; reversión de consumo (sólo admin) |
 | `en_reparacion → en_diagnostico` | Técnico | Si se requiere nueva cotización adicional |
+| `en_reparacion → sustitucion_pendiente` | Técnico | Se propone una sustitución durante la reparación |
+| `sustitucion_pendiente → cotizado` | Técnico | Sustitución **aceptada** (la cotización queda actualizada) o **rechazada** (vuelve a cotizado) |
+| `sustitucion_pendiente → en_reparacion` | Técnico | Sustitución **aceptada** o **rechazada**; orden vuelve a reparación |
+| `sustitucion_pendiente → cancelado` | Vendedor/Admin | Motivo obligatorio; libera reservas pendientes |
 
 - Todo cambio de estado se registra en `historial_orden` con usuario, fecha y nota.
 - **BR-SER-01 (Firma de recepción):** la entrega (SER-10) captura la firma del cliente en un **canvas táctil** que se guarda como **PNG en base64** en `ordenes_servicio.firma_recepcion`. Si el equipo no tiene pantalla táctil, el vendedor puede usar el mouse; la firma es obligatoria para cerrar la orden en estado `entregado`.
+- **BR-SER-02 (Sustitución):** el estado `sustitucion_pendiente` es una **pausa** para consultar al cliente; nunca es un estado final (ver §15).
 
 ## 5. Retrasos y Notificaciones
 
@@ -128,6 +139,9 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | BR-COM-03 | La recepción genera la CxP por el monto total neto de la compra (sin IVA); pagos parciales permitidos. |
 | BR-COM-04 | Comparación de precios usa el historial de compras por producto/proveedor. |
 | BR-COM-05 | Solo el **admin** crea/recibe órdenes de compra. |
+| BR-COM-06 | **Solicitudes de reabastecimiento:** un técnico (o admin) crea una solicitud de un producto solo si `stock < cantidad` requerida (422 `STOCK_SUFICIENTE` en caso contrario). |
+| BR-COM-07 | Estados de solicitud: `pendiente → aprobada → entregada` (o `rechazada` / `cancelada`). El **admin** aprueba (crea la OC por proveedor) o rechaza con motivo. El técnico autor puede **cancelar** su solicitud solo en `pendiente`. |
+| BR-COM-08 | Al **recibir** una OC, las solicitudes **aprobadas** de cada producto pasan a `entregada` y se inserta en el historial de la orden: "Refacción {producto} llegó · OC {folio}". |
 
 ## 11. Caja (Corte y Cierre)
 
@@ -144,10 +158,33 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | Regla | Definición |
 |-------|------------|
 | BR-ROL-01 | Roles: `admin`, `vendedor`, `tecnico`. Un usuario tiene exactamente un rol. |
-| BR-ROL-02 | `admin`: todo. `vendedor`: CRM, órdenes (crear/entregar), ventas, cobros, notificaciones, corte de caja. `tecnico`: diagnóstico, estados, consumo de piezas, mano de obra. |
-| BR-ROL-03 | Ajustes de inventario, cancelación de ventas fuera de plazo, cierre de caja, configuración, usuarios y reportes avanzados: **solo admin**. |
+| BR-ROL-02 | `admin`: todo, incl. **reabastecimiento** y compras. `vendedor`: CRM, órdenes (crear/entregar), ventas, cobros, notificaciones, corte de caja, registrar respuesta de sustitución. `tecnico`: diagnóstico, estados, consumo de piezas, mano de obra, **proponer sustituciones** y **solicitar refacciones**. |
+| BR-ROL-03 | Ajustes de inventario, cancelación de ventas fuera de plazo, cierre de caja, configuración, usuarios, reportes avanzados, **aprobar solicitudes y crear OC**: **solo admin**. |
 | BR-ROL-04 | Descuentos >10%: requiere rol `admin` (BR-VEN-05). |
 | BR-ROL-05 | Toda operación crítica (venta, ajuste, cancelación, cierre de caja, descuento >5%) se registra en auditoría con usuario, fecha, antes/después. |
+
+## 14. Reabastecimiento (sugerencias)
+
+| Regla | Definición |
+|-------|------------|
+| BR-REA-01 | El listado de **sugerencias** muestra productos cuyo `stock < cantidad sugerida`, agrupados por proveedor. |
+| BR-REA-02 | Cantidad sugerida = `stock_maximo − stock` si `stock_maximo > 0`; en caso contrario `stock_minimo × 2 − stock`. El admin puede **editar** la cantidad. |
+| BR-REA-03 | Proveedor de cada línea: **favorito** del producto → si no, el **último proveedor** con compra (enviada/recibida) → si no, **sin proveedor**. |
+| BR-REA-04 | Un producto con OC **activa** (no recibida/cancelada) muestra "Ya en OC" con su folio y no se incluye por defecto en la OC nueva. |
+| BR-REA-05 | "Crear OC" agrupa las líneas del **mismo proveedor** con el `precio_compra` actual; los productos sin proveedor quedan pendientes. |
+| BR-REA-06 | Las solicitudes de técnicos sin proveedor no pueden aprobarse hasta asignar proveedor; quedan `pendiente`. |
+
+## 15. Sustitución con validación del cliente
+
+| Regla | Definición |
+|-------|------------|
+| BR-SUS-01 | Se puede **proponer** sustitución solo en órdenes `cotizado` o `en_reparacion`, sobre una línea de refacción cuyo stock es insuficiente. |
+| BR-SUS-02 | El sustituto debe ser **sugerido por el sistema** (coincidencia de tags de compatibilidad) y tener **stock disponible**. |
+| BR-SUS-03 | Al proponer, la orden pasa a `sustitucion_pendiente` y se notifica al admin (**NOT-06**). |
+| BR-SUS-04 | Si la cotización estaba **aprobada**, al proponer se **libera la reserva del original** y se **reserva el sustituto**. |
+| BR-SUS-05 | **Aceptar:** la línea de cotización se reemplaza por el sustituto con **su precio**; se recalculan subtotal, IVA y total (`calcMoney`); la orden vuelve a `en_reparacion` (o `cotizado`). |
+| BR-SUS-06 | **Rechazar:** se crea automáticamente una **solicitud de reabastecimiento** del original (BR-COM-06) y la orden vuelve a su estado previo. |
+| BR-SUS-07 | **Cancelar** la propuesta la retira y devuelve la orden a su estado; solo técnico/admin con motivo. |
 
 ## 13. Retención de Datos y Respaldo
 

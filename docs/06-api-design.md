@@ -13,7 +13,7 @@
 | Auth | Header `Authorization: Bearer <jwt>` en todos los endpoints salvo `POST /auth/login` |
 | Formato éxito | `{ data: T }` · colecciones: `{ data: T[], meta: { page, pageSize, totalItems, totalPages } }` |
 | Formato error | `{ error: { code, message, details?: [{ field, reason }] } }` |
-| Paginación | `?page=1&pageSize=20` (max `pageSize=100`); listas siempre paginadas |
+| Paginación | `?page=1&pageSize=20` (max `pageSize=100`); presets de UI: 10/25/50; listas siempre paginadas |
 | Fechas | ISO 8601 UTC (`TIMESTAMPTZ`) |
 | Montos | Números decimales (fuente `NUMERIC(19,4)`); redondeo solo en impresión |
 | Naming | camelCase en JSON; singular para recursos, plural para listas |
@@ -56,6 +56,19 @@
 | `CUSTOMER_NOT_FOUND` | 404 | Cliente no existe (precondición SER-01) |
 | `CONFLICT` | 409 | Conflicto genérico (duplicado, estado) |
 | `NOTIFICATION_FAILED` | 422 | Envío WhatsApp/correo falló (se registra reintento) |
+| `QUOTE_NOT_FOUND` | 404 | Cotización no encontrada o no activa |
+| `QUOTE_ALREADY_PROCESSED` | 409 | Cotización ya aprobada/rechazada |
+| `STOCK_SUFICIENTE` | 422 | Hay stock suficiente; no aplica sustitución (BR-SUS-01) |
+| `SUSTITUCION_NOT_FOUND` | 404 | Sustitución no encontrada |
+| `SUSTITUCION_CERRADA` | 409 | Sustitución ya resuelta (aceptada/rechazada/cancelada) |
+| `SOLICITUD_NOT_FOUND` | 404 | Solicitud de reabastecimiento no encontrada |
+| `SOLICITUD_NO_PENDIENTE` | 409 | Solo se puede operar sobre solicitudes `pendiente` |
+| `SOLICITUD_CERRADA` | 409 | La solicitud ya fue cerrada |
+| `CATALOGO_NOT_FOUND` | 404 | Nodo de catálogo no encontrado |
+| `CATALOGO_DUPLICADO` | 409 | Ya existe un nodo con el mismo nombre en el mismo nivel |
+| `CATALOGO_CON_HIJOS` | 409 | No se elimina un nodo con hijos |
+| `CATALOGO_CON_PRODUCTOS` | 409 | No se elimina un nodo con productos asignados |
+| `SUPPLIER_HAS_PURCHASES` | 409 | No se desactiva un proveedor con compras activas |
 
 ---
 
@@ -65,7 +78,9 @@
 |--------|------|------|---------|----------|--------|
 | POST | `/auth/login` | -- | `{ usuario, password }` | `{ data: { token, refreshToken, usuario: { id, nombre, rol } } }` | `UNAUTHORIZED` |
 | POST | `/auth/refresh` | -- | `{ refreshToken }` | `{ data: { token, refreshToken } }` | `UNAUTHORIZED` |
-| POST | `/auth/logout` | JWT | -- | `204` | -- |
+| POST | `/auth/logout` | JWT | `{ refreshToken }` | `204` (revoca el refresh) | -- |
+
+> **Sesiones:** refresh tokens se guardan hasheados en `refresh_tokens` (rotación + revocación en logout). Un worker diario elimina tokens vencidos/revocados (housekeeping).
 
 ## Usuarios (admin)
 
@@ -76,21 +91,26 @@
 | PUT | `/usuarios/:id` | admin | `{ nombre, rol, isActive? }` | `{ data: Usuario }` | `NOT_FOUND`, `FORBIDDEN` |
 | PATCH | `/usuarios/:id/password` | admin | `{ password }` | `204` | `NOT_FOUND` |
 
-## Catálogo y Productos (vendedor/admin)
+## Catálogo y Productos (vendedor/admin; escritura admin)
 
 | Method | Path | Auth | Request | Response | Errors |
 |--------|------|------|---------|----------|--------|
-| GET | `/productos` | JWT | `?page&pageSize&q&categoria&marca&soloActivos&stockBajo` | `{ data, meta }` | -- |
+| GET | `/productos` | JWT | `?page&pageSize&q&catalogoId&tags&soloActivos&stockBajo` | `{ data, meta }` | -- |
 | GET | `/productos/:id` | JWT | -- | `{ data: Producto + stock }` | `NOT_FOUND` |
 | GET | `/productos/por-codigo/:codigo` | vendedor/admin | -- | `{ data: Producto }` | `NOT_FOUND` |
-| POST | `/productos` | admin | `{ categoriaId, sku, codigoBarras?, nombre, marca?, modelo?, precioCompra, precioVenta, stockMinimo }` | `201 { data: Producto }` | `VALIDATION_ERROR`, `CONFLICT` |
+| POST | `/productos` | admin | `{ categoriaId, catalogoId?, sku, codigoBarras?, nombre, marca?, modelo?, precioCompra, precioVenta, stockMinimo, stockMaximo?, especificaciones? (tags), proveedorFavoritoId? }` | `201 { data: Producto }` | `VALIDATION_ERROR`, `CONFLICT` |
 | PUT | `/productos/:id` | admin | campos editables | `{ data: Producto }` | `NOT_FOUND` |
 | PATCH | `/productos/:id/desactivar` | admin | `{ motivo? }` | `204` | `NOT_FOUND`, `FORBIDDEN` |
 | GET | `/productos/:id/movimientos` | admin | `?page&pageSize` | `{ data, meta }` | `NOT_FOUND` |
 | POST | `/productos/:id/ajustar` | admin | `{ cantidad, motivo }` | `{ data: Movimiento }` | `VALIDATION_ERROR`, `FORBIDDEN` |
-| GET | `/categorias` | JWT | -- | `{ data: Categoria[] }` | -- |
-| POST | `/categorias` | admin | `{ nombre, tipo }` | `201` | `VALIDATION_ERROR` |
+| GET | `/catalogos` | admin | -- | `{ data: Catalogo[] }` (árbol) | `FORBIDDEN` |
+| POST | `/catalogos` | admin | `{ nombre, parentId? (máx 4 niveles), tagsSugeridas?, tagsCompatibilidad? }` | `201 { data: Catalogo }` | `CATALOGO_DUPLICADO`, `VALIDATION_ERROR` |
+| PUT | `/catalogos/:catalogoId` | admin | campos editables | `{ data: Catalogo }` | `CATALOGO_NOT_FOUND` |
+| DELETE | `/catalogos/:catalogoId` | admin | -- | `{ data }` | `CATALOGO_CON_HIJOS`, `CATALOGO_CON_PRODUCTOS` |
 | POST | `/productos/:id/bom` | admin | `{ componentes: [{ productoId, cantidad }] }` | `201` | `VALIDATION_ERROR` (solo kits) |
+| GET | `/productos/:id/sugerencias` | JWT | -- | `{ data: { compatibles, faltante? } }` | `NOT_FOUND` |
+
+> **Taxonomía:** la raíz del árbol `catalogos` es la **categoría** obligatoria del producto (`categoriaId`); `catalogoId` apunta al nodo hoja. Máximo 4 niveles.
 
 ## Clientes (vendedor/admin)
 
@@ -123,6 +143,18 @@
 | POST | `/ordenes/:id/notificar` | vendedor/admin | `{ tipo: listo\|cotizacion, canal? }` | `{ data: Notificacion }` | `NOTIFICATION_FAILED` |
 | GET | `/ordenes/:id/historial` | JWT | -- | `{ data: Historial[] }` | `NOT_FOUND` |
 
+### Sustituciones (técnico/admin) — validación del cliente
+
+| Method | Path | Auth | Request | Response | Errors |
+|--------|------|------|---------|----------|--------|
+| POST | `/ordenes/:id/sustituciones` | tecnico/admin | `{ lineaId, productoId (sustituto), justificacion? }` | `201 { data: Sustitucion }` (orden → `sustitucion_pendiente`, NOT-06) | `ORDER_STATE_INVALID`, `STOCK_SUFICIENTE`, `INSUFFICIENT_STOCK`, `NOT_FOUND` |
+| GET | `/ordenes/:id/sustituciones` | tecnico/admin | -- | `{ data: Sustitucion[] }` | `NOT_FOUND` |
+| POST | `/ordenes/:id/sustituciones/:sid/aceptar` | tecnico/admin | -- | `{ data: Sustitucion }` (reemplaza línea con precio del sustituto, recalcula total; orden vuelve a su estado) | `SUSTITUCION_CERRADA`, `INSUFFICIENT_STOCK`, `STOCK_RESERVED` |
+| POST | `/ordenes/:id/sustituciones/:sid/rechazar` | tecnico/admin | `{ motivo }` | `{ data: Sustitucion }` (crea solicitud de reabastecimiento del original; orden vuelve a su estado) | `SUSTITUCION_CERRADA` |
+| POST | `/ordenes/:id/sustituciones/:sid/cancelar` | tecnico/admin | `{ motivo }` | `{ data: Sustitucion }` | `SUSTITUCION_CERRADA` |
+
+> Estados de sustitución: `pendiente → aceptada | rechazada | cancelada`. Se propone solo en órdenes `cotizado`/`en_reparacion`, sobre líneas sin stock suficiente y con sustituto sugerido con stock (BR-SUS-01..07).
+
 ## Ventas / POS
 
 | Method | Path | Auth | Request | Response | Errors |
@@ -146,10 +178,18 @@
 | PUT | `/proveedores/:id` | admin | campos editables | `{ data }` | `NOT_FOUND` |
 | GET | `/compras` | admin | `?page&pageSize&estado&proveedorId` | `{ data, meta }` | `FORBIDDEN` |
 | POST | `/compras` | admin | `{ proveedorId, lineas: [{ productoId, cantidad, precioUnitario }] }` | `201 { data: Compra }` | `VALIDATION_ERROR` |
+| GET | `/compras/reabastecimiento` | admin | -- | `{ data: { grupos: [{ proveedorId, proveedorNombre, esFavorito, lineas: [{ productoId, sku, nombre, stock, sugerido, enOC, folioOC }] }] } }` | `FORBIDDEN` |
+| POST | `/compras/solicitudes` | tecnico/admin | `{ productoId, cantidad, ordenId?, motivo? }` (solo si `stock < cantidad`) | `201 { data: Solicitud }` (NOT-05 al admin) | `STOCK_SUFICIENTE`, `NOT_FOUND` |
+| GET | `/compras/solicitudes` | tecnico/admin | `?page&pageSize&estado&ordenId` (técnico debe enviar `ordenId`) | `{ data, meta }` | `VALIDATION_ERROR` |
+| POST | `/compras/solicitudes/aprobar` | admin | `{ solicitudes: number[] }` | `{ data: { creadas: [], yaNoPendientes: [] } }` (crea OC por proveedor) | `FORBIDDEN`, `NOT_FOUND` |
+| POST | `/compras/solicitudes/:solicitudId/rechazar` | admin | `{ motivo }` | `{ data: Solicitud }` | `SOLICITUD_NO_PENDIENTE` |
+| POST | `/compras/solicitudes/:solicitudId/cancelar` | tecnico/admin | `{ motivo }` (técnico solo su propia solicitud `pendiente`) | `{ data: Solicitud }` | `SOLICITUD_NO_PENDIENTE`, `FORBIDDEN` |
 | POST | `/compras/:id/enviar` | admin | -- | `{ data }` (estado enviada) | `ORDER_STATE_INVALID` |
-| POST | `/compras/:id/recibir` | admin | `{ lineas: [{ detalleCompraId, cantidadRecibida }] }` | `{ data }` (ENTRADA + CxP) | `CONFLICT` |
+| POST | `/compras/:id/recibir` | admin | `{ lineas: [{ detalleCompraId, cantidadRecibida }] }` | `{ data }` (ENTRADA + CxP; solicitudes aprobadas → `entregada`) | `CONFLICT` |
 | GET | `/compras/:id/pagos` | admin | -- | `{ data }` | `NOT_FOUND` |
 | POST | `/compras/:id/pagos` | admin | `{ monto, metodo }` | `201` | `VALIDATION_ERROR` |
+
+> Estados de solicitud: `pendiente → aprobada → entregada` (o `rechazada`/`cancelada`). Al **recibir** la OC, las solicitudes aprobadas del producto pasan a `entregada` y se registra el historial en la orden (BR-COM-08).
 
 ## Finanzas y Caja
 
@@ -174,6 +214,8 @@
 | PUT | `/plantillas/:tipo` | admin | `{ asunto?, cuerpo }` | `{ data }` | `NOT_FOUND` |
 | POST | `/notificaciones/enviar-manual` | vendedor/admin | `{ clienteId, tipo, ordenId?, canal? }` | `201` | `NOTIFICATION_FAILED` |
 
+> Tipos de notificación: **NOT-02** (equipo listo), **NOT-03** (cotización lista), **NOT-05** (solicitud de refacción → admin), **NOT-06** (sustitución propuesta → admin).
+
 ## Reportes (admin)
 
 | Method | Path | Auth | Request | Response | Errors |
@@ -185,6 +227,14 @@
 | GET | `/reportes/clientes` | admin | `?desde&hasta&top` | `{ data: { frecuentes, ticketPromedio, deudores } }` | `FORBIDDEN` |
 | GET | `/reportes/finanzas` | admin | `?desde&hasta` | `{ data: { ingresos, egresos, utilidad, flujoMensual } }` | `FORBIDDEN` |
 | GET | `/reportes/:tipo/exportar` | admin | `?formato=excel\|pdf&...filtros` | `200` (archivo descargable, `Content-Disposition`) | `FORBIDDEN` |
+
+## Auditoría (admin)
+
+| Method | Path | Auth | Request | Response | Errors |
+|--------|------|------|---------|----------|--------|
+| GET | `/auditoria` | admin | `?page&pageSize&accion&entidad&usuarioId&desde&hasta` | `{ data, meta }` | `FORBIDDEN` |
+
+> Registra eventos críticos (venta, ajuste, cancelación, cierre de caja, descuento >5%) con usuario, fecha, entidad y valores antes/después (BR-ROL-05).
 
 ## Configuración (admin)
 
