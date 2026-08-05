@@ -67,7 +67,7 @@ Open: http://localhost:5173 (client) · http://localhost:3000/api/v1 (API) · :5
 React SPA ──REST/JSON──► Express API ──pg──► PostgreSQL 16
 Express API ──► Worker (retrasos/hora, garantías/día, expiración cotizaciones,
                         housekeeping refresh_tokens, respaldo)
-Worker ──SMTP──► Correo · SPA ──ESC/POS──► Impresora (ticket; impresión pendiente)
+Worker ──SMTP──► Correo · SPA ──window.print──► Impresora térmica 80mm (ticket)
 ```
 
 ### Top 5 Modules

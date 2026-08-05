@@ -103,7 +103,7 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | BR-VEN-01 | La venta descuenta stock en el momento de completarse (SALIDA_VENTA). Bloqueada si no hay stock (BR-INV-01). |
 | BR-VEN-02 | Métodos de pago: `efectivo`, `tarjeta_credito`, `tarjeta_debito`, `transferencia`, `deposito`. Una venta puede tener pagos mixtos. |
 | BR-VEN-03 | En efectivo se calcula el cambio; el registro guarda monto recibido. |
-| BR-VEN-04 | El ticket se emite al completar la venta; formato ESC/POS 80mm; reimpresión se marca "COPIA". |
+| BR-VEN-04 | El ticket se emite al completar la venta; formato térmico 80mm (mono, folio, desglose) imprimido por el navegador (`window.print()` con `@media print`); la reimpresión se marca "COPIA". |
 | BR-VEN-05 | **Descuentos:** vendedor puede aplicar hasta **10%** sin autorización. Descuentos >10% requieren rol **admin**. |
 | BR-VEN-06 | Todo descuento requiere motivo; queda registrado en la venta. |
 | BR-VEN-07 | Cancelación de venta: sólo del mismo día o con autorización admin; reversión de inventario; motivo obligatorio. |

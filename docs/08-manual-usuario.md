@@ -44,7 +44,7 @@ Muestra el resumen del día: ventas, órdenes en curso (incl. retrasadas), produ
 3. Si un producto está sin stock, el botón **Sustitutos** sugiere alternativas compatibles por tags; al usarlo, la línea se reemplaza por el sustituto.
 4. Aplica **descuento**: hasta 10% lo aplica cualquier vendedor; mayor a 10% requiere rol **admin** y motivo.
 5. Selecciona **contado** o **crédito** (para crédito necesitas cliente y respetar su límite/plazo).
-6. Registra el pago; se emite el **ticket** en pantalla (impresión ESC/POS pendiente).
+6. Registra el pago; se emite el **ticket** con formato térmico 80mm (Imprimir → elige la impresora).
 
 ### Ventas (`/ventas`)
 - Listado con filtros por fecha, vendedor, método de pago y estado.
@@ -229,4 +229,4 @@ No por el sistema; la ventana de devolución es de 15 días.
 No. Solo se puede eliminar si no tiene compras asociadas.
 
 **¿El ticket de venta se imprime?**
-El ticket se muestra en pantalla; la impresión térmica (ESC/POS) está pendiente en el backlog.
+Sí. Al completar la venta aparece el ticket en pantalla con formato térmico 80mm; pulsa **Imprimir** y elige tu impresora térmica (o cualquiera con driver) en el diálogo del navegador. Desde **Ventas** puedes reimprimir un ticket (sale marcado **COPIA**).

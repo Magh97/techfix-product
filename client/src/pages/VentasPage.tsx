@@ -112,7 +112,7 @@ export default function VentasPage() {
         </CardBody>
       </Card>
 
-      <TicketDialog venta={ticket} onClose={() => setTicket(null)} />
+      <TicketDialog venta={ticket} onClose={() => setTicket(null)} reimpresion />
     </div>
   );
 }

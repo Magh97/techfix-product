@@ -23,6 +23,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 - **Housekeeping de sesiones (B2):** tabla `refresh_tokens` con rotación/revocación y worker diario que elimina tokens vencidos/revocados; migración `0007_refresh_tokens`.
 - Usuario demo `tecnico/tecnico1234` en el seed.
 - Manual de usuario en `docs/08-manual-usuario.md`.
+- **Impresión térmica del ticket (US-VEN-09/US-VEN-10):** formato de recibo 80mm (fuente mono, folio, líneas, subtotal/IVA/total, cambio, vencimiento) vía `window.print()` con `@media print` que aísla el recibo del resto de la app; reimpresión desde Ventas marcada como "COPIA".
 
 ## [0.1.0] — 2026-08-03
 
