@@ -27,6 +27,20 @@ export const listComprasQuery = z.object({
 
 export const compraIdParams = z.object({ compraId: z.coerce.number().int().positive() });
 
+/* --- Recepción parcial por línea de OC --- */
+
+export const recibirLineaSchema = z.object({
+  detalleCompraId: z.number().int().positive(),
+  cantidadRecibida: z.number().int().positive(),
+});
+
+export const recibirSchema = z
+  .object({
+    // Sin body (o sin `lineas`) se recibe todo lo pendiente de la OC
+    lineas: z.array(recibirLineaSchema).optional(),
+  })
+  .default({});
+
 /* --- Solicitudes de reabastecimiento --- */
 
 export const crearSolicitudSchema = z.object({

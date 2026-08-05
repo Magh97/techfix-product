@@ -8,6 +8,7 @@ export interface CompraRow {
   proveedor_nombre: string;
   estado: "borrador" | "enviada" | "recibida" | "cancelada";
   total_neto: string;
+  total_recibido: string;
   fecha_vencimiento: string | null;
   creada_por: number;
   creador_nombre: string;
@@ -21,6 +22,7 @@ export interface CompraLineaRow {
   sku: string;
   nombre_producto: string;
   cantidad: number;
+  cantidad_recibida: number;
   precio_unitario: string;
 }
 
@@ -117,6 +119,37 @@ export function insertPrecioHistorial(
   );
 }
 
+// Línea de detalle_compra bloqueada (FOR UPDATE) con su pendiente de recepción
+export async function findDetalleCompraForUpdate(client: PoolClient, compraId: number, detalleId: number) {
+  const r = await client.query<{
+    id: number;
+    compra_id: number;
+    producto_id: number;
+    cantidad: number;
+    cantidad_recibida: number;
+    precio_unitario: string;
+  }>(
+    `SELECT id, compra_id, producto_id, cantidad, cantidad_recibida, precio_unitario
+     FROM detalle_compra WHERE id = $1 AND compra_id = $2 FOR UPDATE`,
+    [detalleId, compraId]
+  );
+  return r.rows[0];
+}
+
+export function incrementCantidadRecibida(client: PoolClient, detalleId: number, cantidad: number) {
+  return client.query(
+    "UPDATE detalle_compra SET cantidad_recibida = cantidad_recibida + $2 WHERE id = $1",
+    [detalleId, cantidad]
+  );
+}
+
+export function incrementTotalRecibido(client: PoolClient, compraId: number, monto: number) {
+  return client.query("UPDATE compras SET total_recibido = total_recibido + $2, updated_at = NOW() WHERE id = $1", [
+    compraId,
+    monto,
+  ]);
+}
+
 export function insertPagoProveedor(
   client: PoolClient,
   input: { compraId: number; monto: number; metodo: string; usuarioId: number }
@@ -205,11 +238,12 @@ export function sumPagosCompra(compraId: number) {
   ).then((r) => Number(r.rows[0]?.s ?? 0));
 }
 
-export function listComprasRecibidas() {
+export function listComprasConRecepcion() {
   return query<CompraRow>(
     `SELECT c.*, p.nombre AS proveedor_nombre, u.nombre AS creador_nombre
      FROM compras c JOIN proveedores p ON p.id = c.proveedor_id JOIN usuarios u ON u.id = c.creada_por
-     WHERE c.estado = 'recibida' ORDER BY c.id DESC LIMIT 200`
+     WHERE c.total_recibido > 0 AND c.estado <> 'borrador'
+     ORDER BY c.id DESC LIMIT 200`
   ).then((r) => r.rows);
 }
 
@@ -383,14 +417,14 @@ export function resolverSolicitud(
   return query(`UPDATE solicitudes_reabastecimiento SET ${sets.join(", ")} WHERE id = $1`, vals);
 }
 
-// Al recibir una OC: las solicitudes aprobadas del producto pasan a "entregada"
-export function entregarSolicitudesProducto(client: PoolClient, productoId: number, usuarioId: number) {
+// Al completarse la línea de una OC: las solicitudes aprobadas ligadas a ESA OC pasan a "entregada"
+export function entregarSolicitudesProducto(client: PoolClient, productoId: number, compraId: number, usuarioId: number) {
   return client.query<{ orden_id: number | null }>(
     `UPDATE solicitudes_reabastecimiento s
-     SET estado = 'entregada', resuelto_por = $2, resuelto_at = NOW()
-     WHERE s.producto_id = $1 AND s.estado = 'aprobada'
+     SET estado = 'entregada', resuelto_por = $3, resuelto_at = NOW()
+     WHERE s.producto_id = $1 AND s.compra_id = $2 AND s.estado = 'aprobada'
      RETURNING s.orden_id`,
-    [productoId, usuarioId]
+    [productoId, compraId, usuarioId]
   ).then((r) => r.rows);
 }
 

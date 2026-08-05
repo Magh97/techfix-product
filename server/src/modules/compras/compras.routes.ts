@@ -3,7 +3,7 @@ import { created, ok, paginated } from "../../shared/http";
 import { AppError } from "../../shared/errors";
 import { requireAuth, requireRole, type AuthedRequest } from "../../shared/middleware/auth";
 import { getValidated, validate } from "../../shared/validation";
-import { compraIdParams, crearCompraSchema, listComprasQuery, pagoCompraSchema, crearSolicitudSchema, listSolicitudesQuery, aprobarSolicitudesSchema, resolverSolicitudSchema, solicitudIdParams } from "./compras.schema";
+import { compraIdParams, crearCompraSchema, listComprasQuery, pagoCompraSchema, crearSolicitudSchema, listSolicitudesQuery, aprobarSolicitudesSchema, resolverSolicitudSchema, solicitudIdParams, recibirSchema } from "./compras.schema";
 import * as compraService from "./compras.service";
 import {
   createProveedorSchema,
@@ -118,9 +118,9 @@ comprasRouter.post("/:compraId/enviar", requireRole("admin"), validate(compraIdP
   ok(res, await compraService.enviar(compraId, req.user!));
 });
 
-comprasRouter.post("/:compraId/recibir", requireRole("admin"), validate(compraIdParams, "params"), async (req: AuthedRequest, res) => {
+comprasRouter.post("/:compraId/recibir", requireRole("admin"), validate(compraIdParams, "params"), validate(recibirSchema), async (req: AuthedRequest, res) => {
   const { compraId } = getValidated<{ compraId: number }>(req, "params");
-  ok(res, await compraService.recibir(compraId, req.user!));
+  ok(res, await compraService.recibir(compraId, getValidated<never>(req, "body"), req.user!));
 });
 
 comprasRouter.post(
