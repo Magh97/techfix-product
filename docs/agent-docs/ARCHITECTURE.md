@@ -21,7 +21,7 @@ Worker ──SMTP──► Correo (sin SMTP → simulado en consola)
 | dashboard | `src/modules/dashboard/` | KPIs de inicio | inventory, services, sales |
 | finance | `src/modules/finance/` | caja, corte/cierre, ingresos/egresos, CxC/CxP | sales, compras |
 | garantias | `src/modules/garantias/` | garantías, worker diario de vencimiento | crm, services, sales |
-| inventory | `src/modules/inventory/` | productos, stock, movimientos, ajustes, BOM, import/export, sugerencias | catalogos |
+| inventory | `src/modules/inventory/` | productos, stock, movimientos, ajustes, BOM, import/export, sugerencias, **usados** | catalogos |
 | notifications | `src/modules/notifications/` | plantillas (NOT-02/03/05/06), envío, historial | crm, services |
 | quote | `src/modules/quote/` | cotizaciones de venta (CV-) y conversión a venta | inventory, crm, sales |
 | reports | `src/modules/reports/` | reportes agregados + export CSV/XLSX | inventory, sales, finance, services |

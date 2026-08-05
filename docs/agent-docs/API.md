@@ -42,6 +42,13 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 | PATCH | /clientes/:id/etiquetas | admin | {etiquetas[]} | cliente |
 | GET | /clientes/:id/historial · /cxc | JWT | -- | {ordenes, ventas, cotizaciones, saldo} / {saldo, vencidas, limite} |
 
+## Equipos usados
+| Method | Path | Auth | Request | Response |
+|--------|------|------|---------|----------|
+| GET | /usados | JWT | ?page&estado=disponible\|vendido&origen&clienteId&q | lista (estado derivado del stock) |
+| POST | /usados | admin | {sku, nombre, valorTradeIn, precioVenta, stock?=1, origen, clienteId?} | 201 (crea producto raíz "Usado" + ENTRADA) |
+| PUT | /usados/:usadoId | admin | {valorTradeIn?, precioVenta?, origen?, observaciones?} | equipo actualizado |
+
 ## Órdenes de servicio
 | Method | Path | Auth | Request | Response |
 |--------|------|------|---------|----------|

@@ -115,6 +115,16 @@
 
 > **Taxonomía:** la raíz del árbol `catalogos` es la **categoría** obligatoria del producto (`categoriaId`); `catalogoId` apunta al nodo hoja. Máximo 4 niveles.
 
+## Equipos Usados (listado JWT; alta/edición admin)
+
+| Method | Path | Auth | Request | Response | Errors |
+|--------|------|------|---------|----------|--------|
+| GET | `/usados` | JWT | `?page&pageSize&estado=disponible\|vendido&origen&clienteId&q` | `{ data, meta }` (estado derivado del stock) | -- |
+| POST | `/usados` | admin | `{ sku, nombre, codigoBarras?, marca?, modelo?, valorTradeIn, precioVenta, stock? (default 1), origen, clienteId?, ordenId?, observaciones? }` | `201 { data: EquipoUsado }` (crea producto bajo raíz "Usado" + ENTRADA) | `VALIDATION_ERROR`, `CUSTOMER_NOT_FOUND`, `CATEGORIA_USADO_NOT_FOUND` |
+| PUT | `/usados/:usadoId` | admin | `{ valorTradeIn?, precioVenta?, origen?, observaciones? }` | `{ data: EquipoUsado }` | `USADO_NOT_FOUND` |
+
+> El estado es **derivado**: `disponible` si `stock > 0`, `vendido` si `stock = 0`. `valorTradeIn` es el costo de adquisición (`precio_compra`).
+
 ## Clientes (vendedor/admin)
 
 | Method | Path | Auth | Request | Response | Errors |
