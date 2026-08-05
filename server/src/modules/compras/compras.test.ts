@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "../../shared/errors";
-import { calcularTotalCompra } from "./compras.service";
+import { calcularTotalCompra, compraCompleta, lineaPendiente } from "./compras.service";
 import { validarTransicionCompra } from "./estadosCompra";
 
 describe("máquina de estados de compra", () => {
@@ -34,5 +34,32 @@ describe("cálculo del total de una compra", () => {
 
   it("retorna 0 para una compra sin líneas", () => {
     expect(calcularTotalCompra([])).toBe(0);
+  });
+});
+
+describe("recepción parcial", () => {
+  it("lineaPendiente nunca es negativa", () => {
+    expect(lineaPendiente(5, 2)).toBe(3);
+    expect(lineaPendiente(5, 5)).toBe(0);
+    expect(lineaPendiente(5, 8)).toBe(0);
+  });
+
+  it("compraCompleta es false mientras alguna línea tenga pendiente", () => {
+    expect(
+      compraCompleta([
+        { cantidad: 5, cantidad_recibida: 5 },
+        { cantidad: 4, cantidad_recibida: 3 },
+      ])
+    ).toBe(false);
+  });
+
+  it("compraCompleta es true solo cuando todas las líneas están recibidas", () => {
+    expect(
+      compraCompleta([
+        { cantidad: 5, cantidad_recibida: 5 },
+        { cantidad: 4, cantidad_recibida: 4 },
+      ])
+    ).toBe(true);
+    expect(compraCompleta([])).toBe(false);
   });
 });
