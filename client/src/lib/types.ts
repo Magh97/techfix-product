@@ -470,6 +470,36 @@ export interface ComparacionPrecios {
 }
 
 export type OrigenUsado = "parte_de_pago" | "reparacion" | "otro";
+export type EstadoQueja = "abierta" | "en_proceso" | "resuelta";
+export type TipoQueja = "queja" | "reclamacion_garantia";
+
+export interface Queja {
+  id: number;
+  clienteId: number;
+  clienteNombre: string;
+  tipo: TipoQueja;
+  garantiaId: number | null;
+  ordenId: number | null;
+  ordenFolio: string | null;
+  ventaId: number | null;
+  ventaFolio: string | null;
+  descripcion: string;
+  estado: EstadoQueja;
+  resolucion: string | null;
+  registradaPorNombre: string;
+  resueltaPorNombre: string | null;
+  resueltaAt: string | null;
+  createdAt: string;
+}
+
+export interface CrearQueja {
+  clienteId: number;
+  tipo: TipoQueja;
+  garantiaId?: number | null;
+  ordenId?: number | null;
+  ventaId?: number | null;
+  descripcion: string;
+}
 
 export interface EquipoUsado {
   id: number;

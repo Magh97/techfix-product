@@ -11,6 +11,7 @@ import type {
   Corte,
   CotizacionVenta,
   CrearEquipoUsado,
+  CrearQueja,
   CreateCotizacionVenta,
   CreateOrden,
   CreateProducto,
@@ -20,6 +21,7 @@ import type {
   DashboardResumen,
   EquipoUsado,
   EstadoOrden,
+  EstadoQueja,
   Garantia,
   ImportResult,
   LoginResponse,
@@ -30,6 +32,7 @@ import type {
   PlantillaInfo,
   Producto,
   Proveedor,
+  Queja,
   ReporteCliente,
   ReporteFinanciero,
   ReporteInventario,
@@ -239,7 +242,14 @@ export const clientesApi = {
   update: (id: number, input: Partial<{ nombre: string; telefono: string; correo: string | null; limiteCredito: number; plazoCreditoDias: number }>) =>
     api<{ data: Cliente }>(`/clientes/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   historial: (id: number) =>
-    api<{ data: { ordenes: { id: number; folio: string; estado: string; retrasada: boolean; fecha: string }[]; ventas: { id: number; folio: string; total: number; estado: string; fecha: string }[]; cotizaciones: { id: number; folio: string; total: number; estado: string }[] } }>(`/clientes/${id}/historial`),
+    api<{
+      data: {
+        ordenes: { id: number; folio: string; estado: string; retrasada: boolean; fecha: string }[];
+        ventas: { id: number; folio: string; total: number; estado: string; fecha: string }[];
+        cotizaciones: { id: number; folio: string; total: number; estado: string }[];
+        quejas: Queja[];
+      };
+    }>(`/clientes/${id}/historial`),
   cxc: (id: number) =>
     api<{ data: { limiteCredito: number; saldoTotal: number; items: { ventaId: number; folio: string; total: number; saldo: number; fechaVencimiento: string | null; estado: string }[] } }>(`/clientes/${id}/cxc`),
 };
@@ -290,6 +300,22 @@ export const usadosApi = {
   create: (input: CrearEquipoUsado) => api<{ data: EquipoUsado }>("/usados", { method: "POST", body: JSON.stringify(input) }),
   update: (id: number, input: { valorTradeIn?: number; precioVenta?: number; origen?: string; observaciones?: string | null }) =>
     api<{ data: EquipoUsado }>(`/usados/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+};
+
+export const quejasApi = {
+  list: (params?: { clienteId?: number; estado?: string; tipo?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.clienteId) qs.set("clienteId", String(params.clienteId));
+    if (params?.estado) qs.set("estado", params.estado);
+    if (params?.tipo) qs.set("tipo", params.tipo);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<Queja>>(`/quejas${s ? `?${s}` : ""}`);
+  },
+  create: (input: CrearQueja) => api<{ data: Queja }>("/quejas", { method: "POST", body: JSON.stringify(input) }),
+  cambiarEstado: (id: number, input: { estado: EstadoQueja; resolucion?: string }) =>
+    api<{ data: Queja }>(`/quejas/${id}/estado`, { method: "POST", body: JSON.stringify(input) }),
 };
 
 export const proveedoresApi = {

@@ -1,12 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { TD, TH, TR, Table, THead } from "@/components/ui/table";
-import { garantiasApi } from "@/lib/api";
+import { useToast } from "@/components/ui/toast";
+import { garantiasApi, quejasApi } from "@/lib/api";
 import { fechaCorta } from "@/lib/utils";
+import type { Garantia } from "@/lib/types";
 
 const estadoVariant: Record<string, "success" | "warning" | "danger"> = {
   vigente: "success",
@@ -15,13 +21,34 @@ const estadoVariant: Record<string, "success" | "warning" | "danger"> = {
 };
 
 export default function GarantiasPage() {
+  const toast = useToast();
+  const qc = useQueryClient();
   const [estado, setEstado] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [reclamar, setReclamar] = useState<Garantia | null>(null);
+  const [descripcion, setDescripcion] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["garantias", estado, page, pageSize],
     queryFn: () => garantiasApi.list({ estado: estado || undefined, page, pageSize }),
+  });
+
+  const reclamacion = useMutation({
+    mutationFn: () =>
+      quejasApi.create({
+        clienteId: reclamar!.clienteId,
+        tipo: "reclamacion_garantia",
+        garantiaId: reclamar!.id,
+        descripcion: descripcion,
+      }),
+    onSuccess: () => {
+      toast.success("Reclamación registrada");
+      setReclamar(null);
+      setDescripcion("");
+      qc.invalidateQueries({ queryKey: ["quejas"] });
+    },
+    onError: (e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"),
   });
 
   return (
@@ -57,6 +84,7 @@ export default function GarantiasPage() {
                   <TH>Inicio</TH>
                   <TH>Fin</TH>
                   <TH>Estado</TH>
+                  <TH />
                 </TR>
               </THead>
               <tbody>
@@ -68,6 +96,11 @@ export default function GarantiasPage() {
                     <TD className="text-muted">{fechaCorta(g.inicio)}</TD>
                     <TD className="text-muted">{fechaCorta(g.fin)}</TD>
                     <TD><Badge variant={estadoVariant[g.estado] ?? "default"}>{g.estado}</Badge></TD>
+                    <TD className="text-right">
+                      <Button size="sm" variant="outline" onClick={() => { setReclamar(g); setDescripcion(""); }}>
+                        Reclamar
+                      </Button>
+                    </TD>
                   </TR>
                 ))}
               </tbody>
@@ -86,6 +119,24 @@ export default function GarantiasPage() {
           />
         </CardBody>
       </Card>
+
+      <Dialog open={!!reclamar} onClose={() => setReclamar(null)} title={`Reclamar garantía · ${reclamar?.clienteNombre ?? ""}`}>
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            Garantía {reclamar?.folio ?? "—"} ({reclamar ? fechaCorta(reclamar.fin) : ""}). La reclamación se vincula a esta garantía.
+          </p>
+          <div>
+            <Label>Descripción de la reclamación *</Label>
+            <Input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Detalla el problema cubierto por la garantía…" />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setReclamar(null)}>Cancelar</Button>
+            <Button disabled={!descripcion.trim() || reclamacion.isPending} onClick={() => reclamacion.mutate()}>
+              {reclamacion.isPending ? "Registrando…" : "Registrar reclamación"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

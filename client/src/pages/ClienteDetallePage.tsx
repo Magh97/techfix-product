@@ -153,6 +153,25 @@ export default function ClienteDetallePage() {
             ))}
           </CardBody>
         </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Quejas y reclamaciones</CardTitle></CardHeader>
+          <CardBody className="space-y-2 text-sm">
+            {(historial?.data.quejas.length ?? 0) === 0 && <p className="text-muted">Sin quejas.</p>}
+            {historial?.data.quejas.map((q) => (
+              <div key={q.id} className="flex items-center justify-between gap-2 rounded-md border border-border-line px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate">{q.descripcion}</p>
+                  <p className="text-xs text-muted">
+                    {q.tipo === "reclamacion_garantia" ? "Reclamación de garantía" : "Queja"}
+                    {q.ordenFolio ? ` · OC ${q.ordenFolio}` : q.ventaFolio ? ` · VEN ${q.ventaFolio}` : ""}
+                  </p>
+                </div>
+                <Badge variant={q.estado === "resuelta" ? "success" : q.estado === "en_proceso" ? "warning" : "default"}>{q.estado}</Badge>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
         </>
       )}
 
