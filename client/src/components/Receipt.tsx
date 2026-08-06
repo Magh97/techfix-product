@@ -78,6 +78,16 @@ export default function Receipt({ venta, reimpresion = false }: { venta: Venta; 
             <span>{venta.fechaVencimiento}</span>
           </div>
         )}
+        {venta.garantias && venta.garantias.length > 0 && (
+          <div className="mt-1 border-t border-dashed border-black/60 pt-1 text-[10px]">
+            {venta.garantias.map((g, i) => (
+              <div key={i} className="flex justify-between gap-2">
+                <span className="capitalize">Garantía {g.tipo.replace("_", " ")}</span>
+                <span>hasta {g.fin}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="mt-2 text-center text-[10px]">¡Gracias por su compra!</div>
     </div>
