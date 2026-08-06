@@ -14,6 +14,9 @@ export interface UsadoRow {
   cliente_origen_id: number | null;
   cliente_origen_nombre: string | null;
   orden_id: number | null;
+  orden_folio: string | null;
+  venta_id: number | null;
+  venta_folio: string | null;
   valor_trade_in: string;
   origen: string;
   observaciones: string | null;
@@ -109,12 +112,31 @@ export function insertMovimientoEntrada(
 
 const SELECT_USADO = `
   SELECT eu.*, p.sku, p.nombre, p.marca, p.modelo, p.precio_compra, p.precio_venta, p.stock,
-         c.nombre AS cliente_origen_nombre, u.nombre AS creado_por_nombre
+         c.nombre AS cliente_origen_nombre, u.nombre AS creado_por_nombre,
+         o.folio AS orden_folio, v.folio AS venta_folio
   FROM equipos_usados eu
   JOIN productos p ON p.id = eu.producto_id
   LEFT JOIN clientes c ON c.id = eu.cliente_origen_id
+  LEFT JOIN ordenes_servicio o ON o.id = eu.orden_id
+  LEFT JOIN ventas v ON v.id = eu.venta_id
   JOIN usuarios u ON u.id = eu.created_by
 `;
+
+// Valida que la orden exista (para registrar el equipo abandonado como usado)
+export function findOrden(id: number) {
+  return query<{ id: number; folio: string }>("SELECT id, folio FROM ordenes_servicio WHERE id = $1", [id]).then(
+    (r) => r.rows[0] ?? null
+  );
+}
+
+// Nota de trazabilidad en el historial de la orden (equipo registrado como usado)
+export function insertHistorialOrden(client: PoolClient, ordenId: number, usuarioId: number, nota: string) {
+  return client.query(
+    `INSERT INTO historial_orden (orden_id, estado, usuario_id, nota)
+     SELECT $1, o.estado, $2, $3 FROM ordenes_servicio o WHERE o.id = $1`,
+    [ordenId, usuarioId, nota]
+  );
+}
 
 export interface UsadoFilters {
   estado?: string;

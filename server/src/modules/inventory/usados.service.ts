@@ -22,6 +22,9 @@ function mapUsado(r: repo.UsadoRow) {
     clienteOrigenId: r.cliente_origen_id,
     clienteOrigenNombre: r.cliente_origen_nombre,
     ordenId: r.orden_id,
+    ordenFolio: r.orden_folio,
+    ventaId: r.venta_id,
+    ventaFolio: r.venta_folio,
     valorTradeIn: toNum(r.valor_trade_in),
     origen: r.origen,
     observaciones: r.observaciones,
@@ -55,6 +58,10 @@ export async function crear(
     const cliente = await repo.findClienteById(input.clienteId);
     if (!cliente) throw AppError.notFound("CUSTOMER_NOT_FOUND", "Cliente no encontrado");
   }
+  if (input.ordenId) {
+    const orden = await repo.findOrden(input.ordenId);
+    if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
+  }
 
   const stock = input.stock ?? 1;
   const valorTradeIn = input.valorTradeIn;
@@ -85,6 +92,9 @@ export async function crear(
     });
     if (!id) throw AppError.business("INTERNAL_ERROR", "No se pudo registrar el equipo usado");
     await repo.insertMovimientoEntrada(client, { productoId, cantidad: stock, usuarioId: user.id, equipoId: id });
+    if (input.ordenId) {
+      await repo.insertHistorialOrden(client, input.ordenId, user.id, `Equipo ${input.nombre} registrado como usado`);
+    }
     return id;
   });
 

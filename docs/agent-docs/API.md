@@ -45,8 +45,8 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 ## Equipos usados
 | Method | Path | Auth | Request | Response |
 |--------|------|------|---------|----------|
-| GET | /usados | JWT | ?page&estado=disponible\|vendido&origen&clienteId&q | lista (estado derivado del stock) |
-| POST | /usados | admin | {sku, nombre, valorTradeIn, precioVenta, stock?=1, origen, clienteId?} | 201 (crea producto raíz "Usado" + ENTRADA) |
+| GET | /usados | JWT | ?page&estado=disponible\|vendido&origen&clienteId&q | lista (estado derivado del stock; incluye ordenFolio/ventaFolio) |
+| POST | /usados | admin | {sku, nombre, valorTradeIn, precioVenta, stock?=1, origen, clienteId?, ordenId?} | 201 (crea producto raíz "Usado" + ENTRADA; con ordenId valida orden y escribe nota en historial) |
 | PUT | /usados/:usadoId | admin | {valorTradeIn?, precioVenta?, origen?, observaciones?} | equipo actualizado |
 
 ## Órdenes de servicio

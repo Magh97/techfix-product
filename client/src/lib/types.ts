@@ -483,6 +483,9 @@ export interface EquipoUsado {
   clienteOrigenId: number | null;
   clienteOrigenNombre: string | null;
   ordenId: number | null;
+  ordenFolio: string | null;
+  ventaId: number | null;
+  ventaFolio: string | null;
   valorTradeIn: number;
   origen: OrigenUsado;
   observaciones: string | null;
@@ -501,6 +504,7 @@ export interface CrearEquipoUsado {
   stock?: number;
   origen: OrigenUsado;
   clienteId?: number | null;
+  ordenId?: number | null;
   observaciones?: string;
 }
 
