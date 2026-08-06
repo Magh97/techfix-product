@@ -9,6 +9,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 ## [Unreleased]
 
 ### Added
+- **Reembolso en efectivo en devoluciones (US-VEN-08):** al devolver, el vendedor elige "Reembolso en efectivo" o "Nota de crédito" (nota solo con cliente; **mostrador siempre reembolsa en efectivo**). El reembolso se registra como **egreso** "Reembolso venta {folio}" (categoría `Reembolso`, método efectivo) en la **caja abierta del día** — el corte descuenta el efectivo esperado; se permite aunque quede negativo (el arqueo lo detecta). Solo aplica a ventas de contado; crédito sin abonos se devuelve sin dinero.
 - **Imprimir reportes a PDF (US-REP-07):** botón "PDF" en Reportes que imprime el reporte activo (con filtros) vía `window.print()`/`@media print` en área A4 (mismo patrón del ticket térmico, sin dependencias nuevas).
 - **Ajustes de inventario por tipo (US-INV-05):** `POST /productos/:id/ajustar` acepta `tipo: ajuste|merma|dano`; migración `0016_merma_dano` (`movimiento_tipo` + `MERMA`/`DANO`); merma y daño solo con cantidad negativa.
 - **Notas de crédito por devoluciones (US-VEN-08):** al devolver una venta de contado con cliente se genera una nota (`NC-####`, sin vigencia) por el total devuelto (precio unitario × cantidad); aplicable en el POS a ventas de contado del mismo cliente (`notaCreditoId` reduce `totalAPagar` y consume saldo; si cubre todo, la venta queda sin pago en efectivo). Migración `0017_notas_credito`. Las ventas a crédito devueltas **salen de la CxC** (estado `devuelta` excluido). El corte desglosa `notasCredito` como ingreso no monetario.
@@ -46,7 +47,6 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 
 ### Limitaciones conocidas
 - Notificaciones solo por **correo** (nodemailer/SMTP); `preferencia_contacto=whatsapp` aún no envía por WhatsApp (ADR-0007: Twilio diferido).
-- **Reembolso en efectivo** en devoluciones no implementado: la devolución restituye inventario y genera **nota de crédito**; el efectivo se gestiona fuera del sistema.
 - **Backup offsite** documentado (rclone) pero no automatizado; el respaldo diario queda en el volumen local del VPS.
 - NOT-01 (aviso de retraso) notifica por el canal configurado; sin WhatsApp sigue siendo correo.
 - Empaquetado YunoHost sin realizar (ruta recomendada: VPS + Docker Compose + Caddy).

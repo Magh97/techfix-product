@@ -56,6 +56,8 @@
 | `NOTA_CREDITO_INVALIDA` | 422 | Nota de crédito de otro cliente o usada fuera de venta de contado |
 | `NOTA_CREDITO_NOT_FOUND` | 404 | Nota de crédito inexistente |
 | `NOTA_CREDITO_SIN_SALDO` | 422 | Nota de crédito sin saldo disponible |
+| `REEMBOLSO_INVALIDO` | 422 | Reembolso en efectivo solo en ventas de contado |
+| `CAJA_NOT_OPEN` | 422 | No hay caja abierta para registrar el reembolso |
 | `SALE_ALREADY_CANCELLED` | 409 | Venta ya cancelada |
 | `CUSTOMER_NOT_FOUND` | 404 | Cliente no existe (precondición SER-01) |
 | `CONFLICT` | 409 | Conflicto genérico (duplicado, estado) |
@@ -191,7 +193,7 @@
 | GET | `/ventas/:id` | JWT | -- | `{ data: Venta + lineas + pagos }` | `NOT_FOUND` |
 | GET | `/ventas/por-folio/:folio` | JWT | -- | `{ data: Venta }` | `NOT_FOUND` (reimpresión VEN-10) |
 | POST | `/ventas/:id/cancelar` | admin | `{ motivo }` | `{ data: Venta }` (reversión stock; reintegra usados de trade-in) | `SALE_ALREADY_CANCELLED`, `SALE_WITH_PAYMENTS`, `FORBIDDEN` |
-| POST | `/ventas/:id/devolucion` | vendedor/admin | `{ lineas, motivo? }` | `{ data: Venta }` (restituye stock; `motivo` opcional va a auditoría; genera **nota de crédito** si es contado con cliente) | `SALE_ALREADY_PROCESSED`, `SALE_WITH_PAYMENTS`, `REFUND_WINDOW_EXPIRED`, `VALIDATION_ERROR` |
+| POST | `/ventas/:id/devolucion` | vendedor/admin | `{ lineas, motivo?, tipo? }` (`tipo: reembolso\|nota_credito`; sin tipo: nota con cliente / reembolso mostrador) | `{ data: Venta }` (restituye stock; `reembolso` registra egreso "Reembolso venta X" en la caja del día; `nota_credito` genera nota) | `SALE_ALREADY_PROCESSED`, `SALE_WITH_PAYMENTS`, `REFUND_WINDOW_EXPIRED`, `REEMBOLSO_INVALIDO`, `CAJA_NOT_OPEN`, `VALIDATION_ERROR` |
 | POST | `/ventas/:id/pagos` | vendedor/admin | `{ monto, metodo }` o `{ pagos: [{ metodo, monto }] }` (máx 5; Σ ≤ pendiente) | `201 { data: { ventaId, monto, saldoPendiente } }` | `SALE_NOT_CREDIT`, `PAYMENT_INVALID`, `VALIDATION_ERROR` |
 | GET | `/clientes/:id/notas-credito` | JWT | -- | `{ data: [{ id, folio, montoOriginal, saldo, ventaOrigenFolio, motivo }] }` (solo saldo > 0) | `NOT_FOUND` |
 | GET | `/cotizaciones` | JWT | `?page&pageSize&estado&vencidas` | `{ data, meta }` | -- |

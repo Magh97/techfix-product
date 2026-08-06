@@ -766,6 +766,12 @@ paths:
                 motivo:
                   type: string
                   description: Motivo opcional (va a auditoría)
+                tipo:
+                  type: string
+                  enum: [reembolso, nota_credito]
+                  description: >-
+                    reembolso → egreso en la caja del día; nota_credito → nota de crédito
+                    (solo contado con cliente). Sin tipo: nota con cliente / reembolso mostrador.
       responses:
         "200":
           description: Devolución registrada (si es contado con cliente genera una nota de crédito)
