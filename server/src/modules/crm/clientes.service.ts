@@ -1,6 +1,7 @@
 import { AppError } from "../../shared/errors";
 import { getConfig } from "../../shared/config";
 import * as repo from "./clientes.repository";
+import * as quejasService from "../quejas/quejas.service";
 
 export interface ClienteDTO {
   id: number;
@@ -91,15 +92,17 @@ function today(): string {
 }
 
 export async function historial(id: number) {
-  const [ordenes, ventas, cotizaciones] = await Promise.all([
+  const [ordenes, ventas, cotizaciones, quejas] = await Promise.all([
     repo.listClienteOrdenes(id),
     repo.listClienteVentas(id),
     repo.listClienteCotizaciones(id),
+    quejasService.listCliente(id),
   ]);
   return {
     ordenes: ordenes.map((o) => ({ id: o.id, folio: o.folio, estado: o.estado, retrasada: o.retrasada, fecha: o.created_at })),
     ventas: ventas.map((v) => ({ id: v.id, folio: v.folio, total: Number(v.total), estado: v.estado, fecha: v.created_at })),
     cotizaciones: cotizaciones.map((c) => ({ id: c.id, folio: c.folio, total: Number(c.total), estado: c.estado, vigenciaHasta: c.vigencia_hasta })),
+    quejas,
   };
 }
 
