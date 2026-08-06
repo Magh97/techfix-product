@@ -297,7 +297,6 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
         lineas: [{ tipo: "producto", productoId, cantidad: 1 }],
         tipoPago: "contado",
         metodoPago: "efectivo",
-        montoRecibido: 10,
       });
     expect(venta.status).toBe(201);
 
@@ -1384,6 +1383,157 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(mixta.status).toBe(201);
     const tipos = mixta.body.data.garantias.map((g: { tipo: string }) => g.tipo).sort();
     expect(tipos).toEqual(["producto_nuevo", "usado"]);
+  });
+
+  it("PARTE DE PAGO: venta contado con usado crea el producto usado, registra venta_id y ajusta cambio", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const cliente = (await pool.query<{ id: number }>("INSERT INTO clientes (nombre, telefono) VALUES ($1,$2) RETURNING id", [`Cliente TradeIn ${suf}`, `59${suf}`.slice(0, 10)])).rows[0]!.id;
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `TI-${suf}`, nombre: "Producto con trade-in", precioCompra: 100, precioVenta: 200 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [prod]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        clienteId: cliente,
+        lineas: [{ tipo: "producto", productoId: prod, cantidad: 1 }],
+        tipoPago: "contado",
+        metodoPago: "efectivo",
+        partesDePago: [{ nombre: "Monitor usado", marca: "LG", valor: 40, precioVenta: 120 }],
+      });
+    expect(venta.status).toBe(201);
+    expect(venta.body.data.parteDePago).toBeCloseTo(40, 2);
+    expect(venta.body.data.totalAPagar).toBeCloseTo(232 - 40, 2);
+    expect(venta.body.data.cambio).toBe(0);
+    expect(venta.body.data.usadosCreados).toHaveLength(1);
+    const ventaId = venta.body.data.id;
+
+    // El usado se creó bajo la raíz "Usado", con venta_id y movimiento ENTRADA
+    const usado = venta.body.data.usadosCreados[0];
+    const meta = await pool.query<{ venta_id: number; origen: string; valor_trade_in: string }>(
+      "SELECT venta_id, origen, valor_trade_in FROM equipos_usados WHERE producto_id = $1",
+      [usado.productoId]
+    );
+    expect(meta.rows[0]?.venta_id).toBe(ventaId);
+    expect(meta.rows[0]?.origen).toBe("parte_de_pago");
+    expect(Number(meta.rows[0]?.valor_trade_in)).toBeCloseTo(40, 2);
+    const prodUsado = await pool.query<{ stock: number; categoria_id: number }>(
+      "SELECT stock, categoria_id FROM productos WHERE id = $1",
+      [usado.productoId]
+    );
+    expect(prodUsado.rows[0]?.stock).toBe(1);
+    const raiz = await pool.query<{ nombre: string }>("SELECT c.nombre FROM catalogos c WHERE c.id = $1", [prodUsado.rows[0]?.categoria_id]);
+    expect(raiz.rows[0]?.nombre).toBe("Usado");
+    const mov = await pool.query<{ tipo: string }>(
+      "SELECT tipo FROM movimientos_inventario WHERE producto_id = $1 AND referencia_tipo = 'usado'",
+      [usado.productoId]
+    );
+    expect(mov.rows[0]?.tipo).toBe("ENTRADA");
+  });
+
+  it("PARTE DE PAGO: corte excluye el trade-in del efectivo y lo desglosa", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const actual = await request(app).get("/api/v1/caja/actual").set(auth);
+    const abiertaPorMi = !actual.body.data;
+    if (abiertaPorMi) await request(app).post("/api/v1/caja/abrir").set(auth);
+
+    const antes = await request(app).get("/api/v1/caja/corte").set(auth);
+    const suf = Date.now();
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `TIC-${suf}`, nombre: "Prod corte trade-in", precioCompra: 50, precioVenta: 100 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [prod]);
+    await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        lineas: [{ tipo: "producto", productoId: prod, cantidad: 1 }],
+        tipoPago: "contado",
+        metodoPago: "efectivo",
+        partesDePago: [{ nombre: "Teclado usado", valor: 20, precioVenta: 60 }],
+      });
+
+    const despues = await request(app).get("/api/v1/caja/corte").set(auth);
+    // total = 116, trade-in = 20 → efectivo esperado sube 96 y partes de pago suben 20
+    expect(despues.body.data.partesDePago - antes.body.data.partesDePago).toBeCloseTo(20, 2);
+    expect(despues.body.data.esperadoEfectivo - antes.body.data.esperadoEfectivo).toBeCloseTo(96, 2);
+
+    if (abiertaPorMi) {
+      await request(app)
+        .post("/api/v1/caja/cerrar")
+        .set(auth)
+        .send({ efectivoFisico: despues.body.data.esperadoEfectivo });
+    }
+  });
+
+  it("PARTE DE PAGO: validaciones (crédito 422, valor mayor al total 422, sin trade-in no crea usados)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `TIV-${suf}`, nombre: "Prod validación trade-in", precioCompra: 50, precioVenta: 100 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [prod]);
+
+    // Crédito con parte de pago → 422
+    const credito = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        clienteId: clienteId,
+        lineas: [{ tipo: "producto", productoId: prod, cantidad: 1 }],
+        tipoPago: "credito",
+        partesDePago: [{ nombre: "Usado crédito", valor: 10, precioVenta: 30 }],
+      });
+    expect(credito.status).toBe(422);
+    expect(credito.body.error.code).toBe("PARTE_DE_PAGO_INVALIDA");
+
+    // Parte de pago mayor al total → 422
+    const excede = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        lineas: [{ tipo: "producto", productoId: prod, cantidad: 1 }],
+        tipoPago: "contado",
+        metodoPago: "efectivo",
+        partesDePago: [{ nombre: "Usado caro", valor: 9999, precioVenta: 12000 }],
+      });
+    expect(excede.status).toBe(422);
+    expect(excede.body.error.code).toBe("PARTE_DE_PAGO_INVALIDA");
+
+    // Efectivo menor al total a pagar → 422
+    const pocoEfectivo = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        lineas: [{ tipo: "producto", productoId: prod, cantidad: 1 }],
+        tipoPago: "contado",
+        metodoPago: "efectivo",
+        montoRecibido: 10,
+        partesDePago: [{ nombre: "Usado", valor: 30, precioVenta: 90 }],
+      });
+    expect(pocoEfectivo.status).toBe(422);
+
+    // Sin trade-in → no crea usados
+    const normal = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId: prod, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    expect(normal.status).toBe(201);
+    expect(normal.body.data.usadosCreados).toHaveLength(0);
+    const sinUsados = await pool.query("SELECT 1 FROM equipos_usados WHERE venta_id = $1", [normal.body.data.id]);
+    expect(sinUsados.rowCount).toBe(0);
   });
 
   it("DASHBOARD: resumen devuelve la estructura esperada", async () => {
