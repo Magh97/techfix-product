@@ -22,6 +22,7 @@ export interface RegistrarVentaInput {
   montoRecibido?: number | null;
   partesDePago?: { nombre: string; marca?: string | null; modelo?: string | null; valor: number; precioVenta: number; observaciones?: string | null }[];
   pagos?: { metodo: string; monto: number }[];
+  notaCreditoId?: number | null;
 }
 
 export interface ProductoVentaRow {
@@ -129,6 +130,8 @@ export interface InsertVentaInput {
   montoRecibido: number | null;
   parteDePago: number;
   cajaId: number | null;
+  notaCredito: number;
+  notaCreditoId: number | null;
 }
 
 export function insertVenta(client: PoolClient, input: InsertVentaInput) {
@@ -136,8 +139,9 @@ export function insertVenta(client: PoolClient, input: InsertVentaInput) {
     .query<{ id: number }>(
       `INSERT INTO ventas
         (folio, cliente_id, vendedor_id, orden_id, subtotal, iva, total, descuento, motivo_descuento,
-         tipo_pago, metodo_pago, plazo_dias, fecha_vencimiento, monto_recibido, parte_de_pago, caja_id, estado)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'completada') RETURNING id`,
+         tipo_pago, metodo_pago, plazo_dias, fecha_vencimiento, monto_recibido, parte_de_pago, caja_id, estado,
+         nota_credito, nota_credito_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'completada',$17,$18) RETURNING id`,
       [
         input.folio,
         input.clienteId,
@@ -155,6 +159,8 @@ export function insertVenta(client: PoolClient, input: InsertVentaInput) {
         input.montoRecibido,
         input.parteDePago,
         input.cajaId,
+        input.notaCredito,
+        input.notaCreditoId,
       ]
     )
     .then((r) => r.rows[0]?.id);
@@ -208,7 +214,7 @@ export function findClienteCredito(client: PoolClient, id: number) {
 export async function saldoCliente(client: PoolClient, clienteId: number): Promise<number> {
   const ventas = await client.query<{ id: number; total: string }>(
     `SELECT id, total FROM ventas
-     WHERE cliente_id = $1 AND tipo_pago = 'credito' AND estado IN ('completada','credito_pendiente','devuelta')`,
+     WHERE cliente_id = $1 AND tipo_pago = 'credito' AND estado IN ('completada','credito_pendiente')`,
     [clienteId]
   );
   let saldo = 0;
@@ -344,4 +350,54 @@ export function listPagos(ventaId: number) {
 
 export function updateVentaEstado(client: PoolClient, ventaId: number, estado: string) {
   return client.query("UPDATE ventas SET estado = $2 WHERE id = $1", [ventaId, estado]);
+}
+
+/* --- Notas de crédito (devoluciones) --- */
+
+export interface NotaCreditoRow {
+  id: number;
+  folio: string;
+  cliente_id: number;
+  monto_original: string;
+  saldo: string;
+  venta_origen_id: number | null;
+  venta_origen_folio: string | null;
+  motivo: string | null;
+  created_at: string;
+}
+
+export function nextNotaCreditoFolio(client: PoolClient) {
+  return client.query<{ n: string }>("SELECT COALESCE(MAX(id), 0) + 1 AS n FROM notas_credito").then((r) => `NC-${String(Number(r.rows[0]?.n ?? 1)).padStart(4, "0")}`);
+}
+
+export function insertNotaCredito(
+  client: PoolClient,
+  input: { folio: string; clienteId: number; monto: number; ventaId: number; motivo: string | null; createdBy: number }
+) {
+  return client.query<{ id: number }>(
+    `INSERT INTO notas_credito (folio, cliente_id, monto_original, saldo, venta_origen_id, motivo, created_by)
+     VALUES ($1,$2,$3,$3,$4,$5,$6) RETURNING id`,
+    [input.folio, input.clienteId, input.monto, input.ventaId, input.motivo, input.createdBy]
+  ).then((r) => r.rows[0]?.id);
+}
+
+export function findNotaCredito(id: number) {
+  return query<NotaCreditoRow>(
+    `SELECT nc.*, v.folio AS venta_origen_folio FROM notas_credito nc
+     LEFT JOIN ventas v ON v.id = nc.venta_origen_id WHERE nc.id = $1`,
+    [id]
+  ).then((r) => r.rows[0]);
+}
+
+export function decrementarSaldoNota(client: PoolClient, notaId: number, monto: number) {
+  return client.query("UPDATE notas_credito SET saldo = saldo - $2 WHERE id = $1 AND saldo >= $2", [notaId, monto]);
+}
+
+export function listNotasCreditoCliente(clienteId: number) {
+  return query<NotaCreditoRow>(
+    `SELECT nc.*, v.folio AS venta_origen_folio FROM notas_credito nc
+     LEFT JOIN ventas v ON v.id = nc.venta_origen_id
+     WHERE nc.cliente_id = $1 AND nc.saldo > 0 ORDER BY nc.id DESC`,
+    [clienteId]
+  ).then((r) => r.rows);
 }
