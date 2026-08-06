@@ -270,10 +270,10 @@ export const ventasApi = {
   pagar: (id: number, input: { monto: number; metodo: string } | { pagos: { metodo: string; monto: number }[] }) =>
     api<{ data: unknown }>(`/ventas/${id}/pagos`, { method: "POST", body: JSON.stringify(input) }),
   cancelar: (id: number, motivo: string) => api<{ data: Venta }>(`/ventas/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),
-  devolucion: (id: number, lineas: { productoId: number; cantidad: number }[], motivo?: string) =>
+  devolucion: (id: number, lineas: { productoId: number; cantidad: number }[], motivo?: string, tipo?: "reembolso" | "nota_credito") =>
     api<{ data: Venta }>(`/ventas/${id}/devolucion`, {
       method: "POST",
-      body: JSON.stringify({ lineas, ...(motivo ? { motivo } : {}) }),
+      body: JSON.stringify({ lineas, ...(motivo ? { motivo } : {}), ...(tipo ? { tipo } : {}) }),
     }),
 };
 

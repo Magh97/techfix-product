@@ -34,6 +34,7 @@ export default function VentasPage() {
   const [cancelar, setCancelar] = useState<Venta | null>(null);
   const [cantidades, setCantidades] = useState<Record<number, number>>({});
   const [motivoDevolucion, setMotivoDevolucion] = useState("");
+  const [tipoDevolucion, setTipoDevolucion] = useState<"reembolso" | "nota_credito">("reembolso");
   const [motivoCancelar, setMotivoCancelar] = useState("");
 
   const rol = getSessionUser()?.rol;
@@ -54,7 +55,8 @@ export default function VentasPage() {
         (devolver?.lineas ?? [])
           .filter((l) => l.productoId && (cantidades[l.productoId] ?? 0) > 0)
           .map((l) => ({ productoId: l.productoId!, cantidad: cantidades[l.productoId!] ?? 0 })),
-        motivoDevolucion.trim() || undefined
+        motivoDevolucion.trim() || undefined,
+        tipoDevolucion
       ),
     onSuccess: () => {
       toast.success("Devolución registrada");
@@ -62,6 +64,7 @@ export default function VentasPage() {
       setCantidades({});
       setMotivoDevolucion("");
       invalidate();
+      qc.invalidateQueries({ queryKey: ["caja-corte"] });
     },
     onError: (e) => toast.error("Error al devolver", e instanceof Error ? e.message : "Intenta de nuevo"),
   });
@@ -176,6 +179,7 @@ export default function VentasPage() {
                       if (l.productoId) inicial[l.productoId] = l.cantidad;
                     }
                     setCantidades(inicial);
+                    setTipoDevolucion(ticket.clienteId ? "nota_credito" : "reembolso");
                     setDevolver(ticket);
                   }}
                 >
@@ -201,8 +205,25 @@ export default function VentasPage() {
       <Dialog open={!!devolver} onClose={() => setDevolver(null)} title={`Devolución · ${devolver?.folio ?? ""}`}>
         <div className="space-y-3">
           <p className="text-xs text-muted">
-            La devolución restituye el inventario. El reembolso / nota de crédito se gestiona fuera del sistema.
+            La devolución restituye el inventario. El reembolso en efectivo se registra como egreso en la caja del día.
           </p>
+          {devolver?.clienteId ? (
+            <div>
+              <Label>Forma de reembolso</Label>
+              <select
+                value={tipoDevolucion}
+                onChange={(e) => setTipoDevolucion(e.target.value as "reembolso" | "nota_credito")}
+                className="h-10 w-full rounded-md border border-border-line bg-surface px-2 text-sm"
+              >
+                <option value="nota_credito">Nota de crédito</option>
+                <option value="reembolso">Reembolso en efectivo</option>
+              </select>
+            </div>
+          ) : (
+            <p className="text-sm text-warning">
+              Venta a mostrador (sin cliente): la devolución se reembolsa en efectivo.
+            </p>
+          )}
           {lineasDevolvibles.length === 0 && <p className="text-sm text-danger">Esta venta no tiene productos devolvibles.</p>}
           {lineasDevolvibles.map((l) => (
             <div key={l.productoId} className="flex items-center justify-between gap-3">
