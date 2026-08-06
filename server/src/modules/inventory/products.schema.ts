@@ -5,6 +5,7 @@ export const listProductsQuery = z.object({
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   q: z.string().optional(),
   categoria: z.string().optional(),
+  catalogoId: z.coerce.number().int().positive().optional(),
   stockBajo: z.enum(["true", "false"]).optional(),
 });
 
@@ -18,6 +19,10 @@ export const createProductSchema = z.object({
   precioCompra: z.number().nonnegative(),
   precioVenta: z.number().nonnegative(),
   stockMinimo: z.number().int().nonnegative().default(0),
+  stockMaximo: z.number().int().nonnegative().default(0),
+  proveedorFavoritoId: z.number().int().positive().optional().nullable(),
+  catalogoId: z.number().int().positive().optional().nullable(),
+  especificaciones: z.array(z.string()).optional(),
 });
 
 export const updateProductSchema = createProductSchema.partial();
@@ -26,6 +31,23 @@ export const productIdParams = z.object({
   productoId: z.coerce.number().int().positive(),
 });
 
+export const ajustarStockSchema = z.object({
+  cantidad: z.number().int().refine((v) => v !== 0, { message: "La cantidad debe ser distinta de 0" }),
+  motivo: z.string().min(1),
+});
+
+export const listMovimientosQuery = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+});
+
 export const exportProductosQuery = z.object({
   formato: z.enum(["csv", "xlsx"]).default("csv"),
+});
+
+export const bomSchema = z.object({
+  componentes: z
+    .array(z.object({ productoId: z.number().int().positive(), cantidad: z.number().int().positive() }))
+    .max(100),
+  manoObra: z.number().nonnegative().default(0),
 });

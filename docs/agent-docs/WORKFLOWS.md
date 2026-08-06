@@ -1,87 +1,96 @@
 # WORKFLOWS
 
-Proyecto en fase de diseño (sin código). Comandos objetivo del stack elegido.
-
 ## First Setup
 ```bash
 git clone <repo> && cd tech-experimental-ui
-docker compose up -d db          # PostgreSQL 16
-npm install -w server -w client
-cp server/.env.example server/.env   # completar DATABASE_URL, JWT_SECRET, SMTP, TWILIO
-npm run db:migrate
-npm run db:seed
-npm run dev                       # SPA :5173 + API :3000
+pnpm install
+cp server/.env.example server/.env   # completar DATABASE_URL, JWT_SECRET, JWT_REFRESH_SECRET
+docker compose up -d db
+pnpm db:migrate
+pnpm db:seed
+pnpm dev                             # SPA :5173 + API :3000
 ```
 
 ## Add Server Module
 ```bash
 mkdir server/src/modules/<modulo>
-# router.<modulo>.ts  (rutas + requireRole + validate)
-# <modulo>.service.ts (negocio + transacciones)
-# <modulo>.repository.ts (SQL)
-# <modulo>.schema.ts   (zod: request/response)
-# registrar router en server/src/index.ts
+# <modulo>.routes.ts  (router + requireRole + validate)   → registrar en server/src/app.ts
+# <modulo>.service.ts (negocio + transacciones + AppError)
+# <modulo>.repository.ts (SQL; client: PoolClient en transacciones)
+# <modulo>.schema.ts   (zod request/response)
 ```
 
 ## Add Client Page
 ```bash
-mkdir client/src/app/<ruta>
-# page.tsx (screen) + components/<Screen>/  + hooks/use<Screen>.ts
-# agregar ruta en router con el rol requerido
-# seguir DESIGN.md (tokens, estados loading/empty/error)
+# pages/<Name>Page.tsx + endpoint en lib/api.ts + ruta en App.tsx + nav en components/layout.tsx
+# admin-only → adminOnly: true en el nav; seguir DESIGN.md (loading/empty/error)
 ```
 
 ## Database Migration
 ```bash
-npm run db:migrate --name add_<descripcion>   # nuevo archivo SQL en server/db/migrations
-npm run db:migrate                            # aplica pendientes
-# convención: 0001_init.sql, 0002_add_foo.sql (orden cronológico)
+# nuevo archivo server/db/migrations/00XX_<descripcion>.sql (orden cronológico, actual 0011)
+pnpm db:migrate   # aplica pendientes (registra en _migrations)
 ```
 
 ## Run Tests
 ```bash
-npm test                # vitest (server) 
-npm run test:client     # vitest + testing-library (SPA)
-npm run test:e2e        # playwright (opcional)
+# server (unit + integración con DB real):
+$env:RUN_DB_TESTS="true"
+$env:DATABASE_URL="postgres://techstore:techstore_dev@localhost:5432/techstore"
+$env:JWT_SECRET="smoke_secret_min_16_chars_ok"
+$env:JWT_REFRESH_SECRET="smoke_refresh_secret_min_16"
+pnpm --filter server test
+# suite completa (server + client):
+pnpm test
 ```
 
 ## Seed Database
 ```bash
-npm run db:seed   # admin inicial, categorías, plantillas de notificación, config (iva=16)
+pnpm db:seed   # admin/vendedor/tecnico, árbol catálogos 4 niveles, productos, proveedores, plantillas, iva=16
 ```
 
 ## Lint and Typecheck
 ```bash
-npm run lint       # eslint (TS strict)
-npm run typecheck  # tsc --noEmit
+pnpm lint       # eslint (server + client)
+pnpm typecheck  # tsc --noEmit (server + client)
+pnpm build      # tsup (server) + tsc && vite build (client)
 ```
 
 ## Git Workflow
 ```bash
-git checkout -b feat/<modulo>-<desc>
-git add . && git commit -m "feat(<modulo>): descripción"
-git push -u origin feat/...   # PR → squash merge
+git checkout -b feature/<descripcion>
+git add <archivos específicos> && git commit -m "<tipo>(<scope>): <descripción>"
+git checkout develop && git merge --no-ff feature/<descripcion> -m "Merge branch 'feature/<descripcion>' into develop"
+git push origin develop
+git branch -d feature/<descripcion>
 ```
-Convenciones: `feat: | fix: | chore: | docs: | test: | refactor:` (+ scope `(<modulo>)`).
+Convenciones: `feat: | fix: | chore: | docs: | test: | refactor:` + scope `(server|client|seed|docs)`. Merge siempre `--no-ff` a `develop`. No commitear `docs/wireframe/**` ajeno ni `.env`.
 
 ## Docker
 ```bash
-docker compose up -d            # db + api + worker + nginx(spa)
-docker compose logs -f api
-docker compose exec db psql -U <user> -d tienda
+docker compose up -d db        # PostgreSQL 16 (solo dev)
+docker compose up --build      # db + api + web (producción local, web :8080)
+docker compose exec db psql -U techstore -d techstore
+```
+
+## Producción
+```bash
+cp .env.production.example .env   # DOMAIN, CORS_ORIGIN, JWT_SECRET, POSTGRES_PASSWORD, SMTP_*
+docker compose -f docker-compose.prod.yml up -d --build   # db + api + web + caddy(TLS) + backup
+docker compose -f docker-compose.prod.yml exec backup sh -c 'ls -lh /backups'   # backups diarios
+./scripts/restore.sh techstore-YYYYMMDD-HHMM.sql.gz       # restaurar
+# Deploy automático: push a main → CI ejecuta git pull + compose up --build (secrets SSH_*)
 ```
 
 ## CI Pipeline
 ```
-Lint → Typecheck → Test (unit+integration) → Build (server + client) → Push imagen → Deploy VPS
-Workers/jobs: node-cron (retrasos cada hora, garantías diarias) — un solo worker (job_locks anti-duplicado)
+Lint → Typecheck → db:migrate (test DB) → db:seed → Test (RUN_DB_TESTS=true, Postgres 16 service) → Build
++ Deploy (solo push a main): SSH → git pull --ff-only → docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-## Jobs Programados
+## Workers (server/src/index.ts, setInterval)
 ```bash
-# worker: 
-#   */60 * * * *  detectar retrasos (SER-09) → marcar retrasada → NOT-01
-#   0 0 * * *     recordatorios de garantía 3 y 1 días antes (NOT-04)
-#   0 0 * * *     expirar cotizaciones (emitida + vigencia_hasta < hoy → expirada, libera reservas)
-#   0 2 * * *     respaldo automático de BD
+# cada hora:            marcarRetrasadas() → retrasada = true (SER-09)
+# cada 24h (+al arrancar): marcarGarantiasPorVencer() → NOT-04 recordatorio garantías
+# cada 24h (+al arrancar): limpiarRefreshTokens() → purga refresh_tokens vencidos/revocados (30 días)
 ```

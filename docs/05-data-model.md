@@ -16,11 +16,17 @@ erDiagram
     ORDEN_SERVICIO ||--o{ DETALLE_ORDEN : "contiene"
     ORDEN_SERVICIO ||--o{ COTIZACION : "genera"
     COTIZACION ||--|{ DETALLE_COTIZACION : "tiene"
+    ORDEN_SERVICIO ||--o{ SUSTITUCION : "propone"
+    COTIZACION ||--o{ SUSTITUCION : "origina"
+    ORDEN_SERVICIO ||--o{ SOLICITUD_REABASTECIMIENTO : "genera"
     VENTA ||--|{ DETALLE_VENTA : "tiene"
     PRODUCTO ||--o{ DETALLE_ORDEN : "se consume"
     PRODUCTO ||--o{ DETALLE_VENTA : "se vende"
+    PRODUCTO ||--o{ SOLICITUD_REABASTECIMIENTO : "se solicita"
+    PRODUCTO ||--o{ SUSTITUCION : "se sustituye"
     PROVEEDOR ||--o{ COMPRA : "recibe"
     COMPRA ||--|{ DETALLE_COMPRA : "incluye"
+    COMPRA ||--o{ SOLICITUD_REABASTECIMIENTO : "satisface"
     PRODUCTO ||--o{ MOVIMIENTO_INVENTARIO : "se mueve"
     ORDEN_SERVICIO ||--o{ GARANTIA : "genera"
     VENTA ||--o{ GARANTIA : "genera"
@@ -30,14 +36,17 @@ erDiagram
 
 ```mermaid
 erDiagram
-    categorias {
+    catalogos {
         int id PK
+        int parent_id FK
         varchar nombre
-        varchar tipo
+        jsonb tags_sugeridas
+        jsonb tags_compatibilidad
     }
     productos {
         int id PK
         int categoria_id FK
+        int catalogo_id FK
         varchar sku UK
         varchar codigo_barras UK
         varchar marca
@@ -46,6 +55,9 @@ erDiagram
         numeric precio_venta
         int stock
         int stock_minimo
+        int stock_maximo
+        int proveedor_favorito_id FK
+        jsonb especificaciones
         boolean is_kit
         boolean is_active
     }
@@ -65,7 +77,9 @@ erDiagram
         int usuario_id FK
         int caja_id FK
     }
-    categorias ||--o{ productos : clasifica
+    catalogos ||--o{ catalogos : "jerarquía (máx 4 niveles)"
+    catalogos ||--o{ productos : clasifica
+    catalogos ||--o{ productos : "categoría (raíz)"
     productos ||--o{ producto_bom : "es kit de"
     productos ||--o{ movimientos_inventario : genera
 ```
@@ -143,11 +157,28 @@ erDiagram
         enum estado_linea
         numeric costo_unitario
     }
+    sustituciones {
+        int id PK
+        int orden_id FK
+        int cotizacion_id FK
+        int linea_id FK
+        int producto_original_id FK
+        int cantidad
+        int sustituto_id FK
+        text justificacion
+        boolean cliente_acepta
+        varchar estado
+        int solicitud_id FK
+        int creada_por FK
+        int resuelto_por FK
+    }
     clientes ||--o{ ordenes_servicio : realiza
     ordenes_servicio ||--o{ historial_orden : registra
     ordenes_servicio ||--o{ cotizaciones : genera
     cotizaciones ||--|{ detalle_cotizacion : tiene
     ordenes_servicio ||--o{ detalle_orden : consume
+    ordenes_servicio ||--o{ sustituciones : propone
+    detalle_cotizacion ||--o{ sustituciones : sustituye
 ```
 
 ## 4. Modelo Lógico — Ventas, Compras y Finanzas
@@ -212,6 +243,18 @@ erDiagram
         int cantidad
         numeric precio_unitario
     }
+    solicitudes_reabastecimiento {
+        int id PK
+        int producto_id FK
+        int cantidad
+        int orden_id FK
+        int solicitado_por FK
+        text motivo
+        varchar estado
+        text rechazo_motivo
+        int compra_id FK
+        int resuelto_por FK
+    }
     pagos_proveedor {
         int id PK
         int compra_id FK
@@ -224,6 +267,8 @@ erDiagram
     ventas ||--o{ pagos : recibe
     proveedores ||--o{ compras : recibe
     compras ||--|{ detalle_compra : incluye
+    compras ||--o{ solicitudes_reabastecimiento : satisface
+    productos ||--o{ solicitudes_reabastecimiento : solicita
     compras ||--o{ pagos_proveedor : tiene
 ```
 
@@ -280,6 +325,14 @@ erDiagram
         jsonb antes
         jsonb despues
     }
+    refresh_tokens {
+        int id PK
+        int usuario_id FK
+        uuid jti UK
+        text token_hash
+        timestamp expires_at
+        boolean revoked
+    }
     usuarios {
         int id PK
         varchar nombre
@@ -289,6 +342,7 @@ erDiagram
         boolean is_active
     }
     usuarios ||--o{ cajas : abre
+    usuarios ||--o{ refresh_tokens : emite
     clientes ||--o{ notificaciones : recibe
     clientes ||--o{ garantias : tiene
 ```
@@ -301,12 +355,13 @@ erDiagram
 
 ```
 rol:                  admin | vendedor | tecnico
-tipo_producto:        componente | periferico | equipo_completo | refaccion | usado
 movimiento_tipo:      ENTRADA | SALIDA_VENTA | SALIDA_CONSUMO | AJUSTE | DEVOLUCION | RESERVA | LIBERACION
-estado_orden:         pendiente | en_diagnostico | cotizado | en_reparacion | listo | entregado | cancelado
+estado_orden:         pendiente | en_diagnostico | cotizado | en_reparacion | sustitucion_pendiente | listo | entregado | cancelado
 estado_linea_orden:   cotizada | reservada | consumida | liberada
 estado_cotizacion:    emitida | aprobada | rechazada | expirada | convertida
 tipo_linea_cotizacion: refaccion | mano_obra
+estado_solicitud:     pendiente | aprobada | entregada | rechazada | cancelada
+estado_sustitucion:   pendiente | aceptada | rechazada | cancelada
 estado_venta:         completada | cancelada | devuelta | credito_pendiente
 tipo_pago:            contado | credito
 metodo_pago:          efectivo | tarjeta_credito | tarjeta_debito | transferencia | deposito
@@ -317,6 +372,8 @@ tipo_garantia:        producto_nuevo | servicio | usado
 preferencia_contacto: whatsapp | correo | llamada
 tipo_equipo:          laptop | desktop | all_in_one | periferico | componente | otro
 ```
+
+> `estado_orden`, `estado_solicitud` y `estado_sustitucion` se modelan como `VARCHAR(20)` en la BD con valores controlados por la API (no como enum de PostgreSQL), salvo `estado_orden` que es `ENUM` (con `sustitucion_pendiente` agregado vía `ALTER TYPE ... ADD VALUE`).
 
 ### Tablas
 
@@ -330,6 +387,16 @@ TABLE usuarios {
   is_active       BOOLEAN NOT NULL DEFAULT true
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
   updated_at      TIMESTAMPTZ
+}
+
+TABLE refresh_tokens {
+  id          SERIAL PK
+  usuario_id  INTEGER NOT NULL FK→usuarios.id ON DELETE CASCADE
+  jti         UUID NOT NULL UNIQUE
+  token_hash  TEXT NOT NULL
+  expires_at  TIMESTAMPTZ NOT NULL
+  revoked     BOOLEAN NOT NULL DEFAULT false
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 }
 
 TABLE clientes {
@@ -357,30 +424,42 @@ TABLE proveedores {
   updated_at      TIMESTAMPTZ
 }
 
-TABLE categorias {
-  id          SERIAL PK
-  nombre      VARCHAR(60) NOT NULL
-  tipo        tipo_producto NOT NULL
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+TABLE catalogos {
+  id                  SERIAL PK
+  parent_id           INTEGER FK→catalogos.id ON DELETE CASCADE  -- árbol, máx 4 niveles
+  nombre              VARCHAR(80) NOT NULL
+  tags_sugeridas      JSONB NOT NULL DEFAULT '[]'
+  tags_compatibilidad JSONB NOT NULL DEFAULT '[]'
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  UNIQUE(parent_id, nombre) WHERE parent_id IS NOT NULL
+  UNIQUE(nombre) WHERE parent_id IS NULL
 }
 
 TABLE productos {
-  id              SERIAL PK
-  categoria_id    INTEGER NOT NULL FK→categorias.id ON DELETE RESTRICT
-  sku             VARCHAR(60) UNIQUE NOT NULL
-  codigo_barras   VARCHAR(60) UNIQUE
-  nombre          VARCHAR(150) NOT NULL
-  marca           VARCHAR(80)
-  modelo          VARCHAR(80)
-  precio_compra   NUMERIC(19,4) NOT NULL CHECK(precio_compra >= 0)
-  precio_venta    NUMERIC(19,4) NOT NULL CHECK(precio_venta >= 0)
-  stock           INT NOT NULL DEFAULT 0 CHECK(stock >= 0)
-  stock_minimo    INT NOT NULL DEFAULT 0 CHECK(stock_minimo >= 0)
-  is_kit          BOOLEAN NOT NULL DEFAULT false
-  is_active       BOOLEAN NOT NULL DEFAULT true
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  updated_at      TIMESTAMPTZ
+  id                  SERIAL PK
+  categoria_id        INTEGER NOT NULL FK→catalogos.id ON DELETE RESTRICT  -- debe ser raíz (trigger)
+  catalogo_id         INTEGER FK→catalogos.id ON DELETE SET NULL
+  sku                 VARCHAR(60) UNIQUE NOT NULL
+  codigo_barras       VARCHAR(60) UNIQUE
+  nombre              VARCHAR(150) NOT NULL
+  marca               VARCHAR(80)
+  modelo              VARCHAR(80)
+  precio_compra       NUMERIC(19,4) NOT NULL CHECK(precio_compra >= 0)
+  precio_venta        NUMERIC(19,4) NOT NULL CHECK(precio_venta >= 0)
+  stock               INT NOT NULL DEFAULT 0 CHECK(stock >= 0)
+  stock_minimo        INT NOT NULL DEFAULT 0 CHECK(stock_minimo >= 0)
+  stock_maximo        INT NOT NULL DEFAULT 0 CHECK(stock_maximo >= 0)
+  proveedor_favorito_id INTEGER FK→proveedores.id ON DELETE SET NULL
+  especificaciones    JSONB NOT NULL DEFAULT '[]'  -- tags del producto (array de strings)
+  is_kit              BOOLEAN NOT NULL DEFAULT false
+  mano_obra           NUMERIC(19,4) NOT NULL DEFAULT 0 CHECK(mano_obra >= 0)
+  is_active           BOOLEAN NOT NULL DEFAULT true
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at          TIMESTAMPTZ
 }
+
+-- Trigger: garantiza que productos.categoria_id sea siempre un catálogo raíz
+-- (check_categoria_es_raiz → raise si catalogos.parent_id IS NOT NULL).
 
 TABLE producto_bom {
   id              SERIAL PK
@@ -456,6 +535,24 @@ TABLE detalle_cotizacion {
   tarifa_hora        NUMERIC(19,4) CHECK(tarifa_hora >= 0)
 }
 
+TABLE sustituciones {
+  id                   SERIAL PK
+  orden_id             INTEGER NOT NULL FK→ordenes_servicio.id ON DELETE CASCADE
+  cotizacion_id        INTEGER NOT NULL FK→cotizaciones.id ON DELETE CASCADE
+  linea_id             INTEGER NOT NULL FK→detalle_cotizacion.id ON DELETE CASCADE
+  producto_original_id INTEGER NOT NULL FK→productos.id
+  cantidad             INT NOT NULL CHECK(cantidad > 0)
+  sustituto_id         INTEGER NOT NULL FK→productos.id
+  justificacion        TEXT
+  cliente_acepta       BOOLEAN
+  estado               VARCHAR(20) NOT NULL DEFAULT 'pendiente'  -- pendiente|aceptada|rechazada|cancelada
+  solicitud_id         INTEGER FK→solicitudes_reabastecimiento.id ON DELETE SET NULL
+  creada_por           INTEGER NOT NULL FK→usuarios.id
+  resuelto_por         INTEGER FK→usuarios.id
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  resuelto_at          TIMESTAMPTZ
+}
+
 TABLE detalle_orden {
   id              SERIAL PK
   orden_id        INTEGER NOT NULL FK→ordenes_servicio.id ON DELETE CASCADE
@@ -481,6 +578,7 @@ TABLE ventas {
   plazo_dias      INT CHECK(plazo_dias > 0)
   fecha_vencimiento DATE
   monto_recibido  NUMERIC(19,4)
+  parte_de_pago   NUMERIC(19,4) NOT NULL DEFAULT 0 CHECK(parte_de_pago >= 0)  -- trade-in en especie (reduce efectivo a recibir)
   estado          estado_venta NOT NULL DEFAULT 'completada'
   caja_id         INTEGER FK→cajas.id ON DELETE RESTRICT
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -503,6 +601,7 @@ TABLE compras {
   folio            VARCHAR(20) UNIQUE NOT NULL
   estado           estado_compra NOT NULL DEFAULT 'borrador'
   total_neto       NUMERIC(19,4) NOT NULL DEFAULT 0
+  total_recibido   NUMERIC(19,4) NOT NULL DEFAULT 0 CHECK(total_recibido >= 0)  -- base de la CxP (recepción parcial)
   fecha_vencimiento DATE
   creada_por       INTEGER NOT NULL FK→usuarios.id ON DELETE RESTRICT
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -514,6 +613,7 @@ TABLE detalle_compra {
   compra_id       INTEGER NOT NULL FK→compras.id ON DELETE CASCADE
   producto_id     INTEGER NOT NULL FK→productos.id ON DELETE RESTRICT
   cantidad        INT NOT NULL CHECK(cantidad > 0)
+  cantidad_recibida INT NOT NULL DEFAULT 0 CHECK(cantidad_recibida >= 0 AND cantidad_recibida <= cantidad)
   precio_unitario NUMERIC(19,4) NOT NULL CHECK(precio_unitario >= 0)
 }
 
@@ -547,6 +647,34 @@ TABLE pagos_proveedor {
   metodo       metodo_pago NOT NULL
   usuario_id   INTEGER NOT NULL FK→usuarios.id ON DELETE RESTRICT
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+}
+
+TABLE solicitudes_reabastecimiento {
+  id             SERIAL PK
+  producto_id    INTEGER NOT NULL FK→productos.id ON DELETE CASCADE
+  cantidad       INT NOT NULL CHECK(cantidad > 0)
+  orden_id       INTEGER FK→ordenes_servicio.id ON DELETE SET NULL
+  solicitado_por INTEGER NOT NULL FK→usuarios.id
+  motivo         TEXT
+  estado         VARCHAR(20) NOT NULL DEFAULT 'pendiente'  -- pendiente|aprobada|entregada|rechazada|cancelada
+  rechazo_motivo TEXT
+  compra_id      INTEGER FK→compras.id ON DELETE SET NULL
+  resuelto_por   INTEGER FK→usuarios.id
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  resuelto_at    TIMESTAMPTZ
+}
+
+TABLE equipos_usados {
+  id                SERIAL PK
+  producto_id       INTEGER NOT NULL UNIQUE FK→productos.id ON DELETE CASCADE  -- el usado ES un producto (raíz "Usado")
+  cliente_origen_id INTEGER FK→clientes.id ON DELETE SET NULL
+  orden_id          INTEGER FK→ordenes_servicio.id ON DELETE SET NULL
+  venta_id          INTEGER FK→ventas.id ON DELETE SET NULL  -- venta donde se recibió como parte de pago
+  valor_trade_in    NUMERIC(19,4) NOT NULL DEFAULT 0 CHECK(valor_trade_in >= 0)
+  origen            VARCHAR(20) NOT NULL DEFAULT 'otro' CHECK(origen IN ('parte_de_pago','reparacion','otro'))
+  observaciones     TEXT
+  created_by        INTEGER NOT NULL FK→usuarios.id
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 }
 
 TABLE cajas {
@@ -591,6 +719,22 @@ TABLE garantias {
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 }
 
+TABLE quejas {
+  id             SERIAL PK
+  cliente_id     INTEGER NOT NULL FK→clientes.id ON DELETE CASCADE
+  tipo           VARCHAR(20) NOT NULL DEFAULT 'queja' CHECK(tipo IN ('queja','reclamacion_garantia'))
+  garantia_id    INTEGER FK→garantias.id ON DELETE SET NULL
+  orden_id       INTEGER FK→ordenes_servicio.id ON DELETE SET NULL
+  venta_id       INTEGER FK→ventas.id ON DELETE SET NULL
+  descripcion    TEXT NOT NULL
+  estado         VARCHAR(20) NOT NULL DEFAULT 'abierta' CHECK(estado IN ('abierta','en_proceso','resuelta'))
+  resolucion     TEXT
+  registrada_por INTEGER NOT NULL FK→usuarios.id
+  resuelta_por   INTEGER FK→usuarios.id
+  resuelta_at    TIMESTAMPTZ
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+}
+
 TABLE configuracion {
   clave   VARCHAR(60) PRIMARY KEY
   valor   JSONB NOT NULL
@@ -616,10 +760,12 @@ TABLE auditoria {
 ```
 TABLA                 ÍNDICE                            COLUMNAS                                    TIPO      MOTIVO
 ─────                 ───────                            ───────                                    ────      ──────
-productos             idx_productos_busqueda             (nombre) ILIKE                             B-tree    búsqueda por nombre en catálogo/POS
-productos             idx_productos_codigo_barras        (codigo_barras)                            UNIQUE    escaneo rápido en POS
-productos             idx_productos_low_stock            (stock_minimo, stock)                      B-tree    alerta REP-01 / dashboard
-productos             idx_productos_categoria            (categoria_id)                             B-tree    JOIN y filtro por categoría
+productos             idx_productos_busqueda            (nombre) ILIKE                             B-tree    búsqueda por nombre en catálogo/POS
+productos             idx_productos_codigo_barras       (codigo_barras)                            UNIQUE    escaneo rápido en POS
+productos             idx_productos_low_stock           (stock_minimo, stock)                      B-tree    alerta REP-01 / dashboard
+productos             idx_productos_catalogo            (catalogo_id)                              B-tree    JOIN y filtro por catálogo (árbol)
+productos             idx_productos_especificaciones_gin (especificaciones)                        GIN       filtro/sugerencias por tags
+productos             idx_productos_proveedor_favorito  (proveedor_favorito_id)                    B-tree    sugerencias de reabastecimiento
 clientes              idx_clientes_telefono              (telefono)                                 UNIQUE    búsqueda por teléfono en tienda (CRM-02)
 clientes              idx_clientes_nombre                (nombre) ILIKE                             B-tree    búsqueda parcial por nombre
 clientes              idx_clientes_deudores              (is_active) WHERE is_active=true           PARTIAL   listas activas
@@ -628,6 +774,11 @@ ordenes_servicio      idx_ordenes_cliente_estado         (cliente_id, estado)   
 ordenes_servicio      idx_ordenes_retraso                (fecha_prometida) WHERE retrasada=false    PARTIAL   job de retrasos (NOT-01)
 ordenes_servicio      idx_ordenes_estado                 (estado)                                   B-tree    colas de trabajo del técnico
 historial_orden       idx_historial_orden                (orden_id, created_at DESC)                B-tree    timeline de la orden
+sustituciones         idx_sustituciones_orden            (orden_id)                                 B-tree    sustituciones por orden
+solicitudes_reabastecimiento idx_solicitudes_estado       (estado)                                   B-tree    cola de aprobación admin
+solicitudes_reabastecimiento idx_solicitudes_producto     (producto_id)                              B-tree    "Ya en OC" y entregada al recibir
+equipos_usados        idx_equipos_usados_estado           (origen)                                  B-tree    filtro por origen de usados
+equipos_usados        idx_equipos_usados_venta            (venta_id)                                B-tree    trade-ins por venta
 cotizaciones          idx_cotizaciones_vigencia          (vigencia_hasta) WHERE estado='emitida'    PARTIAL   expiración automática
 detalle_orden         idx_detalle_orden_orden            (orden_id)                                 B-tree    JOIN orden→piezas
 detalle_orden         idx_detalle_orden_reserva          (producto_id) WHERE estado_linea='reservada' PARTIAL  validación de reservas vs stock
@@ -640,6 +791,7 @@ movimientos_inventario idx_mov_producto_fecha            (producto_id, created_a
 movimientos_inventario idx_mov_caja                       (caja_id)                                  B-tree    corte de caja
 notificaciones        idx_notificaciones_cliente          (cliente_id, created_at DESC)             B-tree    historial de notificaciones (NOT-06)
 notificaciones        idx_notificaciones_pendiente        (estado) WHERE estado IN ('fallido','reintento') PARTIAL reintentos del worker
+refresh_tokens        idx_refresh_tokens_usuario          (usuario_id)                              B-tree    rotación/revocación por usuario
 garantias             idx_garantias_fin                  (fin) WHERE fin > NOW()                    PARTIAL   job NOT-04
 cajas                 idx_cajas_usuario_fecha            (usuario_id, fecha)                        UNIQUE    una caja por usuario/día
 ```
@@ -653,9 +805,20 @@ cajas                 idx_cajas_usuario_fecha            (usuario_id, fecha)    
 - **Dinero:** `NUMERIC(19,4)` en BD; el redondeo a 2 decimales ocurre solo en impresión/ticket. IVA calculado centralmente.
 - **Precios sin IVA:** catálogo guarda netos; `subtotal`, `iva`, `total` se calculan al emitir cotización/venta (BR-MON-02/03).
 - **CxC/CxP derivadas:** no hay tablas de saldos; el saldo = `total − Σ pagos`, con `fecha_vencimiento` para detectar vencidos. Evita doble fuente de verdad.
+- **Recepción parcial:** `detalle_compra.cantidad_recibida` acumula lo recibido por línea y `compras.total_recibido` es la base de la CxP; la OC pasa a `recibida` solo cuando todas las líneas están completas (migración `0012`).
+- **Equipos usados:** el usado es un `producto` bajo la raíz "Usado" + metadatos en `equipos_usados` (origen, cliente, valor de parte de pago); el estado es derivado del stock (migración `0013`).
+- **Garantías por venta:** `garantias` también se crea al vender productos con cliente (una por producto distinto: `producto_nuevo` 30d / `usado` 15d) con `venta_id`; la de servicio se crea en la entrega de reparación (BR-GAR-06).
+- **Parte de pago (trade-in):** `ventas.parte_de_pago` registra el valor aceptado en especie y `equipos_usados.venta_id` lo vincula a la venta; el corte de caja excluye el trade-in del efectivo (migración `0014`).
+- **Pagos mixtos (BR-VEN-02/14):** `pagos` registra todo el dinero recibido — filas del desglose al crear una venta de contado y abonos a crédito; el corte de caja suma `pagos` (solo dinero realmente recibido).
+- **Quejas (BR-CRM-08):** `quejas` da seguimiento abierta→en_proceso→resuelta con vínculo opcional a garantía/orden/venta (migración `0015`).
 - **Límite de crédito default:** `clientes.limite_credito` = $3,000 MXN al crear el cliente; se amplía individualmente (BR-CRE-01).
 - **Firma de recepción:** `ordenes_servicio.firma_recepcion` guarda el PNG (base64) de la firma capturada en canvas táctil (BR-SER-01).
 - **Soft delete:** `is_active` en usuarios, clientes, productos, proveedores. Ordenes/ventas/movimientos nunca se eliminan (BR-DAT-02/03).
 - **BOM:** `productos.is_kit` + `producto_bom`; al vender un kit se generan `detalle_venta` por componente con stock decrementado individualmente (BR-INV-09).
 - **Auditoría:** eventos críticos a `auditoria` (BR-ROL-05); cambios de precio a `precio_historial` (BR-PRD-05).
+- **Taxonomía unificada:** `categorias`/`tipo_producto` fueron reemplazados por el árbol `catalogos` (migración 0008); `productos.categoria_id` → raíz del árbol con trigger de invariante.
+- **Especificaciones como tags:** `productos.especificaciones` es un array de strings (migración 0009) con índice GIN para sugerir sustitutos por compatibilidad.
+- **Reabastecimiento:** `stock_maximo` + `proveedor_favorito_id` (migración 0010) alimentan las sugerencias; `solicitudes_reabastecimiento` vincula pedido de técnico → OC → `entregada`.
+- **Sustitución:** `sustituciones` (migración 0011) registra la propuesta y su resolución; `estado_orden.sustitucion_pendiente` pausa la orden hasta validación del cliente.
+- **Refresh tokens:** `refresh_tokens` guarda hash + `jti` para rotación y revocación (logout); housekeeping diario elimina tokens viejos/revocados.
 - **Tamaño objetivo:** 100k productos / 50k órdenes. Índices cubren los accesos por folio, cliente y fecha; movimientos paginados.

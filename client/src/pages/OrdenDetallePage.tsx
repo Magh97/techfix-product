@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Bell, CheckCircle2, PenLine, Plus, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, Archive, Bell, CheckCircle2, PackagePlus, PenLine, Plus, RefreshCw, Trash2, Wrench } from "lucide-react";
 import { SignatureCanvas } from "@/components/orden/SignatureCanvas";
 import { StatusBadge } from "@/components/orden/StatusBadge";
 import { Stepper } from "@/components/orden/Stepper";
@@ -12,10 +12,12 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { getSessionUser } from "@/lib/auth";
-import { ordenesApi, productsApi } from "@/lib/api";
+import { comprasApi, ordenesApi, productsApi, usadosApi } from "@/lib/api";
 import { fechaCorta, mxn } from "@/lib/utils";
+import type { Sustitucion } from "@/lib/types";
 
 export default function OrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -26,6 +28,10 @@ export default function OrdenDetallePage() {
   const rol = usuario?.rol ?? "vendedor";
 
   const [dialog, setDialog] = useState<null | "diagnostico" | "cotizacion" | "consumo" | "manoObra" | "entrega" | "cancelar">(null);
+  const [solicitarAbierto, setSolicitarAbierto] = useState(false);
+  const [sustitucionLinea, setSustitucionLinea] = useState<{ lineaId: number; productoId: number; nombre: string } | null>(null);
+  const [usadoAbierto, setUsadoAbierto] = useState(false);
+  const [usadoForm, setUsadoForm] = useState({ nombre: "", marca: "", modelo: "", valor: "", precioVenta: "", observaciones: "" });
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["orden", ordenId],
@@ -34,6 +40,97 @@ export default function OrdenDetallePage() {
   });
 
   const orden = data?.data;
+
+  const solicitudes = useQuery({
+    queryKey: ["solicitudes-orden", ordenId],
+    queryFn: () => comprasApi.solicitudes.list({ ordenId, pageSize: 100 }),
+    enabled: Number.isFinite(ordenId),
+  });
+
+  const sustituciones = useQuery({
+    queryKey: ["sustituciones-orden", ordenId],
+    queryFn: () => ordenesApi.sustituciones.list(ordenId),
+    enabled: Number.isFinite(ordenId),
+  });
+
+  function cancelarSolicitud(s: { id: number }) {
+    const motivo = window.prompt("Justificación de la cancelación:")?.trim();
+    if (!motivo) return;
+    comprasApi.solicitudes
+      .cancelar(s.id, motivo)
+      .then(() => {
+        toast.success("Solicitud cancelada");
+        solicitudes.refetch();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"));
+  }
+
+  const guardarUsado = useMutation({
+    mutationFn: () =>
+      usadosApi.create({
+        sku: `USO-${Date.now()}`,
+        nombre: usadoForm.nombre,
+        marca: usadoForm.marca || null,
+        modelo: usadoForm.modelo || null,
+        valorTradeIn: Number(usadoForm.valor),
+        precioVenta: Number(usadoForm.precioVenta),
+        origen: "reparacion",
+        clienteId: orden?.clienteId ?? null,
+        ordenId,
+        observaciones: usadoForm.observaciones || undefined,
+      }),
+    onSuccess: () => {
+      toast.success("Equipo registrado como usado");
+      setUsadoAbierto(false);
+      setUsadoForm({ nombre: "", marca: "", modelo: "", valor: "", precioVenta: "", observaciones: "" });
+      qc.invalidateQueries({ queryKey: ["orden", ordenId] });
+      qc.invalidateQueries({ queryKey: ["usados"] });
+    },
+    onError: (e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"),
+  });
+
+  function abrirRegistrarUsado() {
+    setUsadoForm({ nombre: "", marca: "", modelo: "", valor: "", precioVenta: "", observaciones: "" });
+    setUsadoAbierto(true);
+  }
+
+  function aceptarSustitucion(s: Sustitucion) {
+    ordenesApi.sustituciones
+      .aceptar(ordenId, s.id)
+      .then(() => {
+        toast.success("Cliente aceptó la sustitución; pieza reemplazada");
+        invalidar();
+        sustituciones.refetch();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"));
+  }
+
+  function rechazarSustitucion(s: Sustitucion) {
+    const motivo = window.prompt("Motivo del rechazo (se generará la solicitud de reabastecimiento):")?.trim();
+    if (!motivo) return;
+    ordenesApi.sustituciones
+      .rechazar(ordenId, s.id, motivo)
+      .then(() => {
+        toast.success("Sustitución rechazada; solicitud generada");
+        invalidar();
+        sustituciones.refetch();
+        solicitudes.refetch();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"));
+  }
+
+  function cancelarSustitucion(s: Sustitucion) {
+    const motivo = window.prompt("Justificación de la cancelación:")?.trim();
+    if (!motivo) return;
+    ordenesApi.sustituciones
+      .cancelar(ordenId, s.id, motivo)
+      .then(() => {
+        toast.success("Sustitución cancelada");
+        invalidar();
+        sustituciones.refetch();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"));
+  }
 
   function invalidar() {
     qc.invalidateQueries({ queryKey: ["orden", ordenId] });
@@ -80,7 +177,18 @@ export default function OrdenDetallePage() {
   const reservadas = orden.detalle.filter((d) => d.estadoLinea === "reservada");
   const esTecnico = rol === "tecnico";
   const esVendedor = rol === "vendedor" || rol === "admin";
+  const esAdmin = rol === "admin";
+  const puedeSolicitar = esTecnico || rol === "admin";
+  const puedeProponer = puedeSolicitar && (orden.estado === "cotizado" || orden.estado === "en_reparacion");
   const activo = !["entregado", "cancelado"].includes(orden.estado);
+
+  const estadoSolicitud: Record<string, "default" | "success" | "warning" | "danger" | "accent"> = {
+    pendiente: "warning",
+    aprobada: "accent",
+    entregada: "success",
+    rechazada: "danger",
+    cancelada: "default",
+  };
 
   return (
     <div className="space-y-4">
@@ -149,9 +257,20 @@ export default function OrdenDetallePage() {
               </>
             )}
             {esVendedor && <Button variant="outline" onClick={() => setDialog("cancelar")}>Cancelar</Button>}
+            {esAdmin && orden.estado !== "entregado" && (
+              <Button variant="outline" onClick={abrirRegistrarUsado}>
+                <Archive className="h-4 w-4" /> Registrar usado
+              </Button>
+            )}
           </div>
         )}
       </div>
+
+      {orden.estado === "sustitucion_pendiente" && (
+        <div className="rounded-md border border-warning bg-warning-soft px-4 py-3 text-sm text-warning">
+          Orden en espera de la validación del cliente sobre una sustitución de pieza.
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -201,23 +320,40 @@ export default function OrdenDetallePage() {
                         <td className="py-2">
                           {l.nombre}
                           {l.horas && <span className="text-muted"> ({l.horas}h × {mxn(l.tarifaHora ?? 0)})</span>}
+                          {l.tipoLinea === "refaccion" && l.stock !== null && l.stock < (l.cantidad ?? 0) && (
+                            <span className="ml-1 text-xs text-danger">sin stock</span>
+                          )}
                         </td>
                         <td className="py-2 text-right">{l.cantidad ? `× ${l.cantidad}` : ""}</td>
                         <td className="py-2 text-right">{mxn(l.precioNeto)}</td>
+                        <td className="py-2 text-right">
+                          {puedeProponer && l.tipoLinea === "refaccion" && l.productoId && l.stock !== null && l.stock < (l.cantidad ?? 0) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setSustitucionLinea({ lineaId: l.id, productoId: l.productoId!, nombre: l.nombre ?? "" })}
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" /> Sustituir
+                            </Button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                     <tr className="border-t border-border-line font-semibold">
                       <td className="py-2">Subtotal</td>
+                      <td />
                       <td />
                       <td className="py-2 text-right">{mxn(cotizacion.subtotal)}</td>
                     </tr>
                     <tr className="text-muted">
                       <td className="py-1">IVA</td>
                       <td />
+                      <td />
                       <td className="py-1 text-right">{mxn(cotizacion.iva)}</td>
                     </tr>
                     <tr className="font-bold">
                       <td className="py-1">Total</td>
+                      <td />
                       <td />
                       <td className="py-1 text-right">{mxn(cotizacion.total)}</td>
                     </tr>
@@ -250,12 +386,196 @@ export default function OrdenDetallePage() {
         </CardBody>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle>Refacciones solicitadas</CardTitle>
+            {puedeSolicitar && (
+              <Button size="sm" onClick={() => setSolicitarAbierto(true)}>
+                <PackagePlus className="h-4 w-4" /> Solicitar refacción
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardBody>
+          {solicitudes.isLoading ? (
+            <div className="grid place-items-center p-6">
+              <Spinner />
+            </div>
+          ) : (solicitudes.data?.data.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted">Sin solicitudes de refacción para esta orden.</p>
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Producto</TH>
+                  <TH className="text-right">Cant.</TH>
+                  <TH>Estado</TH>
+                  <TH>Motivo</TH>
+                  <TH>Solicitante</TH>
+                  <TH />
+                </TR>
+              </THead>
+              <tbody>
+                {solicitudes.data?.data.map((s) => (
+                  <TR key={s.id}>
+                    <TD>
+                      <p>{s.productoNombre}</p>
+                      <p className="font-mono text-xs text-muted">{s.sku}</p>
+                    </TD>
+                    <TD className="text-right">{s.cantidad}</TD>
+                    <TD>
+                      <Badge variant={estadoSolicitud[s.estado] ?? "default"}>{s.estado}</Badge>
+                    </TD>
+                    <TD className="text-muted">{s.motivo ?? "—"}</TD>
+                    <TD>{s.solicitanteNombre}</TD>
+                    <TD className="text-right">
+                      {s.estado === "pendiente" && puedeSolicitar && (
+                        <Button size="sm" variant="outline" onClick={() => cancelarSolicitud(s)}>
+                          Cancelar
+                        </Button>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Sustituciones</CardTitle>
+        </CardHeader>
+        <CardBody>
+          {sustituciones.isLoading ? (
+            <div className="grid place-items-center p-6">
+              <Spinner />
+            </div>
+          ) : (sustituciones.data?.data.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted">Sin sustituciones propuestas.</p>
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Original</TH>
+                  <TH>Sustituto</TH>
+                  <TH className="text-right">Cant.</TH>
+                  <TH>Estado</TH>
+                  <TH>Cliente</TH>
+                  <TH className="text-right">Acciones</TH>
+                </TR>
+              </THead>
+              <tbody>
+                {sustituciones.data?.data.map((s) => (
+                  <TR key={s.id}>
+                    <TD>
+                      <p>{s.nombreOriginal}</p>
+                      <p className="font-mono text-xs text-muted">{s.skuOriginal}</p>
+                    </TD>
+                    <TD>
+                      <p>
+                        {s.nombreSustituto} <span className="text-muted">({mxn(s.precioSustituto)})</span>
+                      </p>
+                      <p className="font-mono text-xs text-muted">{s.skuSustituto} · {s.stockSustituto} disp.</p>
+                    </TD>
+                    <TD className="text-right">{s.cantidad}</TD>
+                    <TD>
+                      <Badge variant={s.estado === "aceptada" ? "success" : s.estado === "rechazada" ? "danger" : s.estado === "pendiente" ? "warning" : "default"}>
+                        {s.estado}
+                      </Badge>
+                    </TD>
+                    <TD>{s.clienteAcepta === null ? "—" : s.clienteAcepta ? "Aceptó" : "Rechazó"}</TD>
+                    <TD className="text-right">
+                      {s.estado === "pendiente" && puedeSolicitar && (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => aceptarSustitucion(s)}>
+                            Cliente aceptó
+                          </Button>
+                          <Button size="sm" variant="outline" className="ml-1" onClick={() => rechazarSustitucion(s)}>
+                            Cliente rechazó
+                          </Button>
+                          <Button size="sm" variant="ghost" className="ml-1" onClick={() => cancelarSustitucion(s)}>
+                            Cancelar
+                          </Button>
+                        </>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
+
       {dialog === "diagnostico" && <DiagnosticoDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "cotizacion" && <CotizacionDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "consumo" && <ConsumoDialog ordenId={ordenId} piezas={reservadas} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "manoObra" && <ManoObraDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "entrega" && <EntregaDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
       {dialog === "cancelar" && <CancelarDialog ordenId={ordenId} onClose={() => setDialog(null)} onDone={invalidar} />}
+      {solicitarAbierto && (
+        <SolicitarRefaccionDialog ordenId={ordenId} onClose={() => { setSolicitarAbierto(false); solicitudes.refetch(); }} />
+      )}
+      {sustitucionLinea && cotizacion && (
+        <SustitucionDialog
+          ordenId={ordenId}
+          cotizacionId={cotizacion.id}
+          lineaId={sustitucionLinea.lineaId}
+          productoId={sustitucionLinea.productoId}
+          nombre={sustitucionLinea.nombre}
+          onClose={() => {
+            setSustitucionLinea(null);
+            sustituciones.refetch();
+          }}
+        />
+      )}
+      <Dialog open={usadoAbierto} onClose={() => setUsadoAbierto(false)} title="Registrar equipo usado de la orden">
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            Registra el equipo abandonado como usado en inventario. El valor asignado será el costo del producto.
+          </p>
+          <div>
+            <Label>Nombre del equipo *</Label>
+            <Input required value={usadoForm.nombre} onChange={(e) => setUsadoForm((f) => ({ ...f, nombre: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Marca</Label>
+              <Input value={usadoForm.marca} onChange={(e) => setUsadoForm((f) => ({ ...f, marca: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Modelo</Label>
+              <Input value={usadoForm.modelo} onChange={(e) => setUsadoForm((f) => ({ ...f, modelo: e.target.value }))} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Valor asignado / costo *</Label>
+              <Input type="number" min={0} step="0.01" value={usadoForm.valor} onChange={(e) => setUsadoForm((f) => ({ ...f, valor: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Precio de reventa *</Label>
+              <Input type="number" min={0.01} step="0.01" value={usadoForm.precioVenta} onChange={(e) => setUsadoForm((f) => ({ ...f, precioVenta: e.target.value }))} />
+            </div>
+          </div>
+          <div>
+            <Label>Observaciones</Label>
+            <Input value={usadoForm.observaciones} onChange={(e) => setUsadoForm((f) => ({ ...f, observaciones: e.target.value }))} placeholder="Ej. cliente no recogió el equipo" />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setUsadoAbierto(false)}>Cancelar</Button>
+            <Button
+              disabled={guardarUsado.isPending || !usadoForm.nombre.trim() || !(Number(usadoForm.valor) >= 0) || !(Number(usadoForm.precioVenta) > 0)}
+              onClick={() => guardarUsado.mutate()}
+            >
+              {guardarUsado.isPending ? "Guardando…" : "Registrar"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
@@ -491,6 +811,149 @@ function CancelarDialog({ ordenId, onClose, onDone }: { ordenId: number; onClose
         <Button variant="danger" disabled={!motivo.trim() || m.isPending} onClick={() => m.mutate(() => ordenesApi.cancelar(ordenId, motivo))}>
           Cancelar orden
         </Button>
+      </div>
+    </Dialog>
+  );
+}
+
+function SolicitarRefaccionDialog({ ordenId, onClose }: { ordenId: number; onClose: () => void }) {
+  const toast = useToast();
+  const { data: productos } = useQuery({ queryKey: ["productos", "solicitud"], queryFn: () => productsApi.list({ pageSize: 100 }) });
+  const [pid, setPid] = useState("");
+  const [cantidad, setCantidad] = useState("1");
+  const [motivo, setMotivo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  function enviar() {
+    if (!pid || !Number(cantidad) || Number(cantidad) < 1) {
+      toast.error("Selecciona producto y cantidad");
+      return;
+    }
+    setEnviando(true);
+    comprasApi.solicitudes
+      .create({ productoId: Number(pid), cantidad: Number(cantidad), ordenId, motivo: motivo || undefined })
+      .then(() => {
+        toast.success("Solicitud enviada al administrador");
+        onClose();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"))
+      .finally(() => setEnviando(false));
+  }
+
+  return (
+    <Dialog open onClose={onClose} title="Solicitar refacción">
+      <div className="space-y-3">
+        <div>
+          <Label>Producto *</Label>
+          <select value={pid} onChange={(e) => setPid(e.target.value)} className="h-10 w-full rounded-md border border-border-line bg-surface px-3 text-sm">
+            <option value="">Seleccionar…</option>
+            {productos?.data.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nombre} · stock {p.stock}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Label>Cantidad *</Label>
+          <Input type="number" min={1} step={1} value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
+        </div>
+        <div>
+          <Label>Motivo (opcional)</Label>
+          <Input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej. falta stock para continuar la reparación" />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button disabled={enviando || !pid || !Number(cantidad)} onClick={enviar}>
+            {enviando ? "Enviando…" : "Enviar solicitud"}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function SustitucionDialog({
+  ordenId,
+  cotizacionId,
+  lineaId,
+  productoId,
+  nombre,
+  onClose,
+}: {
+  ordenId: number;
+  cotizacionId: number;
+  lineaId: number;
+  productoId: number;
+  nombre: string;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const { data: sugerencias } = useQuery({
+    queryKey: ["sugerencias", productoId],
+    queryFn: () => productsApi.sugerencias(productoId),
+    enabled: !!productoId,
+  });
+  const [sustitutoId, setSustitutoId] = useState("");
+  const [justificacion, setJustificacion] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  const sustitutos = (sugerencias?.data.sustitutos ?? [])
+    .concat(sugerencias?.data.sustitutosComponente ?? [])
+    .filter((s, i, arr) => arr.findIndex((x) => x.id === s.id) === i);
+
+  function enviar() {
+    if (!sustitutoId) {
+      toast.error("Selecciona un sustituto");
+      return;
+    }
+    setEnviando(true);
+    ordenesApi.sustituciones
+      .create(ordenId, {
+        cotizacionId,
+        lineaId,
+        sustitutoId: Number(sustitutoId),
+        justificacion: justificacion || undefined,
+      })
+      .then(() => {
+        toast.success("Sustitución propuesta; se consultará al cliente");
+        onClose();
+      })
+      .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"))
+      .finally(() => setEnviando(false));
+  }
+
+  return (
+    <Dialog open onClose={onClose} title={`Proponer sustitución · ${nombre}`}>
+      <div className="space-y-3">
+        <p className="text-sm text-muted">
+          La pieza original no tiene stock. El sustituto se propone al cliente y, al aceptarlo, reemplaza la línea con su
+          precio.
+        </p>
+        <div>
+          <Label>Sustituto *</Label>
+          <select value={sustitutoId} onChange={(e) => setSustitutoId(e.target.value)} className="h-10 w-full rounded-md border border-border-line bg-surface px-3 text-sm">
+            <option value="">Seleccionar sustituto…</option>
+            {sustitutos.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.nombre} · {s.sku} · {mxn(s.precioVenta)} · {s.stock} disp.
+              </option>
+            ))}
+          </select>
+          {sustitutos.length === 0 && (
+            <p className="mt-1 text-xs text-muted">Sin sustitutos compatibles con stock disponible.</p>
+          )}
+        </div>
+        <div>
+          <Label>Justificación (opcional)</Label>
+          <Input value={justificacion} onChange={(e) => setJustificacion(e.target.value)} placeholder="Ej. no hay stock y el cliente requiere el equipo" />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button disabled={enviando || !sustitutoId} onClick={enviar}>
+            {enviando ? "Enviando…" : "Proponer sustitución"}
+          </Button>
+        </div>
       </div>
     </Dialog>
   );

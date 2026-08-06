@@ -28,3 +28,29 @@ body {
   background-color: var(--color-background);
   color: var(--color-foreground);
 }
+
+/* Ticket térmico 80mm: al imprimir se muestra solo el recibo (US-VEN-09) */
+#print-area {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-area,
+  #print-area * {
+    visibility: visible;
+  }
+  #print-area {
+    display: block;
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    background: #fff;
+  }
+  @page {
+    margin: 0;
+  }
+}

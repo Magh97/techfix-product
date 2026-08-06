@@ -20,6 +20,30 @@ export const crearVentaSchema = z.object({
   metodoPago: z.enum(["efectivo", "tarjeta_credito", "tarjeta_debito", "transferencia", "deposito"]).optional(),
   plazoDias: z.number().int().positive().optional().nullable(),
   montoRecibido: z.number().nonnegative().optional().nullable(),
+  // Desglose de pago (pagos mixtos). Solo ventas de contado; la suma debe dar total − parte_de_pago.
+  pagos: z
+    .array(
+      z.object({
+        metodo: z.enum(["efectivo", "tarjeta_credito", "tarjeta_debito", "transferencia", "deposito"]),
+        monto: z.number().positive(),
+      })
+    )
+    .min(1)
+    .optional(),
+  // Parte de pago en especie (equipo usado). Solo ventas de contado.
+  partesDePago: z
+    .array(
+      z.object({
+        nombre: z.string().min(1),
+        marca: z.string().optional().nullable(),
+        modelo: z.string().optional().nullable(),
+        valor: z.number().nonnegative(),
+        precioVenta: z.number().positive(),
+        observaciones: z.string().max(500).optional().nullable(),
+      })
+    )
+    .min(1)
+    .optional(),
 });
 
 export const listVentasQuery = z.object({
@@ -45,4 +69,5 @@ export const devolucionSchema = z.object({
   lineas: z
     .array(z.object({ productoId: z.number().int().positive(), cantidad: z.number().int().positive() }))
     .min(1),
+  motivo: z.string().max(500).optional(),
 });

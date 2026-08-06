@@ -3,7 +3,13 @@ interface Plantilla {
   cuerpo: string;
 }
 
-const PLANTILLAS: Record<string, Plantilla> = {
+export const PLANTILLAS: Record<string, Plantilla> = {
+  "NOT-01": {
+    asunto: "Retraso en tu orden — TechStore",
+    cuerpo:
+      "Hola {cliente}, lamentamos informarte que tu equipo con folio {folio} presenta un retraso.\n" +
+      "Estamos trabajando en ello y te avisaremos en cuanto esté listo.\n\nTechStore · {fecha}",
+  },
   "NOT-02": {
     asunto: "Tu equipo ya está listo — TechStore",
     cuerpo:
@@ -16,9 +22,27 @@ const PLANTILLAS: Record<string, Plantilla> = {
       "Hola {cliente}, la cotización de tu orden con folio {folio} ya está lista para su revisión.\n" +
       "Acércate a la tienda o contáctanos para aprobarla y dar inicio a la reparación.\n\nTechStore · {fecha}",
   },
+  "NOT-04": {
+    asunto: "Tu garantía está por vencer — TechStore",
+    cuerpo:
+      "Hola {cliente}, la garantía de tu orden {folio} está por vencer.\n" +
+      "Si presentas algún problema, acércate antes de la fecha límite.\n\nTechStore · {fecha}",
+  },
+  "NOT-05": {
+    asunto: "Solicitud de refacción — TechStore",
+    cuerpo:
+      "Se registró una solicitud de refacción pendiente de aprobación.\n" +
+      "Revisa la pantalla de Reabastecimiento para gestionarla.\n\nTechStore · {fecha}",
+  },
+  "NOT-06": {
+    asunto: "Sustitución propuesta — TechStore",
+    cuerpo:
+      "Se propuso una sustitución de pieza con validación del cliente.\n" +
+      "Revisa la orden para dar seguimiento.\n\nTechStore · {fecha}",
+  },
 };
 
-const PLANTILLA_DEFAULT: Plantilla = {
+export const PLANTILLA_DEFAULT: Plantilla = {
   asunto: "Notificación TechStore",
   cuerpo: "Hola {cliente}, tu orden {folio} está en proceso. TechStore · {fecha}",
 };
@@ -35,6 +59,15 @@ export function renderPlantilla(
   };
 }
 
-export function tipoNotificacion(input: "listo" | "cotizacion"): string {
-  return input === "listo" ? "NOT-02" : "NOT-03";
+export function tipoNotificacion(input: "listo" | "cotizacion" | "retraso" | "garantia"): string {
+  switch (input) {
+    case "listo":
+      return "NOT-02";
+    case "cotizacion":
+      return "NOT-03";
+    case "garantia":
+      return "NOT-04";
+    default:
+      return "NOT-01";
+  }
 }

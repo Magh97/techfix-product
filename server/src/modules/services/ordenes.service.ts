@@ -1,15 +1,16 @@
 import { withTransaction } from "../../shared/db";
 import { AppError } from "../../shared/errors";
+import { getConfig } from "../../shared/config";
 import { getIvaRate } from "../../shared/config";
 import { calcMoney } from "../../shared/money";
+import { insertNotificacion } from "../notifications/notifications.repository";
+import * as comprasService from "../compras/compras.service";
 import { ESTADO_LABEL, validarTransicion } from "./estados";
 import type { EstadoOrden, Rol, TipoEquipo } from "./ordenes.types";
 import * as repo from "./ordenes.repository";
 import * as ventasService from "../sales/ventas.service";
 import * as notifications from "../notifications/notifications.service";
 
-const DIAS_GARANTIA_SERVICIO = 30;
-const TOLERANCIA_RETRASO_DIAS = 1; // 1 día calendario (incluye domingo) — BR-RET
 const DIAS_VIGENCIA_COTIZACION = 7;
 
 function addDays(date: string | Date, days: number): string {
@@ -23,9 +24,10 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function esRetrasada(estado: EstadoOrden, fechaPrometida: string): boolean {
+function esRetrasada(estado: EstadoOrden, fechaPrometida: string, toleranciaDias = 1): boolean {
   if (estado === "entregado" || estado === "cancelado") return false;
-  return addDays(fechaPrometida, TOLERANCIA_RETRASO_DIAS) < today();
+  // BR-RET: retraso tras fecha_prometida + tolerancia (1 día calendario por default)
+  return addDays(fechaPrometida, toleranciaDias) < today();
 }
 
 export interface OrdenDTO {
@@ -51,7 +53,7 @@ export interface OrdenDTO {
   createdAt: string;
 }
 
-function mapOrden(r: repo.OrdenRow): OrdenDTO {
+function mapOrden(r: repo.OrdenRow, toleranciaDias = 1): OrdenDTO {
   return {
     id: r.id,
     folio: r.folio,
@@ -66,7 +68,7 @@ function mapOrden(r: repo.OrdenRow): OrdenDTO {
     fallaReportada: r.falla_reportada,
     diagnostico: r.diagnostico,
     estado: r.estado,
-    retrasada: esRetrasada(r.estado, r.fecha_prometida),
+    retrasada: esRetrasada(r.estado, r.fecha_prometida, toleranciaDias),
     fechaPrometida: addDays(r.fecha_prometida, 0),
     fechaEntrega: r.fecha_entrega ? addDays(r.fecha_entrega, 0) : null,
     tecnicoId: r.tecnico_id,
@@ -97,6 +99,7 @@ function mapCotizacion(c: repo.CotizacionRow, lineas: repo.CotizacionLineaRow[])
       descripcion: l.descripcion_mano_obra,
       horas: l.horas ? Number(l.horas) : null,
       tarifaHora: l.tarifa_hora ? Number(l.tarifa_hora) : null,
+      stock: l.stock ?? null,
     })),
   };
 }
@@ -114,12 +117,13 @@ export async function list(f: ListFilters) {
   const limit = f.pageSize;
   const offset = (f.page - 1) * limit;
   const filtros = { estado: f.estado, retrasadas: f.retrasadas, folio: f.folio, clienteId: f.clienteId };
-  const [rows, totalItems] = await Promise.all([
+  const [rows, totalItems, config] = await Promise.all([
     repo.listOrdenes({ ...filtros, limit, offset }),
     repo.countOrdenes(filtros),
+    getConfig(),
   ]);
   return {
-    data: rows.map(mapOrden),
+    data: rows.map((r) => mapOrden(r, config.toleranciaRetrasoDias)),
     meta: { page: f.page, pageSize: limit, totalItems, totalPages: Math.ceil(totalItems / limit) || 1 },
   };
 }
@@ -127,16 +131,17 @@ export async function list(f: ListFilters) {
 export async function getById(id: number) {
   const orden = await repo.findOrdenById(id);
   if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
-  const [historial, cotizacionesRows] = await Promise.all([
+  const [historial, cotizacionesRows, config] = await Promise.all([
     repo.listHistorial(id),
     repo.listCotizaciones(id),
+    getConfig(),
   ]);
   const cotizaciones = await Promise.all(
     cotizacionesRows.map(async (c) => mapCotizacion(c, await repo.listCotizacionLineas(c.id)))
   );
   const detalle = await repo.listDetalleOrden(id);
   return {
-    ...mapOrden(orden),
+    ...mapOrden(orden, config.toleranciaRetrasoDias),
     historial: historial.map((h) => ({
       id: h.id,
       estado: h.estado,
@@ -203,6 +208,7 @@ export async function cambiarEstado(id: number, nuevoEstado: EstadoOrden, nota: 
   const cotizaciones = await repo.listCotizaciones(id);
   const cotizacionAprobada = cotizaciones.some((c) => c.estado === "aprobada");
   validarTransicion(orden.estado, nuevoEstado, user.rol, cotizacionAprobada);
+  const config = await getConfig();
 
   await withTransaction(async (client) => {
     if (nuevoEstado === "listo") {
@@ -232,7 +238,7 @@ export async function cambiarEstado(id: number, nuevoEstado: EstadoOrden, nota: 
       }
       await repo.liberarReservas(client, id);
     }
-    await repo.updateOrdenEstado(id, nuevoEstado, esRetrasada(nuevoEstado, orden.fecha_prometida));
+    await repo.updateOrdenEstado(id, nuevoEstado, esRetrasada(nuevoEstado, orden.fecha_prometida, config.toleranciaRetrasoDias));
   });
 
   await repo.insertHistorial(id, nuevoEstado, user.id, nota ?? ESTADO_LABEL[nuevoEstado]);
@@ -467,6 +473,7 @@ export async function entregar(
   const cot = cotizaciones.find((c) => c.estado === "aprobada");
   if (!cot) throw AppError.business("QUOTE_NOT_FOUND", "No hay cotización aprobada");
 
+  const config = await getConfig();
   const lineasCot = await repo.listCotizacionLineas(cot.id);
   let ventaFolio = "";
 
@@ -499,7 +506,7 @@ export async function entregar(
       clienteId: orden.cliente_id,
       tipo: "servicio",
       inicio: today(),
-      fin: addDays(today(), DIAS_GARANTIA_SERVICIO),
+      fin: addDays(today(), config.diasGarantiaServicio),
     });
   });
 
@@ -519,7 +526,225 @@ export async function notificar(
   return notifications.notificar(ordenId, input);
 }
 
-// US-SER-09: job horario que marca las órdenes retrasadas
-export function marcarRetrasadas() {
-  return repo.marcarRetrasadas();
+// US-SER-09: job horario que marca las órdenes retrasadas y dispara NOT-01
+export async function marcarRetrasadas() {
+  const config = await getConfig();
+  const ids = await repo.marcarRetrasadas(config.toleranciaRetrasoDias);
+  for (const id of ids) {
+    try {
+      await notifications.notificarRetraso(id);
+    } catch (err) {
+      console.error(`[notif:retraso] orden ${id}:`, err);
+    }
+  }
+  return ids.length;
+}
+
+/* --- Sustituciones (validación del cliente) --- */
+
+function mapSustitucion(s: repo.SustitucionRow) {
+  return {
+    id: s.id,
+    ordenId: s.orden_id,
+    cotizacionId: s.cotizacion_id,
+    cotizacionFolio: s.cotizacion_folio,
+    lineaId: s.linea_id,
+    productoOriginalId: s.producto_original_id,
+    skuOriginal: s.sku_original,
+    nombreOriginal: s.nombre_original,
+    cantidad: s.cantidad,
+    sustitutoId: s.sustituto_id,
+    skuSustituto: s.sku_sustituto,
+    nombreSustituto: s.nombre_sustituto,
+    precioSustituto: Number(s.precio_sustituto),
+    stockSustituto: s.stock_sustituto,
+    justificacion: s.justificacion,
+    clienteAcepta: s.cliente_acepta,
+    estado: s.estado,
+    solicitudId: s.solicitud_id,
+    creadaPor: s.creada_por,
+    creadorNombre: s.creador_nombre,
+    createdAt: s.created_at,
+    resueltoAt: s.resuelto_at,
+  };
+}
+
+async function cotizacionDe(s: repo.SustitucionRow) {
+  return repo.findCotizacionById(s.cotizacion_id);
+}
+
+export async function crearSustitucion(
+  ordenId: number,
+  input: { cotizacionId: number; lineaId: number; sustitutoId: number; justificacion?: string },
+  user: { id: number; rol: Rol }
+) {
+  const orden = await repo.findOrdenById(ordenId);
+  if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
+  if (user.rol !== "tecnico" && user.rol !== "admin") throw AppError.forbidden();
+  if (orden.estado !== "cotizado" && orden.estado !== "en_reparacion") {
+    throw AppError.conflict("ORDER_STATE_INVALID", "Solo se puede proponer sustitución en cotizado o en reparación");
+  }
+
+  const cot = await repo.findCotizacionById(input.cotizacionId);
+  if (!cot || cot.orden_id !== ordenId) throw AppError.notFound("QUOTE_NOT_FOUND", "Cotización no encontrada");
+  if (cot.estado !== "emitida" && cot.estado !== "aprobada") {
+    throw AppError.conflict("QUOTE_INVALID", "La cotización debe estar emitida o aprobada");
+  }
+
+  const linea = await repo.findCotizacionLineaById(input.lineaId);
+  if (!linea || linea.cotizacion_id !== input.cotizacionId) {
+    throw AppError.notFound("LINEA_NOT_FOUND", "Línea de cotización no encontrada");
+  }
+  if (linea.tipo_linea !== "refaccion" || !linea.producto_id || !linea.cantidad) {
+    throw AppError.badRequest("LINEA_NO_REFACCION", "La línea debe ser una refacción");
+  }
+  if (linea.stock !== null && linea.stock >= linea.cantidad) {
+    throw AppError.business("STOCK_SUFICIENTE", "Hay stock suficiente para esa pieza; no requiere sustitución");
+  }
+
+  const sustituto = await repo.findProducto(input.sustitutoId);
+  if (!sustituto) throw AppError.notFound("PRODUCT_NOT_FOUND", "Sustituto no encontrado");
+  if (sustituto.stock < linea.cantidad) {
+    throw AppError.business("INSUFFICIENT_STOCK", `El sustituto no tiene stock suficiente (disponible ${sustituto.stock})`);
+  }
+  if (sustituto.id === linea.producto_id) {
+    throw AppError.badRequest("MISMO_PRODUCTO", "El sustituto no puede ser el mismo producto");
+  }
+
+  const id = await repo.insertSustitucion({
+    ordenId,
+    cotizacionId: input.cotizacionId,
+    lineaId: input.lineaId,
+    productoOriginalId: linea.producto_id,
+    cantidad: linea.cantidad,
+    sustitutoId: input.sustitutoId,
+    justificacion: input.justificacion ?? null,
+    creadaPor: user.id,
+  });
+
+  await insertNotificacion({
+    clienteId: null,
+    ordenId,
+    tipo: "NOT-06",
+    canal: "app",
+    estado: "enviado",
+    contenido: `Sustitución propuesta: ${linea.nombre_producto} → ${sustituto.nombre}`,
+  });
+
+  await repo.updateOrdenEstado(ordenId, "sustitucion_pendiente", esRetrasada("sustitucion_pendiente", orden.fecha_prometida));
+  await repo.insertHistorial(ordenId, "sustitucion_pendiente", user.id, `Sustitución propuesta: ${linea.nombre_producto} → ${sustituto.nombre}`);
+
+  const row = await repo.findSustitucionById(id!);
+  return mapSustitucion(row!);
+}
+
+export async function listarSustituciones(ordenId: number) {
+  return (await repo.listSustituciones(ordenId)).map(mapSustitucion);
+}
+
+export async function aceptarSustitucion(ordenId: number, sid: number, user: { id: number; rol: Rol }) {
+  const orden = await repo.findOrdenById(ordenId);
+  if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
+  if (user.rol !== "tecnico" && user.rol !== "admin") throw AppError.forbidden();
+  const s = await repo.findSustitucionById(sid);
+  if (!s || s.orden_id !== ordenId) throw AppError.notFound("SUSTITUCION_NOT_FOUND", "Sustitución no encontrada");
+  if (s.estado !== "pendiente") throw AppError.conflict("SUSTITUCION_CERRADA", "La sustitución ya fue resuelta");
+
+  const sustituto = await repo.findProducto(s.sustituto_id);
+  if (!sustituto) throw AppError.notFound("PRODUCT_NOT_FOUND", "Sustituto no encontrado");
+  if (sustituto.stock < s.cantidad) {
+    throw AppError.business("INSUFFICIENT_STOCK", `El sustituto ya no tiene stock suficiente (disponible ${sustituto.stock})`);
+  }
+
+  const cot = await cotizacionDe(s);
+  const fueAprobada = cot?.estado === "aprobada";
+  const precioNuevo = Number(sustituto.precio_venta);
+  const ivaRate = await getIvaRate();
+
+  await withTransaction(async (client) => {
+    // Reemplazar la pieza en la cotización con el precio nuevo del sustituto
+    await repo.updateCotizacionLinea(s.linea_id, { productoId: s.sustituto_id, precioNeto: precioNuevo * s.cantidad });
+
+    // Recalcular totales de la cotización
+    const lineas = await repo.listCotizacionLineas(s.cotizacion_id);
+    const subtotal = lineas.reduce((acc, l) => acc + Number(l.precio_neto), 0);
+    const mon = calcMoney(subtotal, 0, ivaRate);
+    await repo.updateCotizacionTotales(s.cotizacion_id, mon.subtotal, mon.iva, mon.total);
+
+    // Si estaba aprobada: liberar reserva del original y reservar el sustituto
+    if (fueAprobada) {
+      const liberadas = await repo.liberarReservaProductoClient(client, ordenId, s.producto_original_id);
+      const cantidadLib = liberadas.reduce((a, r) => a + Number(r.cantidad), 0);
+      if (cantidadLib > 0) {
+        await repo.liberarStock(client, s.producto_original_id, cantidadLib);
+        await repo.insertMovimiento(client, {
+          productoId: s.producto_original_id,
+          tipo: "LIBERACION",
+          cantidad: cantidadLib,
+          usuarioId: user.id,
+          motivo: `Sustitución aceptada (orden ${orden.folio})`,
+        });
+      }
+      const res = await repo.reservarStock(client, s.sustituto_id, s.cantidad);
+      if (!res.rowCount) throw AppError.business("STOCK_RESERVED", "No hay stock suficiente del sustituto para reservar");
+      await repo.insertDetalleOrdenReserva(client, ordenId, s.sustituto_id, s.cantidad, precioNuevo);
+      await repo.insertMovimiento(client, {
+        productoId: s.sustituto_id,
+        tipo: "RESERVA",
+        cantidad: -s.cantidad,
+        usuarioId: user.id,
+        motivo: `Sustitución aceptada (orden ${orden.folio})`,
+      });
+    }
+  });
+
+  await repo.resolverSustitucion(sid, { estado: "aceptada", clienteAcepta: true, resueltoPor: user.id });
+  const destino: EstadoOrden = fueAprobada ? "en_reparacion" : "cotizado";
+  await repo.updateOrdenEstado(ordenId, destino, esRetrasada(destino, orden.fecha_prometida));
+  await repo.insertHistorial(
+    ordenId,
+    destino,
+    user.id,
+    `Cliente aceptó sustitución: ${s.nombre_original} → ${s.nombre_sustituto} ($${precioNuevo})`
+  );
+  return mapSustitucion((await repo.findSustitucionById(sid))!);
+}
+
+export async function rechazarSustitucion(ordenId: number, sid: number, motivo: string, user: { id: number; rol: Rol }) {
+  const orden = await repo.findOrdenById(ordenId);
+  if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
+  if (user.rol !== "tecnico" && user.rol !== "admin") throw AppError.forbidden();
+  const s = await repo.findSustitucionById(sid);
+  if (!s || s.orden_id !== ordenId) throw AppError.notFound("SUSTITUCION_NOT_FOUND", "Sustitución no encontrada");
+  if (s.estado !== "pendiente") throw AppError.conflict("SUSTITUCION_CERRADA", "La sustitución ya fue resuelta");
+
+  // El cliente no aceptó → se solicita el reabastecimiento del producto original
+  const solicitud = await comprasService.crearSolicitud(
+    { productoId: s.producto_original_id, cantidad: s.cantidad, ordenId, motivo },
+    { id: user.id }
+  );
+
+  await repo.resolverSustitucion(sid, { estado: "rechazada", clienteAcepta: false, solicitudId: solicitud.id, resueltoPor: user.id });
+  const cot = await cotizacionDe(s);
+  const destino: EstadoOrden = cot?.estado === "aprobada" ? "en_reparacion" : "cotizado";
+  await repo.updateOrdenEstado(ordenId, destino, esRetrasada(destino, orden.fecha_prometida));
+  await repo.insertHistorial(ordenId, destino, user.id, `Cliente rechazó sustitución; se generó solicitud de reabastecimiento de ${s.nombre_original}`);
+  return mapSustitucion((await repo.findSustitucionById(sid))!);
+}
+
+export async function cancelarSustitucion(ordenId: number, sid: number, motivo: string, user: { id: number; rol: Rol }) {
+  const orden = await repo.findOrdenById(ordenId);
+  if (!orden) throw AppError.notFound("ORDER_NOT_FOUND", "Orden no encontrada");
+  if (user.rol !== "tecnico" && user.rol !== "admin") throw AppError.forbidden();
+  const s = await repo.findSustitucionById(sid);
+  if (!s || s.orden_id !== ordenId) throw AppError.notFound("SUSTITUCION_NOT_FOUND", "Sustitución no encontrada");
+  if (s.estado !== "pendiente") throw AppError.conflict("SUSTITUCION_CERRADA", "Solo se puede cancelar una sustitución pendiente");
+  if (user.rol !== "admin" && s.creada_por !== user.id) throw AppError.forbidden();
+
+  await repo.resolverSustitucion(sid, { estado: "cancelada", clienteAcepta: null, resueltoPor: user.id });
+  const cot = await cotizacionDe(s);
+  const destino: EstadoOrden = cot?.estado === "aprobada" ? "en_reparacion" : "cotizado";
+  await repo.updateOrdenEstado(ordenId, destino, esRetrasada(destino, orden.fecha_prometida));
+  await repo.insertHistorial(ordenId, destino, user.id, `Sustitución cancelada: ${motivo}`);
+  return mapSustitucion((await repo.findSustitucionById(sid))!);
 }

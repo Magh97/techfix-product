@@ -1,23 +1,49 @@
+import { clearSession, getRefreshToken, notifySessionExpired, setTokens } from "./auth";
 import type {
+  AuditoriaEntry,
+  Bom,
+  BusinessConfig,
   Caja,
+  Catalogo,
   Cliente,
   Compra,
+  ComparacionPrecios,
   Corte,
+  CotizacionVenta,
+  CrearEquipoUsado,
+  CrearQueja,
+  CreateCotizacionVenta,
   CreateOrden,
   CreateProducto,
   CreateVenta,
   CxcItem,
   CxpItem,
+  DashboardResumen,
+  EquipoUsado,
   EstadoOrden,
+  EstadoQueja,
+  Garantia,
   ImportResult,
   LoginResponse,
+  Movimiento,
+  NotificacionHistorial,
   OrdenServicio,
   Paginated,
+  PlantillaInfo,
   Producto,
   Proveedor,
+  Queja,
+  ReporteCliente,
+  ReporteFinanciero,
   ReporteInventario,
+  ReporteRentabilidad,
   ReporteVenta,
   ReporteServicios,
+  ReabastecimientoGrupo,
+  SolicitudReabastecimiento,
+  Sustitucion,
+  Sugerencias,
+  Usuario,
   Venta,
 } from "./types";
 
@@ -40,13 +66,86 @@ function authHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+interface RefreshResult {
+  token: string;
+  expiresIn: number;
+}
+
+let refreshPromise: Promise<RefreshResult | null> | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Single-flight: varias peticiones 401 comparten el mismo refresh
+function refreshAccessToken(): Promise<RefreshResult | null> {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const rt = getRefreshToken();
+      if (!rt) return null;
+      try {
+        const res = await fetch(`${API_URL}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: rt }),
+        });
+        if (!res.ok) return null;
+        const body = await res.json();
+        setTokens(body.data.token, body.data.refreshToken);
+        return { token: body.data.token, expiresIn: body.data.expiresIn };
+      } catch {
+        return null;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+  }
+  return refreshPromise;
+}
+
+// Refresh proactivo: se agenda ~1 min antes de que expire el access token
+export function agendarAutoRefresh(expiresIn: number) {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  const delayMs = Math.max(0, (expiresIn - 60) * 1000);
+  refreshTimer = setTimeout(async () => {
+    const r = await refreshAccessToken();
+    if (r) agendarAutoRefresh(r.expiresIn);
+  }, delayMs);
+}
+
+// Multi-pestaña: si otra pestaña ya rotó el refresh token, cancelamos el timer propio
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === "ts_refresh" && refreshTimer) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+  });
+}
+
+async function authFetch(path: string, init: RequestInit = {}, retried = false): Promise<Response> {
+  const headers: Record<string, string> = {
+    ...((init.headers as Record<string, string>) ?? {}),
+    ...authHeader(),
+  };
+  const res = await fetch(`${API_URL}${path}`, { ...init, headers });
+
+  if (res.status === 401 && !retried && !path.startsWith("/auth/")) {
+    const r = await refreshAccessToken();
+    if (r) {
+      agendarAutoRefresh(r.expiresIn);
+      return authFetch(path, init, true);
+    }
+    clearSession();
+    notifySessionExpired();
+    throw new ApiError(401, "SESSION_EXPIRED", "Sesión expirada, inicia sesión nuevamente");
+  }
+  return res;
+}
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...authHeader(),
     ...((options.headers as Record<string, string>) ?? {}),
   };
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const res = await authFetch(path, { ...options, headers });
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     const err = body?.error;
@@ -58,12 +157,51 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 export const authApi = {
   login: (usuario: string, password: string) =>
     api<{ data: LoginResponse }>("/auth/login", { method: "POST", body: JSON.stringify({ usuario, password }) }),
+  refresh: (refreshToken: string) =>
+    api<{ data: { token: string; refreshToken: string; expiresIn: number } }>("/auth/refresh", {
+      method: "POST",
+      body: JSON.stringify({ refreshToken }),
+    }),
+  logout: (refreshToken: string) =>
+    api<{ data: unknown }>("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }),
+};
+
+export const usuariosApi = {
+  list: (params?: { rol?: "admin" | "vendedor" | "tecnico"; isActive?: boolean; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.rol) qs.set("rol", params.rol);
+    if (params?.isActive !== undefined) qs.set("isActive", String(params.isActive));
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<Usuario>>(`/usuarios${s ? `?${s}` : ""}`);
+  },
+  create: (input: { nombre: string; usuario: string; password: string; rol: "admin" | "vendedor" | "tecnico" }) =>
+    api<{ data: Usuario }>("/usuarios", { method: "POST", body: JSON.stringify(input) }),
+  update: (id: number, input: Partial<{ nombre: string; rol: "admin" | "vendedor" | "tecnico"; isActive: boolean; password: string }>) =>
+    api<{ data: Usuario }>(`/usuarios/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  remove: (id: number) => api<{ data: Usuario }>(`/usuarios/${id}`, { method: "DELETE" }),
+};
+
+export const dashboardApi = {
+  resumen: () => api<{ data: DashboardResumen }>("/dashboard/resumen"),
+};
+
+export const catalogosApi = {
+  list: () => api<{ data: Catalogo[] }>("/catalogos"),
+  create: (input: { nombre: string; parentId?: number | null; tagsSugeridas?: string[]; tagsCompatibilidad?: string[] }) =>
+    api<{ data: Catalogo }>("/catalogos", { method: "POST", body: JSON.stringify(input) }),
+  update: (id: number, input: { nombre?: string; parentId?: number | null; tagsSugeridas?: string[]; tagsCompatibilidad?: string[] }) =>
+    api<{ data: Catalogo }>(`/catalogos/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  remove: (id: number) => api<{ data: { id: number } }>(`/catalogos/${id}`, { method: "DELETE" }),
 };
 
 export const productsApi = {
-  list: (params?: { q?: string; page?: number; pageSize?: number }) => {
+  list: (params?: { q?: string; categoria?: string; catalogoId?: number; page?: number; pageSize?: number }) => {
     const qs = new URLSearchParams();
     if (params?.q) qs.set("q", params.q);
+    if (params?.categoria) qs.set("categoria", params.categoria);
+    if (params?.catalogoId) qs.set("catalogoId", String(params.catalogoId));
     if (params?.page) qs.set("page", String(params.page));
     if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
     const s = qs.toString();
@@ -73,6 +211,20 @@ export const productsApi = {
   exportar: (formato: "csv" | "xlsx") => downloadExport("/productos/exportar", `catalogo-productos.${formato}`, { formato }),
   plantilla: (formato: "csv" | "xlsx") => downloadExport("/productos/plantilla", `plantilla-productos.${formato}`, { formato }),
   importar: (file: File) => uploadFile<ImportResult>("/productos/importar", "archivo", file),
+  getBom: (id: number) => api<{ data: Bom }>(`/productos/${id}/bom`),
+  setBom: (id: number, input: { componentes: { productoId: number; cantidad: number }[]; manoObra?: number }) =>
+    api<{ data: Bom }>(`/productos/${id}/bom`, { method: "PUT", body: JSON.stringify(input) }),
+  sugerencias: (id: number) => api<{ data: Sugerencias }>(`/productos/${id}/sugerencias`),
+  porCodigo: (codigo: string) => api<{ data: Producto }>(`/productos/por-codigo/${encodeURIComponent(codigo)}`),
+  ajustar: (id: number, input: { cantidad: number; motivo: string }) =>
+    api<{ data: Producto }>(`/productos/${id}/ajustar`, { method: "POST", body: JSON.stringify(input) }),
+  movimientos: (id: number, params?: { page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<Movimiento>>(`/productos/${id}/movimientos${s ? `?${s}` : ""}`);
+  },
 };
 
 export const clientesApi = {
@@ -90,7 +242,14 @@ export const clientesApi = {
   update: (id: number, input: Partial<{ nombre: string; telefono: string; correo: string | null; limiteCredito: number; plazoCreditoDias: number }>) =>
     api<{ data: Cliente }>(`/clientes/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   historial: (id: number) =>
-    api<{ data: { ordenes: { id: number; folio: string; estado: string; retrasada: boolean; fecha: string }[]; ventas: { id: number; folio: string; total: number; estado: string; fecha: string }[]; cotizaciones: { id: number; folio: string; total: number; estado: string }[] } }>(`/clientes/${id}/historial`),
+    api<{
+      data: {
+        ordenes: { id: number; folio: string; estado: string; retrasada: boolean; fecha: string }[];
+        ventas: { id: number; folio: string; total: number; estado: string; fecha: string }[];
+        cotizaciones: { id: number; folio: string; total: number; estado: string }[];
+        quejas: Queja[];
+      };
+    }>(`/clientes/${id}/historial`),
   cxc: (id: number) =>
     api<{ data: { limiteCredito: number; saldoTotal: number; items: { ventaId: number; folio: string; total: number; saldo: number; fechaVencimiento: string | null; estado: string }[] } }>(`/clientes/${id}/cxc`),
 };
@@ -105,9 +264,15 @@ export const ventasApi = {
     return api<Paginated<Venta>>(`/ventas${s ? `?${s}` : ""}`);
   },
   get: (id: number) => api<{ data: Venta }>(`/ventas/${id}`),
+  getByFolio: (folio: string) => api<{ data: Venta }>(`/ventas/por-folio/${encodeURIComponent(folio)}`),
   pagar: (id: number, input: { monto: number; metodo: string }) =>
     api<{ data: unknown }>(`/ventas/${id}/pagos`, { method: "POST", body: JSON.stringify(input) }),
   cancelar: (id: number, motivo: string) => api<{ data: Venta }>(`/ventas/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),
+  devolucion: (id: number, lineas: { productoId: number; cantidad: number }[], motivo?: string) =>
+    api<{ data: Venta }>(`/ventas/${id}/devolucion`, {
+      method: "POST",
+      body: JSON.stringify({ lineas, ...(motivo ? { motivo } : {}) }),
+    }),
 };
 
 export const cajaApi = {
@@ -123,6 +288,39 @@ export const finanzasApi = {
   registrarEgreso: (input: { concepto: string; categoria: string; monto: number; metodo: string }) =>
     api<{ data: unknown }>("/finanzas/egresos", { method: "POST", body: JSON.stringify(input) }),
   cxc: () => api<{ data: CxcItem[] }>("/finanzas/cxc"),
+};
+
+export const usadosApi = {
+  list: (params?: { estado?: string; origen?: string; clienteId?: number; q?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.estado) qs.set("estado", params.estado);
+    if (params?.origen) qs.set("origen", params.origen);
+    if (params?.clienteId) qs.set("clienteId", String(params.clienteId));
+    if (params?.q) qs.set("q", params.q);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<EquipoUsado>>(`/usados${s ? `?${s}` : ""}`);
+  },
+  create: (input: CrearEquipoUsado) => api<{ data: EquipoUsado }>("/usados", { method: "POST", body: JSON.stringify(input) }),
+  update: (id: number, input: { valorTradeIn?: number; precioVenta?: number; origen?: string; observaciones?: string | null }) =>
+    api<{ data: EquipoUsado }>(`/usados/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+};
+
+export const quejasApi = {
+  list: (params?: { clienteId?: number; estado?: string; tipo?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.clienteId) qs.set("clienteId", String(params.clienteId));
+    if (params?.estado) qs.set("estado", params.estado);
+    if (params?.tipo) qs.set("tipo", params.tipo);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<Queja>>(`/quejas${s ? `?${s}` : ""}`);
+  },
+  create: (input: CrearQueja) => api<{ data: Queja }>("/quejas", { method: "POST", body: JSON.stringify(input) }),
+  cambiarEstado: (id: number, input: { estado: EstadoQueja; resolucion?: string }) =>
+    api<{ data: Queja }>(`/quejas/${id}/estado`, { method: "POST", body: JSON.stringify(input) }),
 };
 
 export const proveedoresApi = {
@@ -157,7 +355,11 @@ export const comprasApi = {
   create: (input: { proveedorId: number; fechaVencimiento?: string | null; lineas: { productoId: number; cantidad: number; precioUnitario: number }[] }) =>
     api<{ data: Compra }>("/compras", { method: "POST", body: JSON.stringify(input) }),
   enviar: (id: number) => api<{ data: Compra }>(`/compras/${id}/enviar`, { method: "POST" }),
-  recibir: (id: number) => api<{ data: Compra }>(`/compras/${id}/recibir`, { method: "POST" }),
+  recibir: (id: number, lineas?: { detalleCompraId: number; cantidadRecibida: number }[]) =>
+    api<{ data: Compra }>(`/compras/${id}/recibir`, {
+      method: "POST",
+      ...(lineas ? { body: JSON.stringify({ lineas }) } : {}),
+    }),
   cancelar: (id: number) => api<{ data: Compra }>(`/compras/${id}/cancelar`, { method: "POST" }),
   pagar: (id: number, input: { monto: number; metodo: string }) =>
     api<{ data: { compraId: number; monto: number; saldoPendiente: number } }>(`/compras/${id}/pagos`, {
@@ -165,6 +367,100 @@ export const comprasApi = {
       body: JSON.stringify(input),
     }),
   cxp: () => api<{ data: CxpItem[] }>("/compras/cxp"),
+  comparacionPrecios: (productoId: number) => api<{ data: ComparacionPrecios }>(`/compras/comparacion-precios?productoId=${productoId}`),
+  reabastecimiento: () => api<{ data: { grupos: ReabastecimientoGrupo[] } }>("/compras/reabastecimiento"),
+  solicitudes: {
+    list: (params?: { estado?: string; ordenId?: number; page?: number; pageSize?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.estado) qs.set("estado", params.estado);
+      if (params?.ordenId) qs.set("ordenId", String(params.ordenId));
+      if (params?.page) qs.set("page", String(params.page));
+      if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+      const s = qs.toString();
+      return api<Paginated<SolicitudReabastecimiento>>(`/compras/solicitudes${s ? `?${s}` : ""}`);
+    },
+    create: (input: { productoId: number; cantidad: number; ordenId?: number | null; motivo?: string }) =>
+      api<{ data: SolicitudReabastecimiento }>("/compras/solicitudes", { method: "POST", body: JSON.stringify(input) }),
+    aprobar: (solicitudes: number[]) =>
+      api<{ data: { compras: { id: number; folio: string; proveedorId: number; proveedorNombre: string; lineas: number }[]; sinProveedor: number[]; noPendientes: number[] } }>("/compras/solicitudes/aprobar", {
+        method: "POST",
+        body: JSON.stringify({ solicitudes }),
+      }),
+    rechazar: (id: number, motivo: string) =>
+      api<{ data: SolicitudReabastecimiento }>(`/compras/solicitudes/${id}/rechazar`, {
+        method: "POST",
+        body: JSON.stringify({ motivo }),
+      }),
+    cancelar: (id: number, motivo: string) =>
+      api<{ data: SolicitudReabastecimiento }>(`/compras/solicitudes/${id}/cancelar`, {
+        method: "POST",
+        body: JSON.stringify({ motivo }),
+      }),
+  },
+};
+
+export const notificacionesApi = {
+  plantillas: () => api<{ data: PlantillaInfo[] }>("/notificaciones/plantillas"),
+  guardarPlantilla: (tipo: string, input: { asunto?: string | null; cuerpo: string }) =>
+    api<{ data: { tipo: string; asunto: string | null; cuerpo: string } }>(`/notificaciones/plantillas/${tipo}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  historial: (params?: { page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<NotificacionHistorial>>(`/notificaciones/historial${s ? `?${s}` : ""}`);
+  },
+};
+
+export const CONFIG_CLAVES = [
+  "iva.rate",
+  "credito.limite_default",
+  "credito.plazo_default",
+  "ventas.descuento_vendedor_max",
+  "ventas.dias_devolucion",
+  "servicios.dias_garantia",
+  "ordenes.tolerancia_retraso_dias",
+] as const;
+
+export type ConfigClave = (typeof CONFIG_CLAVES)[number];
+
+export const configuracionApi = {
+  get: () => api<{ data: BusinessConfig }>("/configuracion"),
+  update: (clave: ConfigClave, valor: number) =>
+    api<{ data: { clave: string; valor: number } }>("/configuracion", {
+      method: "PUT",
+      body: JSON.stringify({ clave, valor }),
+    }),
+};
+
+export const garantiasApi = {
+  list: (params?: { clienteId?: number; estado?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.clienteId) qs.set("clienteId", String(params.clienteId));
+    if (params?.estado) qs.set("estado", params.estado);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<Garantia>>(`/garantias${s ? `?${s}` : ""}`);
+  },
+};
+
+export const auditoriaApi = {
+  list: (params?: { usuarioId?: number; entidad?: string; accion?: string; desde?: string; hasta?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.usuarioId) qs.set("usuarioId", String(params.usuarioId));
+    if (params?.entidad) qs.set("entidad", params.entidad);
+    if (params?.accion) qs.set("accion", params.accion);
+    if (params?.desde) qs.set("desde", params.desde);
+    if (params?.hasta) qs.set("hasta", params.hasta);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<AuditoriaEntry>>(`/auditoria${s ? `?${s}` : ""}`);
+  },
 };
 
 export const ordenesApi = {
@@ -201,6 +497,17 @@ export const ordenesApi = {
     api<{ data: OrdenServicio }>(`/ordenes/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),
   notificar: (id: number, tipo: "listo" | "cotizacion") =>
     api<{ data: unknown }>(`/ordenes/${id}/notificar`, { method: "POST", body: JSON.stringify({ tipo }) }),
+  sustituciones: {
+    list: (ordenId: number) => api<{ data: Sustitucion[] }>(`/ordenes/${ordenId}/sustituciones`),
+    create: (ordenId: number, input: { cotizacionId: number; lineaId: number; sustitutoId: number; justificacion?: string }) =>
+      api<{ data: Sustitucion }>(`/ordenes/${ordenId}/sustituciones`, { method: "POST", body: JSON.stringify(input) }),
+    aceptar: (ordenId: number, id: number) =>
+      api<{ data: Sustitucion }>(`/ordenes/${ordenId}/sustituciones/${id}/aceptar`, { method: "POST" }),
+    rechazar: (ordenId: number, id: number, motivo: string) =>
+      api<{ data: Sustitucion }>(`/ordenes/${ordenId}/sustituciones/${id}/rechazar`, { method: "POST", body: JSON.stringify({ motivo }) }),
+    cancelar: (ordenId: number, id: number, motivo: string) =>
+      api<{ data: Sustitucion }>(`/ordenes/${ordenId}/sustituciones/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),
+  },
 };
 
 export async function downloadExport(
@@ -215,7 +522,7 @@ export async function downloadExport(
     }
   }
   const s = qs.toString();
-  const res = await fetch(`${API_URL}${path}${s ? `?${s}` : ""}`, { headers: authHeader() });
+  const res = await authFetch(`${path}${s ? `?${s}` : ""}`, { method: "GET" });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new ApiError(res.status, body?.error?.code ?? "ERROR", body?.error?.message ?? "Error al exportar");
@@ -234,7 +541,7 @@ export async function downloadExport(
 export async function uploadFile<T>(path: string, field: string, file: File): Promise<T> {
   const fd = new FormData();
   fd.append(field, file);
-  const res = await fetch(`${API_URL}${path}`, { method: "POST", headers: authHeader(), body: fd });
+  const res = await authFetch(path, { method: "POST", body: fd });
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     throw new ApiError(res.status, body?.error?.code ?? "ERROR", body?.error?.message ?? "Error", body?.error?.details);
@@ -259,6 +566,47 @@ export const reportsApi = {
     if (params.tecnicoId) qs.set("tecnicoId", String(params.tecnicoId));
     return api<{ data: ReporteServicios }>(`/reports/servicios?${qs.toString()}`);
   },
-  exportar: (tipo: "inventario" | "ventas" | "servicios", formato: "csv" | "xlsx", params?: Record<string, string | number | undefined>) =>
+  rentabilidad: (params: { desde?: string; hasta?: string }) => {
+    const qs = new URLSearchParams();
+    if (params.desde) qs.set("desde", params.desde);
+    if (params.hasta) qs.set("hasta", params.hasta);
+    const s = qs.toString();
+    return api<{ data: ReporteRentabilidad }>(`/reports/rentabilidad${s ? `?${s}` : ""}`);
+  },
+  clientes: (params: { desde?: string; hasta?: string }) => {
+    const qs = new URLSearchParams();
+    if (params.desde) qs.set("desde", params.desde);
+    if (params.hasta) qs.set("hasta", params.hasta);
+    const s = qs.toString();
+    return api<{ data: ReporteCliente }>(`/reports/clientes${s ? `?${s}` : ""}`);
+  },
+  financiero: (params: { desde?: string; hasta?: string }) => {
+    const qs = new URLSearchParams();
+    if (params.desde) qs.set("desde", params.desde);
+    if (params.hasta) qs.set("hasta", params.hasta);
+    const s = qs.toString();
+    return api<{ data: ReporteFinanciero }>(`/reports/financiero${s ? `?${s}` : ""}`);
+  },
+  exportar: (tipo: "inventario" | "ventas" | "servicios" | "rentabilidad" | "clientes" | "financiero", formato: "csv" | "xlsx", params?: Record<string, string | number | undefined>) =>
     downloadExport(`/reports/${tipo}/export`, `reporte-${tipo}.${formato}`, { ...params, formato }),
+};
+
+export const quoteApi = {
+  list: (params?: { estado?: string; page?: number; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.estado) qs.set("estado", params.estado);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const s = qs.toString();
+    return api<Paginated<CotizacionVenta>>(`/cotizaciones-venta${s ? `?${s}` : ""}`);
+  },
+  get: (id: number) => api<{ data: CotizacionVenta }>(`/cotizaciones-venta/${id}`),
+  create: (input: CreateCotizacionVenta) => api<{ data: CotizacionVenta }>("/cotizaciones-venta", { method: "POST", body: JSON.stringify(input) }),
+  changeEstado: (id: number, nuevoEstado: "aprobada" | "rechazada" | "cancelada", motivo?: string) =>
+    api<{ data: CotizacionVenta }>(`/cotizaciones-venta/${id}/estado`, { method: "PATCH", body: JSON.stringify({ nuevoEstado, motivo }) }),
+  convertir: (id: number, input: { metodoPago: string; tipoPago?: "contado" | "credito"; montoRecibido?: number | null }) =>
+    api<{ data: { cotizacionId: number; folioCotizacion: string; venta: Venta } }>(`/cotizaciones-venta/${id}/convertir`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 };

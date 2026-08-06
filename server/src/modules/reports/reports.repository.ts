@@ -40,14 +40,14 @@ const ESTADOS_VENTA_VALIDOS = "('completada', 'credito_pendiente')";
 export function reporteInventario() {
   return query<InventarioRow>(
     `SELECT p.id, p.sku, p.codigo_barras, p.nombre, p.marca, p.modelo,
-            c.tipo AS categoria, p.stock, p.stock_minimo,
+            cat.nombre AS categoria, p.stock, p.stock_minimo,
             p.precio_compra, p.precio_venta,
             (p.stock * p.precio_compra)::numeric AS valoracion_costo,
             (p.stock <= p.stock_minimo) AS low_stock
      FROM productos p
-     JOIN categorias c ON c.id = p.categoria_id
+     JOIN catalogos cat ON cat.id = p.categoria_id
      WHERE p.is_active = true
-     ORDER BY c.tipo, p.nombre`
+     ORDER BY cat.nombre, p.nombre`
   ).then((r) => r.rows);
 }
 
@@ -259,6 +259,123 @@ export function serviciosDetalle(f: { desde?: string; hasta?: string; estado?: s
      LEFT JOIN usuarios u ON u.id = o.tecnico_id
      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
      ORDER BY o.id DESC`,
+    params
+  ).then((r) => r.rows);
+}
+
+/* --- REP-04..06: rentabilidad, clientes, financiero --- */
+
+export interface RentabilidadRow {
+  producto: string;
+  unidades: number;
+  ingreso: string;
+  margen: string;
+}
+
+export function reporteRentabilidad(f: { desde?: string; hasta?: string }) {
+  const { where, params } = ventaFilters(f);
+  return query<RentabilidadRow>(
+    `SELECT COALESCE(p.nombre, dv.descripcion_servicio) AS producto,
+            SUM(dv.cantidad)::int AS unidades,
+            COALESCE(SUM(dv.precio_neto),0)::numeric AS ingreso,
+            COALESCE(SUM(dv.precio_neto - (COALESCE(p.precio_compra,0) * dv.cantidad)),0)::numeric AS margen
+     FROM ventas v
+     JOIN detalle_venta dv ON dv.venta_id = v.id
+     LEFT JOIN productos p ON p.id = dv.producto_id
+     WHERE ${where.join(" AND ")}
+     GROUP BY dv.producto_id, dv.descripcion_servicio, p.nombre, p.precio_compra
+     ORDER BY margen DESC`,
+    params
+  ).then((r) => r.rows);
+}
+
+export interface ClienteCompraRow {
+  cliente_id: number;
+  cliente: string;
+  ventas: number;
+  total_compras: string;
+}
+
+export function reporteClientes(f: { desde?: string; hasta?: string }) {
+  const { where, params } = ventaFilters(f);
+  return query<ClienteCompraRow>(
+    `SELECT c.id AS cliente_id, c.nombre AS cliente, COUNT(v.id)::int AS ventas, COALESCE(SUM(v.total),0)::numeric AS total_compras
+     FROM clientes c
+     JOIN ventas v ON v.cliente_id = c.id
+     WHERE ${where.join(" AND ")} AND v.cliente_id IS NOT NULL
+     GROUP BY c.id, c.nombre
+     ORDER BY total_compras DESC
+     LIMIT 200`,
+    params
+  ).then((r) => r.rows);
+}
+
+export interface ClienteSaldoRow {
+  cliente_id: number;
+  cliente_nombre: string;
+  saldo: string;
+}
+
+export function saldosDeudores() {
+  return query<ClienteSaldoRow>(
+    `SELECT x.cliente_id, x.cliente_nombre, SUM(x.saldo)::numeric AS saldo
+     FROM (
+       SELECT v.id, v.cliente_id, c.nombre AS cliente_nombre,
+              (v.total - COALESCE(SUM(p.monto),0)) AS saldo
+       FROM ventas v
+       JOIN clientes c ON c.id = v.cliente_id
+       LEFT JOIN pagos p ON p.venta_id = v.id
+       WHERE v.tipo_pago = 'credito' AND v.estado IN ('completada','credito_pendiente','devuelta')
+       GROUP BY v.id, v.cliente_id, c.nombre, v.total
+     ) x
+     WHERE x.saldo > 0
+     GROUP BY x.cliente_id, x.cliente_nombre`
+  ).then((r) => r.rows);
+}
+
+export interface FinancieroIngresoRow {
+  mes: string;
+  ventas: number;
+  ingresos: string;
+}
+
+export function financieroIngresos(f: { desde?: string; hasta?: string }) {
+  const { where, params } = ventaFilters(f);
+  return query<FinancieroIngresoRow>(
+    `SELECT TO_CHAR(date_trunc('month', v.created_at), 'YYYY-MM') AS mes,
+            COUNT(*)::int AS ventas,
+            COALESCE(SUM(v.total),0)::numeric AS ingresos
+     FROM ventas v
+     WHERE ${where.join(" AND ")}
+     GROUP BY 1 ORDER BY 1`,
+    params
+  ).then((r) => r.rows);
+}
+
+export interface FinancieroEgresoRow {
+  mes: string;
+  egresos: number;
+  egresos_total: string;
+}
+
+export function financieroEgresos(f: { desde?: string; hasta?: string }) {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (f.desde) {
+    params.push(f.desde);
+    where.push(`created_at >= $${params.length}::date`);
+  }
+  if (f.hasta) {
+    params.push(f.hasta);
+    where.push(`created_at < ($${params.length}::date + INTERVAL '1 day')`);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  return query<FinancieroEgresoRow>(
+    `SELECT TO_CHAR(date_trunc('month', created_at), 'YYYY-MM') AS mes,
+            COUNT(*)::int AS egresos,
+            COALESCE(SUM(monto),0)::numeric AS egresos_total
+     FROM egresos ${whereSql}
+     GROUP BY 1 ORDER BY 1`,
     params
   ).then((r) => r.rows);
 }

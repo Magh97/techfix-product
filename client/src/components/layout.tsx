@@ -1,26 +1,49 @@
-import { BarChart3, Building2, ClipboardList, Cpu, LayoutDashboard, LineChart, LogOut, Package, ShoppingCart, Truck, Users, Wallet } from "lucide-react";
+import { BarChart3, Bell, Building2, ClipboardList, Cpu, FileText, FolderTree, LayoutDashboard, LineChart, LogOut, MessageSquareWarning, Package, PackageOpen, Receipt, ScrollText, Settings, ShieldCheck, ShoppingCart, Truck, UserCog, Users, Wallet } from "lucide-react";
+import { useEffect } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { clearSession, getSessionUser } from "@/lib/auth";
+import { authApi } from "@/lib/api";
+import { clearSession, getRefreshToken, getSessionUser, SESSION_EXPIRED_EVENT } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/venta", label: "Ventas", icon: ShoppingCart },
+  { to: "/venta", label: "Punto de Venta", icon: ShoppingCart },
+  { to: "/ventas", label: "Ventas", icon: Receipt },
+  { to: "/cotizaciones", label: "Cotizaciones", icon: FileText },
   { to: "/ordenes", label: "Órdenes", icon: ClipboardList },
   { to: "/clientes", label: "Clientes", icon: Users },
   { to: "/productos", label: "Productos", icon: Package },
+  { to: "/usados", label: "Equipos usados", icon: PackageOpen },
   { to: "/compras", label: "Compras", icon: Truck },
+  { to: "/reabastecimiento", label: "Reabastecimiento", icon: Package, adminOnly: true },
   { to: "/proveedores", label: "Proveedores", icon: Building2 },
+  { to: "/catalogos", label: "Catálogos", icon: FolderTree, adminOnly: true },
+  { to: "/usuarios", label: "Usuarios", icon: UserCog, adminOnly: true },
+  { to: "/notificaciones", label: "Notificaciones", icon: Bell, adminOnly: true },
+  { to: "/configuracion", label: "Configuración", icon: Settings, adminOnly: true },
   { to: "/caja", label: "Caja", icon: Wallet },
   { to: "/finanzas", label: "Finanzas", icon: BarChart3 },
-  { to: "/reportes", label: "Reportes", icon: LineChart },
+  { to: "/garantias", label: "Garantías", icon: ShieldCheck },
+  { to: "/quejas", label: "Quejas", icon: MessageSquareWarning },
+  { to: "/auditoria", label: "Auditoría", icon: ScrollText, adminOnly: true },
+  { to: "/reportes", label: "Reportes", icon: LineChart, adminOnly: true },
 ];
 
 export default function Layout() {
   const user = getSessionUser();
   const navigate = useNavigate();
+  const visibleNav = nav.filter((item) => !item.adminOnly || user?.rol === "admin");
+
+  // Sesión expirada (refresh fallido) → redirige sin recargar
+  useEffect(() => {
+    const onExpired = () => navigate("/login", { replace: true });
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, [navigate]);
 
   function logout() {
+    const rt = getRefreshToken();
+    if (rt) authApi.logout(rt).catch(() => {});
     clearSession();
     navigate("/login");
   }
@@ -38,7 +61,7 @@ export default function Layout() {
           </div>
         </div>
         <nav className="p-3">
-          {nav.map((item) => (
+          {visibleNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

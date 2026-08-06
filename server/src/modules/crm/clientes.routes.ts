@@ -4,6 +4,7 @@ import { requireAuth, type AuthedRequest } from "../../shared/middleware/auth";
 import { getValidated, validate } from "../../shared/validation";
 import { clienteIdParams, createClienteSchema, etiquetasSchema, listClientesQuery, updateClienteSchema } from "./clientes.schema";
 import * as service from "./clientes.service";
+import * as garantiasService from "../garantias/garantias.service";
 
 export const clientesRouter = Router();
 
@@ -48,4 +49,9 @@ clientesRouter.get("/:clienteId/historial", validate(clienteIdParams, "params"),
 clientesRouter.get("/:clienteId/cxc", validate(clienteIdParams, "params"), async (req: AuthedRequest, res) => {
   const { clienteId } = getValidated<{ clienteId: number }>(req, "params");
   ok(res, await service.cxc(clienteId));
+});
+
+clientesRouter.get("/:clienteId/garantias", validate(clienteIdParams, "params"), async (req: AuthedRequest, res) => {
+  const { clienteId } = getValidated<{ clienteId: number }>(req, "params");
+  ok(res, await garantiasService.listCliente(clienteId));
 });

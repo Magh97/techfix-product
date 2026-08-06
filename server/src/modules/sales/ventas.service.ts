@@ -1,12 +1,12 @@
 import type { PoolClient } from "pg";
 import { withTransaction } from "../../shared/db";
 import { AppError } from "../../shared/errors";
-import { getIvaRate } from "../../shared/config";
+import { getConfig } from "../../shared/config";
 import { calcMoney } from "../../shared/money";
+import { registrarAuditoria } from "../../shared/auditoria";
 import * as repo from "./ventas.repository";
-
-const DESCUENTO_MAX_VENDEDOR = 0.1; // BR-VEN-05
-const DIAS_DEVOLUCION = 15; // BR-VEN-08
+import * as garantiasRepo from "../garantias/garantias.repository";
+import * as usadosRepo from "../inventory/usados.repository";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -35,6 +35,11 @@ export interface VentaDTO {
   estado: string;
   cambio: number;
   lineas: { descripcion: string; cantidad: number; precio: number; productoId?: number | null }[];
+  garantias: { tipo: string; inicio: string; fin: string }[];
+  parteDePago: number;
+  totalAPagar: number;
+  usadosCreados: { productoId: number; nombre: string; valor: number }[];
+  pagos: { metodo: string; monto: number }[];
 }
 
 export async function registrarVenta(
@@ -45,7 +50,6 @@ export async function registrarVenta(
   const run = async (c: PoolClient): Promise<VentaDTO> => {
     const lineasDetalle: { descripcion: string; cantidad: number; precio: number; productoId?: number | null }[] = [];
     let subtotal = 0;
-
     for (const l of input.lineas) {
       if (l.tipo === "producto") {
         if (!l.productoId || !l.cantidad || l.cantidad <= 0) {
@@ -53,21 +57,61 @@ export async function registrarVenta(
         }
         const p = await repo.findProductoParaVenta(c, l.productoId);
         if (!p) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
-        if (p.stock < l.cantidad) {
-          throw AppError.business("INSUFFICIENT_STOCK", `${p.nombre}: stock disponible ${p.stock}`);
+
+        if (p.is_kit) {
+          // ADR-0003: desglosar componentes y descontar stock de cada pieza
+          const bom = await repo.listBomParaVenta(c, p.id);
+          if (!bom.length) throw AppError.business("KIT_WITHOUT_BOM", `El kit ${p.nombre} no tiene componentes definidos`);
+          for (const comp of bom) {
+            const cant = comp.cantidad * l.cantidad;
+            if (comp.stock < cant) {
+              throw AppError.business("INSUFFICIENT_STOCK", `${comp.nombre}: stock disponible ${comp.stock}`);
+            }
+            const res = await repo.decrementStock(c, comp.componente_id, cant);
+            if (!res.rowCount) throw AppError.business("INSUFFICIENT_STOCK", `${comp.nombre}: stock insuficiente`);
+            const precio = Number(comp.precio_venta) * cant;
+            subtotal += precio;
+            lineasDetalle.push({
+              descripcion: `${p.nombre} · ${comp.nombre}`,
+              cantidad: cant,
+              precio,
+              productoId: comp.componente_id,
+            });
+            await repo.insertMovimiento(c, {
+              productoId: comp.componente_id,
+              tipo: "SALIDA_VENTA",
+              cantidad: -cant,
+              usuarioId: user.id,
+              motivo: `Venta kit ${p.nombre}`,
+            });
+          }
+          const manoObra = Number(p.mano_obra) * l.cantidad;
+          if (manoObra > 0) {
+            subtotal += manoObra;
+            lineasDetalle.push({
+              descripcion: `Mano de obra de ensamble · ${p.nombre}`,
+              cantidad: l.cantidad,
+              precio: manoObra,
+              productoId: null,
+            });
+          }
+        } else {
+          if (p.stock < l.cantidad) {
+            throw AppError.business("INSUFFICIENT_STOCK", `${p.nombre}: stock disponible ${p.stock}`);
+          }
+          const res = await repo.decrementStock(c, l.productoId, l.cantidad);
+          if (!res.rowCount) throw AppError.business("INSUFFICIENT_STOCK", `${p.nombre}: stock insuficiente`);
+          const precio = Number(p.precio_venta) * l.cantidad;
+          subtotal += precio;
+          lineasDetalle.push({ descripcion: p.nombre, cantidad: l.cantidad, precio, productoId: l.productoId });
+          await repo.insertMovimiento(c, {
+            productoId: l.productoId,
+            tipo: "SALIDA_VENTA",
+            cantidad: -l.cantidad,
+            usuarioId: user.id,
+            motivo: "Venta",
+          });
         }
-        const res = await repo.decrementStock(c, l.productoId, l.cantidad);
-        if (!res.rowCount) throw AppError.business("INSUFFICIENT_STOCK", `${p.nombre}: stock insuficiente`);
-        const precio = Number(p.precio_venta) * l.cantidad;
-        subtotal += precio;
-        lineasDetalle.push({ descripcion: p.nombre, cantidad: l.cantidad, precio, productoId: l.productoId });
-        await repo.insertMovimiento(c, {
-          productoId: l.productoId,
-          tipo: "SALIDA_VENTA",
-          cantidad: -l.cantidad,
-          usuarioId: user.id,
-          motivo: "Venta",
-        });
       } else {
         const unit = l.precioNeto ?? 0;
         const cantidad = l.cantidad || 1;
@@ -79,14 +123,55 @@ export async function registrarVenta(
 
     if (!lineasDetalle.length) throw AppError.badRequest("VALIDATION_ERROR", "La venta requiere al menos una línea");
 
+    const config = await getConfig();
     const descuento = Math.max(0, input.descuento ?? 0);
     if (descuento > subtotal) throw AppError.badRequest("VALIDATION_ERROR", "El descuento no puede superar el subtotal");
-    if (user.rol !== "admin" && descuento > subtotal * DESCUENTO_MAX_VENDEDOR) {
-      throw AppError.forbidden("Descuento superior al 10% requiere rol admin (BR-VEN-05)");
+    if (user.rol !== "admin" && descuento > subtotal * config.descuentoVendedorMax) {
+      throw AppError.forbidden("Descuento superior al máximo autorizado para vendedor (BR-VEN-05)");
     }
 
-    const ivaRate = await getIvaRate();
-    const mon = calcMoney(subtotal, descuento, ivaRate);
+    const mon = calcMoney(subtotal, descuento, config.ivaRate);
+
+    // Parte de pago en especie (equipo usado). Solo ventas de contado.
+    const partesDePago = input.partesDePago ?? [];
+    const parteDePago = partesDePago.reduce((a, p) => a + p.valor, 0);
+    if (parteDePago > 0) {
+      if (input.tipoPago !== "contado") {
+        throw AppError.business("PARTE_DE_PAGO_INVALIDA", "La parte de pago solo aplica en ventas de contado");
+      }
+      if (parteDePago > mon.total) {
+        throw AppError.business("PARTE_DE_PAGO_INVALIDA", `La parte de pago (${parteDePago}) supera el total (${mon.total})`);
+      }
+    }
+    const totalAPagar = Math.max(0, mon.total - parteDePago);
+
+    // Desglose de pago (pagos mixtos): todo dinero recibido se registra en `pagos`.
+    if (input.pagos?.length && input.tipoPago !== "contado") {
+      throw AppError.business("PAGOS_INVALIDOS", "El desglose de pagos solo aplica en ventas de contado");
+    }
+    let detallePagos: { metodo: string; monto: number }[];
+    if (input.tipoPago === "contado") {
+      if (input.pagos?.length) {
+        if (input.pagos.length > 5) throw AppError.business("PAGOS_INVALIDOS", "Máximo 5 métodos de pago por venta");
+        const suma = input.pagos.reduce((a, p) => a + p.monto, 0);
+        if (Math.abs(suma - totalAPagar) > 0.01) {
+          throw AppError.business("PAGOS_INVALIDOS", `La suma del desglose (${suma}) debe ser igual al total a pagar (${totalAPagar})`);
+        }
+        detallePagos = input.pagos.map((p) => ({ metodo: p.metodo, monto: p.monto }));
+      } else {
+        detallePagos = [{ metodo: input.metodoPago ?? "efectivo", monto: totalAPagar }];
+      }
+    } else {
+      detallePagos = [];
+    }
+
+    const efectivoPortion = detallePagos.filter((p) => p.metodo === "efectivo").reduce((a, p) => a + p.monto, 0);
+    const recibido = efectivoPortion > 0 ? (input.montoRecibido ?? efectivoPortion) : null;
+    if (recibido !== null && recibido < efectivoPortion) {
+      throw AppError.business("PAYMENT_INVALID", `El efectivo recibido (${recibido}) es menor a la porción en efectivo (${efectivoPortion})`);
+    }
+    const cambio = efectivoPortion > 0 ? Math.max(0, (recibido ?? 0) - efectivoPortion) : 0;
+    const metodoPrimario = detallePagos[0]?.metodo ?? input.metodoPago ?? null;
 
     let fechaVencimiento: string | null = null;
     let plazoDias: number | null = null;
@@ -115,14 +200,74 @@ export async function registrarVenta(
       descuento: mon.descuento,
       motivoDescuento: descuento > 0 ? (input.motivoDescuento ?? "Autorizado en caja") : null,
       tipoPago: input.tipoPago,
-      metodoPago: input.metodoPago ?? null,
+      metodoPago: metodoPrimario,
       plazoDias: input.tipoPago === "credito" ? plazoDias : null,
       fechaVencimiento,
-      montoRecibido: input.tipoPago === "contado" ? (input.montoRecibido ?? mon.total) : null,
+      montoRecibido: recibido,
+      parteDePago,
       cajaId,
     });
     if (!ventaId) throw AppError.business("INTERNAL_ERROR", "No se pudo registrar la venta");
     await repo.insertDetalleVenta(c, ventaId, lineasDetalle);
+
+    // Registrar el desglose de pagos (todo dinero recibido en la venta)
+    for (const p of detallePagos) {
+      await repo.insertPago(c, { ventaId, monto: p.monto, metodo: p.metodo, usuarioId: user.id, cajaId });
+    }
+
+    // Crear los usados recibidos como parte de pago (en la misma transacción)
+    const usadosCreados: { productoId: number; nombre: string; valor: number }[] = [];
+    if (parteDePago > 0) {
+      const categoriaUsado = await usadosRepo.findCategoriaUsado();
+      if (!categoriaUsado) {
+        throw AppError.business("CATEGORIA_USADO_NOT_FOUND", "No existe la categoría raíz 'Usado' en el catálogo");
+      }
+      let i = 0;
+      for (const p of partesDePago) {
+        i++;
+        const productoId = await usadosRepo.insertProductoUsado(c, {
+          categoriaId: categoriaUsado.id,
+          sku: `USO-${Date.now()}-${i}`,
+          nombre: p.nombre,
+          marca: p.marca ?? null,
+          modelo: p.modelo ?? null,
+          precioCompra: p.valor,
+          precioVenta: p.precioVenta,
+          stock: 1,
+          catalogoId: null,
+        });
+        if (!productoId) throw AppError.business("INTERNAL_ERROR", "No se pudo crear el producto usado");
+        const equipoId = await usadosRepo.insertEquipoUsado(c, {
+          productoId,
+          clienteOrigenId: input.clienteId ?? null,
+          ordenId: null,
+          ventaId,
+          valorTradeIn: p.valor,
+          origen: "parte_de_pago",
+          observaciones: p.observaciones ?? null,
+          createdBy: user.id,
+        });
+        if (!equipoId) throw AppError.business("INTERNAL_ERROR", "No se pudo registrar el equipo usado");
+        await usadosRepo.insertMovimientoEntrada(c, { productoId, cantidad: 1, usuarioId: user.id, equipoId });
+        usadosCreados.push({ productoId, nombre: p.nombre, valor: p.valor });
+      }
+    }
+
+    // Garantía por producto distinto cuando la venta tiene cliente
+    // (usado → dias_garantia_usado; resto → dias_garantia_producto). BR-GAR-06.
+    const garantias: { tipo: string; inicio: string; fin: string }[] = [];
+    if (input.clienteId) {
+      const usados = new Set(await garantiasRepo.productosUsadosDeVenta(c, ventaId));
+      const productosDistintos = [...new Set(lineasDetalle.filter((l) => l.productoId).map((l) => l.productoId!))];
+      const hoy = today();
+      for (const pid of productosDistintos) {
+        const tipo = usados.has(pid) ? "usado" : "producto_nuevo";
+        const dias = tipo === "usado" ? config.diasGarantiaUsado : config.diasGarantiaProducto;
+        const fin = addDays(hoy, dias);
+        await garantiasRepo.insertGarantiaVenta(c, { ventaId, clienteId: input.clienteId, tipo, inicio: hoy, fin });
+        garantias.push({ tipo, inicio: hoy, fin });
+      }
+    }
 
     return {
       id: ventaId,
@@ -138,19 +283,37 @@ export async function registrarVenta(
       metodoPago: input.metodoPago ?? null,
       fechaVencimiento,
       estado: "completada",
-      cambio:
-        input.tipoPago === "contado" && input.metodoPago === "efectivo"
-          ? Math.max(0, (input.montoRecibido ?? mon.total) - mon.total)
-          : 0,
+      cambio,
       lineas: lineasDetalle,
+      garantias,
+      parteDePago,
+      totalAPagar,
+      usadosCreados,
+      pagos: detallePagos,
     };
   };
 
-  if (client) return run(client);
-  return withTransaction(run);
+  const dto = client ? await run(client) : await withTransaction(run);
+  await registrarAuditoria({
+    usuarioId: user.id,
+    accion: "CREAR",
+    entidad: "venta",
+    entidadId: dto.id,
+    despues: { folio: dto.folio, total: dto.total, tipoPago: dto.tipoPago },
+  });
+  return dto;
 }
 
 /* --- Lecturas --- */
+
+function mapVentaLinea(l: repo.VentaLineaRow) {
+  return {
+    descripcion: l.descripcion_servicio ?? l.nombre_producto ?? "Servicio",
+    cantidad: l.cantidad,
+    precio: Number(l.precio_neto),
+    productoId: l.producto_id,
+  };
+}
 
 export async function list(f: { desde?: string; hasta?: string; vendedorId?: number; metodoPago?: string; estado?: string; page: number; pageSize: number }) {
   const limit = f.pageSize;
@@ -174,7 +337,7 @@ export async function list(f: { desde?: string; hasta?: string; vendedorId?: num
       fechaVencimiento: v.fecha_vencimiento ? addDays(v.fecha_vencimiento, 0) : null,
       estado: v.estado,
       createdAt: v.created_at,
-      lineas: await repo.listVentaLineas(v.id),
+      lineas: (await repo.listVentaLineas(v.id)).map(mapVentaLinea),
     }))
   );
   return { data, meta: { page: f.page, pageSize: limit, totalItems, totalPages: Math.ceil(totalItems / limit) || 1 } };
@@ -201,7 +364,7 @@ export async function getById(id: number) {
     montoRecibido: v.monto_recibido ? Number(v.monto_recibido) : null,
     estado: v.estado,
     createdAt: v.created_at,
-    lineas: await repo.listVentaLineas(v.id),
+    lineas: (await repo.listVentaLineas(v.id)).map(mapVentaLinea),
     pagos: (await repo.listPagos(v.id)).map((p) => ({ id: p.id, monto: Number(p.monto), metodo: p.metodo, fecha: p.created_at })),
   };
 }
@@ -242,6 +405,10 @@ export async function cancelar(ventaId: number, motivo: string, user: { id: numb
   const venta = await repo.findVenta(ventaId);
   if (!venta) throw AppError.notFound("SALE_NOT_FOUND", "Venta no encontrada");
   if (venta.estado === "cancelada") throw AppError.conflict("SALE_ALREADY_CANCELLED", "La venta ya está cancelada");
+  if (venta.tipo_pago === "credito") {
+    const pagado = await repo.sumPagosVenta(ventaId);
+    if (pagado > 0) throw AppError.business("SALE_WITH_PAYMENTS", "No se puede cancelar una venta a crédito con abonos cobrados");
+  }
 
   await withTransaction(async (c) => {
     const lineas = await repo.listVentaLineas(ventaId);
@@ -257,14 +424,16 @@ export async function cancelar(ventaId: number, motivo: string, user: { id: numb
         });
       }
     }
+    await repo.reintegrarUsadosVenta(c, ventaId);
     await repo.updateVentaEstado(c, ventaId, "cancelada");
   });
+  await registrarAuditoria({ usuarioId: user.id, accion: "CANCELAR", entidad: "venta", entidadId: ventaId, despues: { motivo } });
   return getById(ventaId);
 }
 
 export async function devolucion(
   ventaId: number,
-  input: { lineas: { productoId: number; cantidad: number }[] },
+  input: { lineas: { productoId: number; cantidad: number }[]; motivo?: string },
   user: { id: number; rol: string }
 ) {
   const venta = await repo.findVenta(ventaId);
@@ -272,9 +441,14 @@ export async function devolucion(
   if (venta.estado === "devuelta" || venta.estado === "cancelada") {
     throw AppError.conflict("SALE_ALREADY_PROCESSED", "La venta ya fue devuelta o cancelada");
   }
-  const ventana = addDays(venta.created_at, DIAS_DEVOLUCION);
+  if (venta.tipo_pago === "credito") {
+    const pagado = await repo.sumPagosVenta(ventaId);
+    if (pagado > 0) throw AppError.business("SALE_WITH_PAYMENTS", "No se puede devolver una venta a crédito con abonos cobrados");
+  }
+  const config = await getConfig();
+  const ventana = addDays(venta.created_at, config.diasDevolucion);
   if (ventana < today()) {
-    throw AppError.business("REFUND_WINDOW_EXPIRED", `Solo se aceptan devoluciones dentro de ${DIAS_DEVOLUCION} días (BR-VEN-08)`);
+    throw AppError.business("REFUND_WINDOW_EXPIRED", `Solo se aceptan devoluciones dentro de ${config.diasDevolucion} días (BR-VEN-08)`);
   }
 
   await withTransaction(async (c) => {
@@ -288,7 +462,15 @@ export async function devolucion(
         motivo: `Devolución venta ${venta.folio}`,
       });
     }
+    await repo.reintegrarUsadosVenta(c, ventaId);
     await repo.updateVentaEstado(c, ventaId, "devuelta");
+  });
+  await registrarAuditoria({
+    usuarioId: user.id,
+    accion: "DEVOLUCION",
+    entidad: "venta",
+    entidadId: ventaId,
+    despues: { lineas: input.lineas, motivo: input.motivo ?? null },
   });
   return getById(ventaId);
 }

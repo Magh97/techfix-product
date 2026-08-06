@@ -11,8 +11,15 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
-import { clientesApi, ventasApi } from "@/lib/api";
+import { clientesApi, usadosApi, ventasApi } from "@/lib/api";
 import { fechaCorta, mxn } from "@/lib/utils";
+import type { OrigenUsado } from "@/lib/types";
+
+const ORIGEN_USADO_LABEL: Record<OrigenUsado, string> = {
+  parte_de_pago: "Parte de pago",
+  reparacion: "Reparación",
+  otro: "Otro",
+};
 
 export default function ClienteDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -26,6 +33,7 @@ export default function ClienteDetallePage() {
   const { data: cliente } = useQuery({ queryKey: ["cliente", clienteId], queryFn: () => clientesApi.get(clienteId) });
   const { data: historial } = useQuery({ queryKey: ["cliente-historial", clienteId], queryFn: () => clientesApi.historial(clienteId) });
   const { data: cxc } = useQuery({ queryKey: ["cliente-cxc", clienteId], queryFn: () => clientesApi.cxc(clienteId) });
+  const { data: usados } = useQuery({ queryKey: ["cliente-usados", clienteId], queryFn: () => usadosApi.list({ clienteId, pageSize: 50 }) });
 
   const pagar = useMutation({
     mutationFn: () => ventasApi.pagar(abono!.ventaId, { monto: Number(monto), metodo: "efectivo" }),
@@ -96,7 +104,8 @@ export default function ClienteDetallePage() {
       </div>
 
       {tab === "historial" && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader><CardTitle>Órdenes de servicio</CardTitle></CardHeader>
             <CardBody className="space-y-2 text-sm">
@@ -122,6 +131,48 @@ export default function ClienteDetallePage() {
             </CardBody>
           </Card>
         </div>
+
+        <Card>
+          <CardHeader><CardTitle>Equipos usados entregados</CardTitle></CardHeader>
+          <CardBody className="space-y-2 text-sm">
+            {(usados?.data.length ?? 0) === 0 && <p className="text-muted">Sin equipos usados.</p>}
+            {usados?.data.map((u) => (
+              <div key={u.id} className="flex items-center justify-between gap-2 rounded-md border border-border-line px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{u.nombre}</p>
+                  <p className="font-mono text-xs text-muted">
+                    {ORIGEN_USADO_LABEL[u.origen]}
+                    {u.ordenFolio ? ` · OC ${u.ordenFolio}` : u.ventaFolio ? ` · Venta ${u.ventaFolio}` : ""}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{mxn(u.valorTradeIn)}</span>
+                  <Badge variant={u.estado === "disponible" ? "success" : "default"}>{u.estado}</Badge>
+                </div>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Quejas y reclamaciones</CardTitle></CardHeader>
+          <CardBody className="space-y-2 text-sm">
+            {(historial?.data.quejas.length ?? 0) === 0 && <p className="text-muted">Sin quejas.</p>}
+            {historial?.data.quejas.map((q) => (
+              <div key={q.id} className="flex items-center justify-between gap-2 rounded-md border border-border-line px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate">{q.descripcion}</p>
+                  <p className="text-xs text-muted">
+                    {q.tipo === "reclamacion_garantia" ? "Reclamación de garantía" : "Queja"}
+                    {q.ordenFolio ? ` · OC ${q.ordenFolio}` : q.ventaFolio ? ` · VEN ${q.ventaFolio}` : ""}
+                  </p>
+                </div>
+                <Badge variant={q.estado === "resuelta" ? "success" : q.estado === "en_proceso" ? "warning" : "default"}>{q.estado}</Badge>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+        </>
       )}
 
       {tab === "cxc" && (

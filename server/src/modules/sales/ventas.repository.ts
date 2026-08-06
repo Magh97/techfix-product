@@ -20,6 +20,8 @@ export interface RegistrarVentaInput {
   metodoPago?: string;
   plazoDias?: number | null;
   montoRecibido?: number | null;
+  partesDePago?: { nombre: string; marca?: string | null; modelo?: string | null; valor: number; precioVenta: number; observaciones?: string | null }[];
+  pagos?: { metodo: string; monto: number }[];
 }
 
 export interface ProductoVentaRow {
@@ -27,15 +29,38 @@ export interface ProductoVentaRow {
   nombre: string;
   precio_venta: string;
   stock: number;
+  is_kit: boolean;
+  mano_obra: string;
 }
 
 export function findProductoParaVenta(client: PoolClient, id: number) {
   return client
     .query<ProductoVentaRow>(
-      "SELECT id, nombre, precio_venta, stock FROM productos WHERE id = $1 AND is_active = true FOR UPDATE",
+      "SELECT id, nombre, precio_venta, stock, is_kit, mano_obra FROM productos WHERE id = $1 AND is_active = true FOR UPDATE",
       [id]
     )
     .then((r) => r.rows[0]);
+}
+
+export interface BomVentaRow {
+  componente_id: number;
+  nombre: string;
+  cantidad: number;
+  precio_venta: string;
+  stock: number;
+}
+
+export function listBomParaVenta(client: PoolClient, kitId: number) {
+  return client
+    .query<BomVentaRow>(
+      `SELECT b.componente_id, p.nombre, b.cantidad, p.precio_venta, p.stock
+       FROM producto_bom b
+       JOIN productos p ON p.id = b.componente_id AND p.is_active = true
+       WHERE b.kit_producto_id = $1
+       ORDER BY b.id`,
+      [kitId]
+    )
+    .then((r) => r.rows);
 }
 
 export function decrementStock(client: PoolClient, productoId: number, cantidad: number) {
@@ -65,6 +90,23 @@ export function sumPagos(client: PoolClient, ventaId: number) {
     .then((r) => Number(r.rows[0]?.s ?? 0));
 }
 
+export function sumPagosVenta(ventaId: number) {
+  return query<{ s: string }>("SELECT COALESCE(SUM(monto),0)::numeric AS s FROM pagos WHERE venta_id = $1", [ventaId]).then(
+    (r) => Number(r.rows[0]?.s ?? 0)
+  );
+}
+
+// Reintegra a inventario los equipos usados recibidos como parte de pago de una venta
+// que se cancela o devuelve: los desvincula de la venta si aún no fueron vendidos (stock > 0).
+export function reintegrarUsadosVenta(client: PoolClient, ventaId: number) {
+  return client.query(
+    `UPDATE equipos_usados eu SET venta_id = NULL
+     WHERE eu.venta_id = $1
+       AND EXISTS (SELECT 1 FROM productos p WHERE p.id = eu.producto_id AND p.stock > 0)`,
+    [ventaId]
+  );
+}
+
 export async function nextVentaFolio(client: PoolClient): Promise<string> {
   const r = await client.query<{ n: string }>("SELECT COALESCE(MAX(id), 0) + 1 AS n FROM ventas");
   return `VEN-${String(Number(r.rows[0]?.n ?? 1)).padStart(4, "0")}`;
@@ -85,6 +127,7 @@ export interface InsertVentaInput {
   plazoDias: number | null;
   fechaVencimiento: string | null;
   montoRecibido: number | null;
+  parteDePago: number;
   cajaId: number | null;
 }
 
@@ -93,8 +136,8 @@ export function insertVenta(client: PoolClient, input: InsertVentaInput) {
     .query<{ id: number }>(
       `INSERT INTO ventas
         (folio, cliente_id, vendedor_id, orden_id, subtotal, iva, total, descuento, motivo_descuento,
-         tipo_pago, metodo_pago, plazo_dias, fecha_vencimiento, monto_recibido, caja_id, estado)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'completada') RETURNING id`,
+         tipo_pago, metodo_pago, plazo_dias, fecha_vencimiento, monto_recibido, parte_de_pago, caja_id, estado)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'completada') RETURNING id`,
       [
         input.folio,
         input.clienteId,
@@ -110,6 +153,7 @@ export function insertVenta(client: PoolClient, input: InsertVentaInput) {
         input.plazoDias,
         input.fechaVencimiento,
         input.montoRecibido,
+        input.parteDePago,
         input.cajaId,
       ]
     )

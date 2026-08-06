@@ -1,11 +1,14 @@
 export interface Usuario {
   id: number;
   nombre: string;
+  usuario?: string;
   rol: "admin" | "vendedor" | "tecnico";
+  isActive?: boolean;
 }
 export interface LoginResponse {
   token: string;
   refreshToken: string;
+  expiresIn: number;
   usuario: Usuario;
 }
 
@@ -22,14 +25,72 @@ export interface Producto {
   precioVenta: number;
   stock: number;
   stockMinimo: number;
+  stockMaximo: number;
+  proveedorFavoritoId: number | null;
   lowStock: boolean;
   isKit: boolean;
+  manoObra: number;
   isActive: boolean;
+  kitDisponible: number | null;
+}
+
+export interface ReabastecimientoLinea {
+  productoId: number;
+  sku: string;
+  nombre: string;
+  stock: number;
+  stockMinimo: number;
+  stockMaximo: number;
+  sugerido: number;
+  precio: number;
+  subtotal: number;
+  esFavorito: boolean;
+  enOC: boolean;
+  folioOC: string | null;
+}
+
+export interface ReabastecimientoGrupo {
+  proveedorId: number | null;
+  proveedorNombre: string;
+  totalEstimado: number;
+  lineas: ReabastecimientoLinea[];
+}
+
+export interface SolicitudReabastecimiento {
+  id: number;
+  productoId: number;
+  sku: string;
+  productoNombre: string;
+  cantidad: number;
+  ordenId: number | null;
+  ordenFolio: string | null;
+  solicitadoPor: number;
+  solicitanteNombre: string;
+  motivo: string | null;
+  estado: string;
+  rechazoMotivo: string | null;
+  compraId: number | null;
+  compraFolio: string | null;
+  resueltoPor: number | null;
+  createdAt: string;
+  resueltoAt: string | null;
 }
 
 export interface Paginated<T> {
   data: T[];
   meta: { page: number; pageSize: number; totalItems: number; totalPages: number };
+}
+
+export interface AuditoriaEntry {
+  id: number;
+  usuarioId: number;
+  usuarioNombre: string;
+  accion: string;
+  entidad: string;
+  entidadId: number | null;
+  antes: Record<string, unknown> | null;
+  despues: Record<string, unknown> | null;
+  fecha: string;
 }
 
 export interface CreateProducto {
@@ -42,6 +103,84 @@ export interface CreateProducto {
   precioCompra: number;
   precioVenta: number;
   stockMinimo?: number;
+  stockMaximo?: number;
+  proveedorFavoritoId?: number | null;
+  catalogoId?: number | null;
+  especificaciones?: string[];
+}
+
+export interface Catalogo {
+  id: number;
+  parentId: number | null;
+  nombre: string;
+  tagsSugeridas: string[];
+  tagsCompatibilidad: string[];
+}
+
+export interface Sustituto {
+  id: number;
+  sku: string;
+  nombre: string;
+  precioVenta: number;
+  stock: number;
+  especificaciones: string[];
+}
+
+export interface Sugerencias {
+  producto: { id: number; nombre: string; catalogoId: number | null; catalogoNombre: string | null };
+  componenteCorto: { productoId: number; nombre: string; stock: number; requerido: number } | null;
+  sustitutos: Sustituto[];
+  sustitutosComponente: Sustituto[];
+}
+
+export interface Movimiento {
+  id: number;
+  tipo: string;
+  cantidad: number;
+  motivo: string | null;
+  usuario: string;
+  referenciaId: number | null;
+  referenciaTipo: string | null;
+  fecha: string;
+}
+
+export interface PlantillaInfo {
+  tipo: string;
+  asunto: string;
+  cuerpo: string;
+}
+
+export interface NotificacionHistorial {
+  id: number;
+  tipo: string;
+  canal: string;
+  estado: string;
+  contenido: string | null;
+  error: string | null;
+  clienteNombre: string | null;
+  ordenFolio: string | null;
+  fecha: string;
+}
+
+export interface BusinessConfig {
+  ivaRate: number;
+  limiteCreditoDefault: number;
+  plazoCreditoDefault: number;
+  descuentoVendedorMax: number;
+  diasDevolucion: number;
+  diasGarantiaServicio: number;
+  toleranciaRetrasoDias: number;
+}
+
+export interface Garantia {
+  id: number;
+  clienteId: number;
+  clienteNombre: string;
+  folio: string | null;
+  tipo: string;
+  inicio: string;
+  fin: string;
+  estado: "vigente" | "por_vencer" | "vencida";
 }
 
 export interface Cliente {
@@ -61,6 +200,7 @@ export type EstadoOrden =
   | "en_diagnostico"
   | "cotizado"
   | "en_reparacion"
+  | "sustitucion_pendiente"
   | "listo"
   | "entregado"
   | "cancelado";
@@ -85,6 +225,32 @@ export interface CotizacionLinea {
   descripcion: string | null;
   horas: number | null;
   tarifaHora: number | null;
+  stock: number | null;
+}
+
+export interface Sustitucion {
+  id: number;
+  ordenId: number;
+  cotizacionId: number;
+  cotizacionFolio: string;
+  lineaId: number;
+  productoOriginalId: number;
+  skuOriginal: string;
+  nombreOriginal: string;
+  cantidad: number;
+  sustitutoId: number;
+  skuSustituto: string;
+  nombreSustituto: string;
+  precioSustituto: number;
+  stockSustituto: number;
+  justificacion: string | null;
+  clienteAcepta: boolean | null;
+  estado: string;
+  solicitudId: number | null;
+  creadaPor: number;
+  creadorNombre: string;
+  createdAt: string;
+  resueltoAt: string | null;
 }
 
 export interface Cotizacion {
@@ -171,6 +337,12 @@ export interface Venta {
   fechaVencimiento: string | null;
   estado: string;
   cambio?: number;
+  createdAt?: string;
+  garantias?: { tipo: string; inicio: string; fin: string }[];
+  parteDePago?: number;
+  totalAPagar?: number;
+  usadosCreados?: { productoId: number; nombre: string; valor: number }[];
+  pagos?: { metodo: string; monto: number }[];
   lineas: VentaLinea[];
 }
 
@@ -183,6 +355,8 @@ export interface CreateVenta {
   metodoPago?: string;
   plazoDias?: number | null;
   montoRecibido?: number | null;
+  partesDePago?: { nombre: string; marca?: string | null; modelo?: string | null; valor: number; precioVenta: number; observaciones?: string | null }[];
+  pagos?: { metodo: string; monto: number }[];
 }
 
 export interface Caja {
@@ -203,6 +377,7 @@ export interface Corte {
   ingresos: number;
   egresos: number;
   esperadoEfectivo: number;
+  partesDePago: number;
 }
 
 export interface CxcItem {
@@ -231,6 +406,9 @@ export interface CompraLinea {
   sku: string;
   nombre: string;
   cantidad: number;
+  cantidadRecibida: number;
+  pendiente: number;
+  recibida: boolean;
   precioUnitario: number;
   subtotal: number;
 }
@@ -251,6 +429,8 @@ export interface Compra {
   estado: EstadoCompra;
   estadoLabel: string;
   total: number;
+  totalRecibido: number;
+  pagado: number;
   saldo: number;
   fechaVencimiento: string | null;
   creadaPor: number;
@@ -269,6 +449,95 @@ export interface CxpItem {
   saldo: number;
   fechaVencimiento: string | null;
   estado: "vigente" | "vencido" | "pagado";
+}
+
+export interface ComparacionProveedor {
+  proveedorId: number;
+  proveedorNombre: string;
+  ultimoPrecio: number;
+  ultimaFecha: string;
+  folioOC: string;
+  cantidad: number;
+  esFavorito: boolean;
+  esInactivo: boolean;
+  esMasBarato: boolean;
+  porDebajoDelActual: boolean;
+}
+
+export interface ComparacionPrecios {
+  producto: { id: number; sku: string; nombre: string; precioCompra: number; proveedorFavoritoId: number | null };
+  proveedores: ComparacionProveedor[];
+}
+
+export type OrigenUsado = "parte_de_pago" | "reparacion" | "otro";
+export type EstadoQueja = "abierta" | "en_proceso" | "resuelta";
+export type TipoQueja = "queja" | "reclamacion_garantia";
+
+export interface Queja {
+  id: number;
+  clienteId: number;
+  clienteNombre: string;
+  tipo: TipoQueja;
+  garantiaId: number | null;
+  ordenId: number | null;
+  ordenFolio: string | null;
+  ventaId: number | null;
+  ventaFolio: string | null;
+  descripcion: string;
+  estado: EstadoQueja;
+  resolucion: string | null;
+  registradaPorNombre: string;
+  resueltaPorNombre: string | null;
+  resueltaAt: string | null;
+  createdAt: string;
+}
+
+export interface CrearQueja {
+  clienteId: number;
+  tipo: TipoQueja;
+  garantiaId?: number | null;
+  ordenId?: number | null;
+  ventaId?: number | null;
+  descripcion: string;
+}
+
+export interface EquipoUsado {
+  id: number;
+  productoId: number;
+  sku: string;
+  nombre: string;
+  marca: string | null;
+  modelo: string | null;
+  precioCompra: number;
+  precioVenta: number;
+  stock: number;
+  estado: "disponible" | "vendido";
+  clienteOrigenId: number | null;
+  clienteOrigenNombre: string | null;
+  ordenId: number | null;
+  ordenFolio: string | null;
+  ventaId: number | null;
+  ventaFolio: string | null;
+  valorTradeIn: number;
+  origen: OrigenUsado;
+  observaciones: string | null;
+  creadoPorNombre: string;
+  createdAt: string;
+}
+
+export interface CrearEquipoUsado {
+  sku: string;
+  nombre: string;
+  codigoBarras?: string | null;
+  marca?: string | null;
+  modelo?: string | null;
+  valorTradeIn: number;
+  precioVenta: number;
+  stock?: number;
+  origen: OrigenUsado;
+  clienteId?: number | null;
+  ordenId?: number | null;
+  observaciones?: string;
 }
 
 export interface ReporteInventario {
@@ -312,4 +581,85 @@ export interface ImportResult {
   importados: number;
   omitidos: { fila: number; sku: string; motivo: string }[];
   errores: { fila: number; sku: string; motivo: string }[];
+}
+
+export interface BomItem {
+  productoId: number;
+  sku: string;
+  nombre: string;
+  cantidad: number;
+  precioCompra: number;
+  precioVenta: number;
+  stock: number;
+}
+
+export interface Bom {
+  kitId: number;
+  nombre: string;
+  manoObra: number;
+  precioCompra: number;
+  precioVenta: number;
+  componentes: BomItem[];
+}
+
+export type EstadoCotizacionVenta = "emitida" | "aprobada" | "rechazada" | "convertida" | "cancelada" | "expirada";
+
+export interface CotizacionVentaLinea {
+  productoId: number;
+  sku: string;
+  nombre: string;
+  cantidad: number;
+  precioNeto: number;
+}
+
+export interface CotizacionVenta {
+  id: number;
+  folio: string;
+  clienteId: number;
+  clienteNombre: string;
+  estado: EstadoCotizacionVenta;
+  subtotal: number;
+  iva: number;
+  total: number;
+  descuento: number;
+  motivoDescuento: string | null;
+  vigenciaDesde: string;
+  vigenciaHasta: string;
+  expirada: boolean;
+  creadaPor: number;
+  creadorNombre: string;
+  createdAt: string;
+  lineas: CotizacionVentaLinea[];
+}
+
+export interface CreateCotizacionVenta {
+  clienteId: number;
+  lineas: { productoId: number; cantidad: number }[];
+  vigenciaDias?: number;
+  descuento?: number;
+  motivoDescuento?: string;
+}
+
+export interface DashboardResumen {
+  ventasHoy: { cantidad: number; total: number; ticketPromedio: number };
+  ordenes: { activas: number; retrasadas: number };
+  inventario: { stockBajo: number; totalProductos: number };
+  cajaAbierta: boolean;
+  topProductos: { nombre: string; unidades: number; ingreso: number }[];
+  topDeudores: { clienteId: number; clienteNombre: string; saldo: number }[];
+}
+
+export interface ReporteRentabilidad {
+  data: { producto: string; unidades: number; ingreso: number; margen: number; margenPct: number }[];
+  resumen: { ingresoTotal: number; margenTotal: number; margenPctPromedio: number };
+}
+
+export interface ReporteCliente {
+  data: { clienteId: number; cliente: string; ventas: number; totalCompras: number; ticketPromedio: number; saldo: number }[];
+  resumen: { totalClientes: number; totalCompras: number; saldoTotal: number };
+}
+
+export interface ReporteFinanciero {
+  data: { mes: string; ventas: number; ingresos: number; egresos: number; utilidad: number }[];
+  resumen: { totalIngresos: number; totalEgresos: number; utilidad: number };
 }

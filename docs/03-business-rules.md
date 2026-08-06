@@ -20,10 +20,14 @@
 |-------|------------|
 | BR-PRD-01 | Todo producto tiene `sku` único. El código de barras es único si se captura. |
 | BR-PRD-02 | Precio de compra y precio de venta > 0. `stock_minimo` >= 0. |
-| BR-PRD-03 | Categorías fijas por tipo: `componente`, `periférico`, `equipo_completo`, `refaccion`, `usado`. |
+| BR-PRD-03 | La clasificación es un **árbol de catálogos** (`catalogos`) de hasta **4 niveles**; la **raíz es la categoría obligatoria** del producto. Existe una raíz "General" por defecto. |
 | BR-PRD-04 | Baja de producto es **lógica** (`is_active=false`). No se elimina si tiene movimientos, ventas u órdenes. |
 | BR-PRD-05 | Cambios de precio quedan auditados (historial con usuario, fecha, valor anterior/nuevo). |
 | BR-PRD-06 | Un producto está en `low_stock` si `stock <= stock_minimo`. |
+| BR-PRD-07 | Todo producto tiene `stock_maximo` (opcional) usado para calcular la cantidad sugerida de reabastecimiento. |
+| BR-PRD-08 | Un producto puede tener un `proveedor_favorito_id`; es la primera opción al sugerir reabastecimiento. |
+| BR-PRD-09 | Los nodos de catálogo y productos usan **tags** (especificaciones y compatibilidad); los **sustitutos** se sugieren por coincidencia de tags de compatibilidad. |
+| BR-PRD-10 | Los **kits** (ensamblados BOM) se excluyen de las sugerencias de reabastecimiento. |
 
 ## 3. Inventario y Stock
 
@@ -43,8 +47,9 @@
 
 ```
 pendiente → en_diagnostico → cotizado → en_reparacion → listo → entregado
-                 │  └────────────┘      │                    │
-                 └─────── cancelado ◄───┴────────────────────┘
+                 │  └────────────┘      │        │            │
+                 │                       ▼        │            │
+                 └─────── cancelado ◄── sustitucion_pendiente ──┘
 ```
 
 | Transición | Quién | Condición adicional |
@@ -54,13 +59,19 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | `en_diagnostico → cancelado` | Vendedor/Admin | Motivo obligatorio |
 | `cotizado → en_reparacion` | Técnico | Cotización aprobada por el cliente |
 | `cotizado → cancelado` | Vendedor/Admin | Cotización rechazada o expirada; libera reservas |
+| `cotizado → sustitucion_pendiente` | Técnico | Se propone una sustitución de pieza sin stock (ver §15) |
 | `en_reparacion → listo` | Técnico | Reservas convertidas a consumo; mano de obra registrada |
 | `listo → entregado` | Vendedor | Cobro completado o CxC registrada; firma de recepción |
 | `listo → cancelado` | Admin | Motivo obligatorio; reversión de consumo (sólo admin) |
 | `en_reparacion → en_diagnostico` | Técnico | Si se requiere nueva cotización adicional |
+| `en_reparacion → sustitucion_pendiente` | Técnico | Se propone una sustitución durante la reparación |
+| `sustitucion_pendiente → cotizado` | Técnico | Sustitución **aceptada** (la cotización queda actualizada) o **rechazada** (vuelve a cotizado) |
+| `sustitucion_pendiente → en_reparacion` | Técnico | Sustitución **aceptada** o **rechazada**; orden vuelve a reparación |
+| `sustitucion_pendiente → cancelado` | Vendedor/Admin | Motivo obligatorio; libera reservas pendientes |
 
 - Todo cambio de estado se registra en `historial_orden` con usuario, fecha y nota.
 - **BR-SER-01 (Firma de recepción):** la entrega (SER-10) captura la firma del cliente en un **canvas táctil** que se guarda como **PNG en base64** en `ordenes_servicio.firma_recepcion`. Si el equipo no tiene pantalla táctil, el vendedor puede usar el mouse; la firma es obligatoria para cerrar la orden en estado `entregado`.
+- **BR-SER-02 (Sustitución):** el estado `sustitucion_pendiente` es una **pausa** para consultar al cliente; nunca es un estado final (ver §15).
 
 ## 5. Retrasos y Notificaciones
 
@@ -90,13 +101,15 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | Regla | Definición |
 |-------|------------|
 | BR-VEN-01 | La venta descuenta stock en el momento de completarse (SALIDA_VENTA). Bloqueada si no hay stock (BR-INV-01). |
-| BR-VEN-02 | Métodos de pago: `efectivo`, `tarjeta_credito`, `tarjeta_debito`, `transferencia`, `deposito`. Una venta puede tener pagos mixtos. |
+| BR-VEN-02 | Métodos de pago: `efectivo`, `tarjeta_credito`, `tarjeta_debito`, `transferencia`, `deposito`. Una venta de **contado** puede tener **pagos mixtos** (desglose en `pagos`, suma = total − parte de pago). |
+| BR-VEN-14 | Todo dinero recibido se registra en `pagos`: al crear una venta de contado se insertan las filas del desglose; los abonos a crédito se registran igual. El **corte de caja** solo cuenta dinero realmente recibido (Σ `pagos`); la parte de pago en especie se muestra aparte. |
 | BR-VEN-03 | En efectivo se calcula el cambio; el registro guarda monto recibido. |
-| BR-VEN-04 | El ticket se emite al completar la venta; formato ESC/POS 80mm; reimpresión se marca "COPIA". |
+| BR-VEN-04 | El ticket se emite al completar la venta; formato térmico 80mm (mono, folio, desglose) imprimido por el navegador (`window.print()` con `@media print`); la reimpresión se marca "COPIA". |
 | BR-VEN-05 | **Descuentos:** vendedor puede aplicar hasta **10%** sin autorización. Descuentos >10% requieren rol **admin**. |
 | BR-VEN-06 | Todo descuento requiere motivo; queda registrado en la venta. |
 | BR-VEN-07 | Cancelación de venta: sólo del mismo día o con autorización admin; reversión de inventario; motivo obligatorio. |
 | BR-VEN-08 | Devolución: dentro de **15 días** desde la venta y con ticket; reembolso por método original o nota de crédito; restituye stock si producto completo/sellado; registra `DEVOLUCION`. |
+| BR-VEN-13 | **Parte de pago en especie (equipo usado):** en ventas de **contado** se puede aceptar un equipo usado como parte de pago (`ventas.parte_de_pago`, Σ valores ≤ total). El valor se acredita **contra el total (IVA incluido)**; el total de la venta no cambia y solo se reduce el efectivo/terminal a recibir. Cada usado se crea como producto (raíz "Usado", stock 1, precio de reventa obligatorio) vinculado a la venta (`equipos_usados.venta_id`, origen `parte_de_pago`). El **corte de caja** excluye el trade-in del efectivo y lo desglosa como ingreso no monetario. |
 
 ## 8. Crédito (Cuentas por Cobrar)
 
@@ -117,7 +130,9 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | BR-GAR-02 | La garantía inicia en la fecha de entrega/venta. |
 | BR-GAR-03 | La garantía cubre la reparación del defecto cubierto; las reparaciones en garantía no generan cargo por mano de obra ni piezas. |
 | BR-GAR-04 | Job diario: notifica (NOT-04) a 3 y 1 días antes del vencimiento, según canal preferido. |
-| BR-GAR-05 | Una reclamación de garantía se registra como queja (CRM-07) vinculada a la garantía. |
+| BR-GAR-05 | Una reclamación de garantía se registra como **queja** (US-CRM-07) vinculada a la garantía. |
+| BR-CRM-08 | **Quejas y reclamaciones (US-CRM-07):** flujo `abierta → en_proceso → resuelta`; la reclamación de garantía exige una garantía **del mismo cliente** (422 `GARANTIA_REQUERIDA`/`GARANTIA_INVALIDA`); resolver exige **resolución obligatoria** y registra quién resuelve. Las quejas se muestran en el historial del cliente. |
+| BR-GAR-06 | **Garantía automática por venta de producto:** al vender con **cliente**, se genera **una garantía por producto distinto** — `producto_nuevo` 30 días (`ventas.dias_garantia_producto`) o `usado` 15 días (`ventas.dias_garantia_usado`) según la categoría raíz del producto. Las ventas a **mostrador (sin cliente) no generan garantía**. La respuesta de la venta incluye `garantias`. |
 
 ## 10. Compras y Cuentas por Pagar
 
@@ -125,9 +140,16 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 |-------|------------|
 | BR-COM-01 | Orden de compra: estados `borrador → enviada → recibida` (y `cancelada`). |
 | BR-COM-02 | Al registrar la entrada de mercancía: `stock += cantidad` y se genera `Movimiento ENTRADA` con el costo de compra. |
-| BR-COM-03 | La recepción genera la CxP por el monto total neto de la compra (sin IVA); pagos parciales permitidos. |
-| BR-COM-04 | Comparación de precios usa el historial de compras por producto/proveedor. |
+| BR-COM-03 | La CxP se acumula **por lo recibido**: `compras.total_recibido` = Σ (cantidad recibida × precio unitario); el saldo = `total_recibido − Σ pagos`. Se puede pagar desde la primera recepción parcial (no hace falta que la OC esté `recibida`). |
+| BR-COM-04 | **Comparación de precios** (`GET /compras/comparacion-precios?productoId=`): toma el **último precio por proveedor** desde OCs `enviada`/`recibida`, ordenado asc; incluye el `precio_compra` actual como referencia y marca favorito, más barato, inactivo y proveedores por debajo del precio actual. |
 | BR-COM-05 | Solo el **admin** crea/recibe órdenes de compra. |
+| BR-COM-06 | **Solicitudes de reabastecimiento:** un técnico (o admin) crea una solicitud de un producto solo si `stock < cantidad` requerida (422 `STOCK_SUFICIENTE` en caso contrario). |
+| BR-COM-07 | Estados de solicitud: `pendiente → aprobada → entregada` (o `rechazada` / `cancelada`). El **admin** aprueba (crea la OC por proveedor) o rechaza con motivo. El técnico autor puede **cancelar** su solicitud solo en `pendiente`. |
+| BR-COM-08 | Al **recibir** una OC, las solicitudes **aprobadas** de cada producto pasan a `entregada` y se inserta en el historial de la orden: "Refacción {producto} llegó · OC {folio}". |
+| BR-COM-09 | **Recepción parcial por línea:** `POST /compras/:id/recibir` sin body recibe todo lo pendiente; con body `{ lineas: [{ detalleCompraId, cantidadRecibida }] }` recibe por líneas. La OC se mantiene en `enviada` (con `total_recibido > 0` y badge "Recepción parcial") hasta que **todas** las líneas estén completas → `recibida`. |
+| BR-COM-10 | **Sobrerecepción bloqueada:** no se puede recibir más de lo pendiente de una línea (422 `SOBRE_RECEPCION`); tampoco líneas de otra OC (422 `LINEA_NO_EN_COMPRA`). |
+| BR-COM-11 | Las solicitudes aprobadas de un producto pasan a `entregada` **solo cuando su línea queda completamente recibida** y **solo las ligadas a esa OC** (`solicitudes.compra_id = compraId`). |
+| BR-COM-12 | **Cancelar con recepción parcial:** se puede cancelar una OC en `enviada` aunque ya tenga `total_recibido > 0`; se conservan el stock ya recibido y la CxP acumulada (el resto no llega). |
 
 ## 11. Caja (Corte y Cierre)
 
@@ -144,10 +166,45 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | Regla | Definición |
 |-------|------------|
 | BR-ROL-01 | Roles: `admin`, `vendedor`, `tecnico`. Un usuario tiene exactamente un rol. |
-| BR-ROL-02 | `admin`: todo. `vendedor`: CRM, órdenes (crear/entregar), ventas, cobros, notificaciones, corte de caja. `tecnico`: diagnóstico, estados, consumo de piezas, mano de obra. |
-| BR-ROL-03 | Ajustes de inventario, cancelación de ventas fuera de plazo, cierre de caja, configuración, usuarios y reportes avanzados: **solo admin**. |
+| BR-ROL-02 | `admin`: todo, incl. **reabastecimiento** y compras. `vendedor`: CRM, órdenes (crear/entregar), ventas, cobros, notificaciones, corte de caja, registrar respuesta de sustitución. `tecnico`: diagnóstico, estados, consumo de piezas, mano de obra, **proponer sustituciones** y **solicitar refacciones**. |
+| BR-ROL-03 | Ajustes de inventario, cancelación de ventas fuera de plazo, cierre de caja, configuración, usuarios, reportes avanzados, **aprobar solicitudes y crear OC**: **solo admin**. |
 | BR-ROL-04 | Descuentos >10%: requiere rol `admin` (BR-VEN-05). |
 | BR-ROL-05 | Toda operación crítica (venta, ajuste, cancelación, cierre de caja, descuento >5%) se registra en auditoría con usuario, fecha, antes/después. |
+
+## 14. Reabastecimiento (sugerencias)
+
+| Regla | Definición |
+|-------|------------|
+| BR-REA-01 | El listado de **sugerencias** muestra productos cuyo `stock < cantidad sugerida`, agrupados por proveedor. |
+| BR-REA-02 | Cantidad sugerida = `stock_maximo − stock` si `stock_maximo > 0`; en caso contrario `stock_minimo × 2 − stock`. El admin puede **editar** la cantidad. |
+| BR-REA-03 | Proveedor de cada línea: **favorito** del producto → si no, el **último proveedor** con compra (enviada/recibida) → si no, **sin proveedor**. |
+| BR-REA-04 | Un producto con OC **activa** (no recibida/cancelada) muestra "Ya en OC" con su folio y no se incluye por defecto en la OC nueva. |
+| BR-REA-05 | "Crear OC" agrupa las líneas del **mismo proveedor** con el `precio_compra` actual; los productos sin proveedor quedan pendientes. |
+| BR-REA-06 | Las solicitudes de técnicos sin proveedor no pueden aprobarse hasta asignar proveedor; quedan `pendiente`. |
+
+## 15. Sustitución con validación del cliente
+
+| Regla | Definición |
+|-------|------------|
+| BR-SUS-01 | Se puede **proponer** sustitución solo en órdenes `cotizado` o `en_reparacion`, sobre una línea de refacción cuyo stock es insuficiente. |
+| BR-SUS-02 | El sustituto debe ser **sugerido por el sistema** (coincidencia de tags de compatibilidad) y tener **stock disponible**. |
+| BR-SUS-03 | Al proponer, la orden pasa a `sustitucion_pendiente` y se notifica al admin (**NOT-06**). |
+| BR-SUS-04 | Si la cotización estaba **aprobada**, al proponer se **libera la reserva del original** y se **reserva el sustituto**. |
+| BR-SUS-05 | **Aceptar:** la línea de cotización se reemplaza por el sustituto con **su precio**; se recalculan subtotal, IVA y total (`calcMoney`); la orden vuelve a `en_reparacion` (o `cotizado`). |
+| BR-SUS-06 | **Rechazar:** se crea automáticamente una **solicitud de reabastecimiento** del original (BR-COM-06) y la orden vuelve a su estado previo. |
+| BR-SUS-07 | **Cancelar** la propuesta la retira y devuelve la orden a su estado; solo técnico/admin con motivo. |
+
+## 16. Equipos Usados
+
+| Regla | Definición |
+|-------|------------|
+| BR-US-01 | Un equipo usado es un **producto** clasificado bajo la categoría raíz **"Usado"** del catálogo (reutiliza stock, movimientos, ventas y reportes). |
+| BR-US-02 | Al registrar un usado se guarda su **origen** (`parte_de_pago` \| `reparacion` \| `otro`), el **cliente origen** (opcional), el **valor de parte de pago** (costo de adquisición → `precio_compra`) y observaciones. |
+| BR-US-03 | El **estado** del usado es **derivado del stock**: `disponible` si `stock > 0`, `vendido` si `stock = 0`. No hay columna de estado. |
+| BR-US-04 | El stock inicial por defecto es **1** y es editable al registrar (a veces llegan varias unidades). |
+| BR-US-05 | Al registrar se genera un `Movimiento ENTRADA` con `referencia_tipo = 'usado'` (auditoría de inventario). Solo el **admin** puede registrar/editar; el listado lo ve cualquier rol autenticado. |
+| BR-US-06 | La venta de un usado no genera garantía automática por ahora (pendiente feature general de garantías por venta de producto). |
+| BR-US-07 | **Alta de usados desde órdenes (equipo abandonado):** en el detalle de una orden **no entregada** se puede registrar el equipo como usado (admin) con `origen='reparacion'`, `cliente_id` y `orden_id` de la orden; se escribe la nota "Equipo {nombre} registrado como usado" en el historial de la orden. El estado de la orden no cambia. |
 
 ## 13. Retención de Datos y Respaldo
 

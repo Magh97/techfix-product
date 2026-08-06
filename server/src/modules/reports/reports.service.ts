@@ -76,9 +76,78 @@ export async function servicios(f: { desde?: string; hasta?: string; estado?: st
   };
 }
 
+export async function rentabilidad(f: { desde?: string; hasta?: string }) {
+  const rows = await repo.reporteRentabilidad(f);
+  const data = rows.map((r) => {
+    const ingreso = toNum(r.ingreso);
+    const margen = toNum(r.margen);
+    return {
+      producto: r.producto,
+      unidades: r.unidades,
+      ingreso,
+      margen,
+      margenPct: ingreso > 0 ? Math.round((margen / ingreso) * 10000) / 100 : 0,
+    };
+  });
+  const ingresoTotal = data.reduce((a, b) => a + b.ingreso, 0);
+  const margenTotal = data.reduce((a, b) => a + b.margen, 0);
+  return {
+    data,
+    resumen: {
+      ingresoTotal,
+      margenTotal,
+      margenPctPromedio: ingresoTotal > 0 ? Math.round((margenTotal / ingresoTotal) * 10000) / 100 : 0,
+    },
+  };
+}
+
+export async function clientes(f: { desde?: string; hasta?: string }) {
+  const [compras, saldos] = await Promise.all([repo.reporteClientes(f), repo.saldosDeudores()]);
+  const saldoPorCliente = new Map(saldos.map((s) => [s.cliente_id, toNum(s.saldo)]));
+  const data = compras.map((c) => ({
+    clienteId: c.cliente_id,
+    cliente: c.cliente,
+    ventas: c.ventas,
+    totalCompras: toNum(c.total_compras),
+    ticketPromedio: c.ventas ? toNum(c.total_compras) / c.ventas : 0,
+    saldo: saldoPorCliente.get(c.cliente_id) ?? 0,
+  }));
+  return {
+    data,
+    resumen: {
+      totalClientes: data.length,
+      totalCompras: data.reduce((a, b) => a + b.totalCompras, 0),
+      saldoTotal: data.reduce((a, b) => a + b.saldo, 0),
+    },
+  };
+}
+
+export async function financiero(f: { desde?: string; hasta?: string }) {
+  const [ingresos, egresos] = await Promise.all([repo.financieroIngresos(f), repo.financieroEgresos(f)]);
+  const egresosPorMes = new Map(egresos.map((e) => [e.mes, e]));
+  const data = ingresos.map((i) => {
+    const eg = egresosPorMes.get(i.mes);
+    const ingresosMes = toNum(i.ingresos);
+    const egresosMes = eg ? toNum(eg.egresos_total) : 0;
+    return {
+      mes: i.mes,
+      ventas: i.ventas,
+      ingresos: ingresosMes,
+      egresos: egresosMes,
+      utilidad: ingresosMes - egresosMes,
+    };
+  });
+  const totalIngresos = data.reduce((a, b) => a + b.ingresos, 0);
+  const totalEgresos = data.reduce((a, b) => a + b.egresos, 0);
+  return {
+    data,
+    resumen: { totalIngresos, totalEgresos, utilidad: totalIngresos - totalEgresos },
+  };
+}
+
 export async function exportar(
   res: Response,
-  tipo: "inventario" | "ventas" | "servicios",
+  tipo: "inventario" | "ventas" | "servicios" | "rentabilidad" | "clientes" | "financiero",
   formato: "csv" | "xlsx",
   f: { desde?: string; hasta?: string; agrupar?: string; estado?: string; tecnicoId?: number }
 ) {
@@ -108,7 +177,7 @@ export async function exportar(
     columns = [{ header: "Grupo", key: "grupo" }, { header: "Ventas", key: "ventas" }, { header: "Total", key: "total" }];
     if (agrupar === "producto") columns.push({ header: "Unidades", key: "unidades" });
     rows = r.map((x) => ({ ...x, total: toNum(x.total) }));
-  } else {
+  } else if (tipo === "servicios") {
     const r = await repo.serviciosDetalle(f);
     columns = [
       { header: "Folio", key: "folio" },
@@ -124,6 +193,42 @@ export async function exportar(
       { header: "Fecha entrega", key: "fecha_entrega" },
     ];
     rows = r as unknown as Record<string, unknown>[];
+  } else if (tipo === "rentabilidad") {
+    const r = await repo.reporteRentabilidad(f);
+    columns = [
+      { header: "Producto", key: "producto" },
+      { header: "Unidades", key: "unidades" },
+      { header: "Ingreso", key: "ingreso" },
+      { header: "Margen", key: "margen" },
+    ];
+    rows = r.map((x) => ({ ...x, ingreso: toNum(x.ingreso), margen: toNum(x.margen) }));
+  } else if (tipo === "clientes") {
+    const r = await repo.reporteClientes(f);
+    const saldos = await repo.saldosDeudores();
+    const saldoPorCliente = new Map(saldos.map((s) => [s.cliente_id, toNum(s.saldo)]));
+    columns = [
+      { header: "Cliente", key: "cliente" },
+      { header: "Ventas", key: "ventas" },
+      { header: "Total compras", key: "total_compras" },
+      { header: "Saldo", key: "saldo" },
+    ];
+    rows = r.map((x) => ({ ...x, total_compras: toNum(x.total_compras), saldo: saldoPorCliente.get(x.cliente_id) ?? 0 }));
+  } else {
+    const [ingresos, egresos] = await Promise.all([repo.financieroIngresos(f), repo.financieroEgresos(f)]);
+    const egresosPorMes = new Map(egresos.map((e) => [e.mes, e]));
+    columns = [
+      { header: "Mes", key: "mes" },
+      { header: "Ventas", key: "ventas" },
+      { header: "Ingresos", key: "ingresos" },
+      { header: "Egresos", key: "egresos" },
+      { header: "Utilidad", key: "utilidad" },
+    ];
+    rows = ingresos.map((i) => {
+      const eg = egresosPorMes.get(i.mes);
+      const ingresosMes = toNum(i.ingresos);
+      const egresosMes = eg ? toNum(eg.egresos_total) : 0;
+      return { mes: i.mes, ventas: i.ventas, ingresos: ingresosMes, egresos: egresosMes, utilidad: ingresosMes - egresosMes };
+    });
   }
 
   return sendExport(res, { formato, filename: `reporte-${tipo}`, columns, rows });

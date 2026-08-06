@@ -47,6 +47,18 @@ docker compose up --build
 # API  http://localhost:3000/api/v1  ·  Web  http://localhost:8080
 ```
 
+## Producción
+
+VPS + Docker Compose + **Caddy** (TLS automático) + backups diarios (BR-DAT-01) + deploy automático por CI.
+
+```bash
+cp .env.production.example .env   # completa DOMAIN, CORS_ORIGIN, JWT_SECRET, POSTGRES_PASSWORD, SMTP_*
+SEED_DEMO=false                   # no crear usuarios/datos demo
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Detalle completo (SMTP real, backups, restauración, actualización, alternativa YunoHost): **[docs/09-despliegue.md](docs/09-despliegue.md)**.
+
 ## Comandos
 
 | Comando | Descripción |
@@ -59,9 +71,9 @@ docker compose up --build
 
 ## Documentación
 
-- [Planeación](docs/main-planning.md) · [Arquitectura](docs/04-architecture.md) · [API](docs/06-api-design.md) · [Modelo de datos](docs/05-data-model.md) · [Changelog](CHANGELOG.md)
+- [Manual de usuario](docs/08-manual-usuario.md) · [Despliegue](docs/09-despliegue.md) · [Planeación](docs/main-planning.md) · [Arquitectura](docs/04-architecture.md) · [API](docs/06-api-design.md) · [Modelo de datos](docs/05-data-model.md) · [Changelog](CHANGELOG.md)
 - Prototipo del sistema: `docs/wireframe/app/index.html`
 - Landing page: `docs/wireframe/landing-page/index.html`
 
-> Estado: **v0.1.0** — Fase 1 (MVP) completa: inventario, clientes, órdenes de servicio (máquina de estados + reservas + worker de retrasos), POS, caja/finanzas, compras, notificaciones por correo y reportes con exportación CSV/Excel e importación de inventario. Fase 2 en curso (reportes y compras ya incluidos).
+> Estado: **v0.1.0** — Fase 1 (MVP) completa: inventario, clientes, órdenes de servicio (máquina de estados + reservas + worker de retrasos), POS, caja/finanzas, compras, notificaciones por correo y reportes con exportación CSV/Excel e importación de inventario. Fase 2 en curso: reportes, compras, **auditoría**, **paginación**, **taxonomía unificada (catálogos/tags)**, **reabastecimiento con sustituciones de piezas validadas con el cliente**, **impresión térmica del ticket (80mm)**, **recepción parcial de órdenes de compra**, **comparación de precios entre proveedores**, **equipos usados (incl. alta desde órdenes y parte de pago en POS)**, **garantías automáticas por venta de producto**, **trade-in**, **pagos mixtos en el POS** y **quejas/reclamaciones**.
 

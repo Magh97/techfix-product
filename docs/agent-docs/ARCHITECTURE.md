@@ -4,79 +4,91 @@
 
 ```
 React SPA ──REST/JSON──► Express API ──pg──► PostgreSQL 16
-Express API ──► Worker (node-cron: retrasos/hora, garantías/día)
-Worker ──SMTP──► Correo · Worker ──Twilio──► WhatsApp
-SPA ──ESC/POS 9100──► Print service (local)
+Express API ──► Workers (setInterval: retrasos/hora, garantías/día, refresh-cleanup/día)
+Worker ──SMTP──► Correo (sin SMTP → simulado en consola)
+Producción (docker-compose.prod.yml): caddy (TLS) → web(nginx) → api → db · backup (pg_dump diario, BR-DAT-01)
 ```
 
 ## Server Modules
 
 | Module | Path | Responsibility | Depends On |
 |--------|------|---------------|------------|
-| auth | `server/src/modules/auth/` | login, JWT, refresh, roles | shared |
-| inventory | `server/src/modules/inventory/` | productos, stock, reservas, movimientos, ajustes, BOM | shared |
-| crm | `server/src/modules/crm/` | clientes, historial, etiquetas, CxC saldo | shared |
-| services | `server/src/modules/services/` | órdenes, estados, diagnóstico, cotización, consumo, entrega | inventory, crm, notifications |
-| sales | `server/src/modules/sales/` | POS, tickets, descuentos, crédito, devolución, cancelación | inventory, crm, finance, services |
-| purchases | `server/src/modules/purchases/` | proveedores, compras, entrada, CxP | inventory, finance |
-| finance | `server/src/modules/finance/` | caja, corte/cierre, ingresos/egresos, CxC/CxP | sales, purchases |
-| notifications | `server/src/modules/notifications/` | plantillas, envío, historial, reintentos | crm |
-| reports | `server/src/modules/reports/` | reportes agregados, exportación | inventory, sales, finance |
-| shared | `server/src/shared/` | db pool, AppError, zod, money utils, auditoria | — |
+| auth | `src/modules/auth/` | login, refresh rotado (refresh_tokens), logout, housekeeping | shared, usuarios |
+| auditoria | `src/modules/auditoria/` | bitácora de eventos críticos (GET paginado admin) | shared |
+| catalogos | `src/modules/catalogos/` | árbol de catálogos (4 niveles, tags) CRUD admin | shared |
+| compras | `src/modules/compras/` | proveedores, OC, recibir, CxP, reabastecimiento, solicitudes | inventory, services, notifications |
+| quejas | `src/modules/quejas/` | quejas y reclamaciones de garantía (abierta→en_proceso→resuelta) | crm, garantias |
+| configuracion | `src/modules/configuracion/` | clave/valor (iva, tiempos, tolerancia, garantías) | shared |
+| crm | `src/modules/crm/` | clientes, historial, etiquetas, CxC saldo | shared |
+| dashboard | `src/modules/dashboard/` | KPIs de inicio | inventory, services, sales |
+| finance | `src/modules/finance/` | caja, corte/cierre, ingresos/egresos, CxC/CxP | sales, compras |
+| garantias | `src/modules/garantias/` | garantías, worker diario de vencimiento | crm, services, sales |
+| inventory | `src/modules/inventory/` | productos, stock, movimientos, ajustes, BOM, import/export, sugerencias, **usados** | catalogos |
+| notifications | `src/modules/notifications/` | plantillas (NOT-02/03/05/06), envío, historial | crm, services |
+| quote | `src/modules/quote/` | cotizaciones de venta (CV-) y conversión a venta | inventory, crm, sales |
+| reports | `src/modules/reports/` | reportes agregados + export CSV/XLSX | inventory, sales, finance, services |
+| sales | `src/modules/sales/` | POS, tickets, descuentos, crédito, devolución, cancelación | inventory, crm, finance |
+| services | `src/modules/services/` | órdenes, máquina de estados, cotización, consumo, entrega, **sustituciones** | inventory, crm, notifications, compras |
+| usuarios | `src/modules/usuarios/` | CRUD usuarios, cambio de rol/password | shared |
+| shared | `src/shared/` | db pool, AppError, zod utils, money, auditoria, jwt, export | — |
 
 ## Client Routes
 
-| Route | Layout | User | Nav Items |
-|-------|--------|------|-----------|
-| /venta | MainLayout | vendedor | POS (carrito + pago + ticket) |
-| /clientes | MainLayout | vendedor/admin | listado, detalle, historial |
-| /productos | MainLayout | vendedor/admin | listado, alta/edición, BOM |
-| /inventario | MainLayout | admin | ajustes, movimientos |
-| /ordenes | MainLayout | vendedor/admin | listado, wizard nueva, detalle |
-| /ordenes/:id/reparacion | MainLayout | tecnico | diagnóstico, consumo, MO |
-| /compras | MainLayout | admin | proveedores, compras, entrada |
-| /caja | MainLayout | vendedor | corte de caja |
-| /finanzas | MainLayout | admin | CxC/CxP, egresos |
-| /reportes | MainLayout | admin | reportes + export |
-| /configuracion | MainLayout | admin | plantillas, parámetros |
-| /usuarios | MainLayout | admin | CRUD usuarios |
+| Route | Page | Admin-only |
+|-------|------|-----------|
+| /login | LoginPage | — |
+| / | DashboardPage | — |
+| /venta | VentaPage (POS) | — |
+| /ventas | VentasPage | — |
+| /cotizaciones | CotizacionesPage | — |
+| /ordenes · /ordenes/:id | OrdenesPage · OrdenDetallePage | — |
+| /clientes · /clientes/:id | ClientesPage · ClienteDetallePage | — |
+| /productos | ProductosPage | — |
+| /caja · /finanzas | CajaPage · FinanzasPage | — |
+| /proveedores · /compras · /compras/nueva · /compras/:id | Proveedores · Compras · NuevaCompra · CompraDetalle | — |
+| /garantias | GarantiasPage | — |
+| /reabastecimiento | ReabastecimientoPage | sí |
+| /catalogos | CatalogosPage | sí |
+| /usuarios | UsuariosPage | sí |
+| /notificaciones | NotificacionesPage | sí |
+| /configuracion | ConfiguracionPage | sí |
+| /auditoria | AuditoriaPage | sí |
+| /reportes | ReportesPage | sí |
 
-## Data Flow (Main Use Case: reparación)
+## Data Flow (reparación con sustitución)
 
 ```
 1. Vendedor → POST /ordenes → services → db → 201 (folio)
-2. Técnico → PATCH /ordenes/:id/estado (en_diagnostico)
-3. Técnico → POST /ordenes/:id/cotizaciones → services (neto+IVA)
-4. Vendedor → POST /cotizaciones/:id/aprobar → inventory (RESERVA) → notifications (NOT-03)
-5. Técnico → PATCH estado (en_reparacion) → POST /ordenes/:id/consumo (SALIDA_CONSUMO, libera reserva)
-6. Técnico → PATCH estado (listo) → vendedor notifica (NOT-02)
-7. Worker/hora → detecta retraso → marca retrasada → notifications (NOT-01)
-8. Vendedor → POST /ventas (cobro) → POST /ordenes/:id/entregar → garantia 30d
+2. Técnico → POST /ordenes/:id/diagnostico → PATCH estado (en_diagnostico)
+3. Técnico → POST /ordenes/:id/cotizaciones (líneas refacción + mano de obra)
+4. Vendedor → POST /cotizaciones/:cid/aprobar → inventory (RESERVA) → notifications (NOT-03)
+5. Técnico (sin stock en una línea) → POST /ordenes/:id/sustituciones → orden=sustitucion_pendiente → NOT-06
+6. Cliente acepta → POST /sustituciones/:sid/aceptar (línea = precio sustituto, recalcula total; reservas: libera original, reserva sustituto)
+   Cliente rechaza → POST /sustituciones/:sid/rechazar → crea solicitud reabastecimiento (NOT-05) → orden vuelve
+7. Técnico → PATCH estado (en_reparacion) → POST /consumo (SALIDA_CONSUMO, libera reserva)
+8. Técnico → PATCH estado (listo) → vendedor notifica (NOT-02)
+9. Admin recibe OC (completa o por parciales) → stock += , CxP por lo recibido; al completarse la línea las solicitudes aprobadas de esa OC → entregada + historial "Refacción X llegó · OC …"
+10. Vendedor → POST /ordenes/:id/entregar (firma PNG base64) → garantía
 ```
 
 ## State Machine (orden)
 
 ```
 pendiente → en_diagnostico → cotizado → en_reparacion → listo → entregado
-   │            │              │           │             │
-   └──cancelado◄┴──────────────┘           └──cancelado──┘
+   │            │              │  ↘↗      │             │
+   └────cancelado◄┴──────────────┴──┤      └──cancelado──┘
+                                     └ sustitucion_pendiente (pausa no final)
 ```
-Transiciones: docs/03-business-rules.md §4. `retrasada` = derivado (flag, no transición).
+Transiciones y roles: `services/estados.ts` y docs/03 §4.
 
-## Component Tree (POS)
+## Component Tree (OrdenDetalle)
 
 ```
-SaleScreen
-├── Sidebar (búsqueda cliente, nav)
-├── ProductSearch
-│   ├── BarcodeInput (autofocus, Enter)
-│   └── ProductResults[]
-├── Cart
-│   ├── CartItem[] (cantidad, descuento por línea)
-│   └── Totals (subtotal, IVA 16%, total)
-├── PaymentPanel
-│   ├── PaymentMethodSelector
-│   ├── CreditCheck (límite cliente)
-│   └── ChangeCalculator
-└── TicketPreview → PrintService
+OrdenDetallePage
+├── StatusBadge (estado + retrasada)
+├── Banner sustitucion_pendiente (pausa)
+├── Líneas de cotización → botón "Sustituir" (sin stock) → SustitucionDialog
+├── Tarjeta Sustituciones (aceptar / rechazar / cancelar)
+├── "Solicitar refacción"
+└── Historial (timeline con estados)
 ```

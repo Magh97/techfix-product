@@ -16,7 +16,7 @@ servers:
 tags:
   - name: Auth
   - name: Productos
-  - name: Categorias
+  - name: Catalogos
   - name: Clientes
   - name: Ordenes
   - name: Ventas
@@ -24,6 +24,7 @@ tags:
   - name: Finanzas
   - name: Notificaciones
   - name: Reportes
+  - name: Auditoria
 
 paths:
   /auth/login:
@@ -61,6 +62,37 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotar refresh token
+      operationId: refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        "200":
+          description: Nuevos tokens emitidos (rotación)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required: [token, refreshToken]
+                    properties:
+                      token: { type: string }
+                      refreshToken: { type: string }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /productos:
     get:
       tags: [Productos]
@@ -74,9 +106,14 @@ paths:
           in: query
           description: Búsqueda por nombre/marca/modelo
           schema: { type: string }
-        - name: categoria
+        - name: catalogoId
           in: query
+          description: Filtra por catálogo (incluye sus descendientes del árbol)
           schema: { type: integer }
+        - name: tags
+          in: query
+          description: Filtra por tags/especificaciones
+          schema: { type: string }
         - name: stockBajo
           in: query
           schema: { type: boolean, default: false }
@@ -200,6 +237,108 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /catalogos:
+    get:
+      tags: [Catalogos]
+      summary: Árbol de catálogos (admin)
+      operationId: listCatalogos
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Árbol jerárquico
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Catalogo" }
+    post:
+      tags: [Catalogos]
+      summary: Crear nodo de catálogo (admin)
+      operationId: createCatalogo
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre]
+              properties:
+                nombre: { type: string }
+                parentId: { type: [integer, "null"], description: "Máx 4 niveles" }
+                tagsSugeridas:
+                  type: array
+                  items: { type: string }
+                tagsCompatibilidad:
+                  type: array
+                  items: { type: string }
+      responses:
+        "201":
+          description: Nodo creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Catalogo" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /catalogos/{catalogoId}:
+    put:
+      tags: [Catalogos]
+      summary: Editar nodo de catálogo (admin)
+      operationId: updateCatalogo
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/catalogoId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nombre: { type: string }
+                tagsSugeridas:
+                  type: array
+                  items: { type: string }
+                tagsCompatibilidad:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: Nodo actualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Catalogo" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Catalogos]
+      summary: Eliminar nodo de catálogo (admin, solo sin hijos ni productos)
+      operationId: deleteCatalogo
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/catalogoId"
+      responses:
+        "200":
+          description: Nodo eliminado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /clientes:
     get:
       tags: [Clientes]
@@ -320,7 +459,7 @@ paths:
               properties:
                 nuevoEstado:
                   type: string
-                  enum: [en_diagnostico, cotizado, en_reparacion, listo, entregado, cancelado]
+                  enum: [en_diagnostico, cotizado, en_reparacion, sustitucion_pendiente, listo, entregado, cancelado]
                 nota: { type: string }
       responses:
         "200":
@@ -407,6 +546,142 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /ordenes/{ordenId}/sustituciones:
+    post:
+      tags: [Ordenes]
+      summary: Proponer sustitución de pieza (técnico/admin, validación del cliente)
+      operationId: crearSustitucion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ordenId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lineaId, productoId]
+              properties:
+                lineaId: { type: integer, description: "Línea de detalle_cotizacion sin stock suficiente" }
+                productoId: { type: integer, description: "Sustituto sugerido con stock" }
+                justificacion: { type: string }
+      responses:
+        "201":
+          description: Sustitución propuesta; la orden pasa a sustitucion_pendiente (NOT-06)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Sustitucion" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          description: Stock suficiente o sustituto sin stock
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      tags: [Ordenes]
+      summary: Listar sustituciones de una orden (técnico/admin)
+      operationId: listarSustituciones
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ordenId"
+      responses:
+        "200":
+          description: Sustituciones de la orden
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Sustitucion" }
+
+  /ordenes/{ordenId}/sustituciones/{sustitucionId}/aceptar:
+    post:
+      tags: [Ordenes]
+      summary: Cliente aceptó la sustitución (reemplaza línea con precio del sustituto)
+      operationId: aceptarSustitucion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ordenId"
+        - $ref: "#/components/parameters/sustitucionId"
+      responses:
+        "200":
+          description: Línea reemplazada y totales recalculados; orden vuelve a su estado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Sustitucion" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /ordenes/{ordenId}/sustituciones/{sustitucionId}/rechazar:
+    post:
+      tags: [Ordenes]
+      summary: Cliente rechazó la sustitución (crea solicitud de reabastecimiento del original)
+      operationId: rechazarSustitucion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ordenId"
+        - $ref: "#/components/parameters/sustitucionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo: { type: string }
+      responses:
+        "200":
+          description: Solicitud de reabastecimiento creada; orden vuelve a su estado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Sustitucion" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /ordenes/{ordenId}/sustituciones/{sustitucionId}/cancelar:
+    post:
+      tags: [Ordenes]
+      summary: Cancelar propuesta de sustitución (técnico/admin, con motivo)
+      operationId: cancelarSustitucion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ordenId"
+        - $ref: "#/components/parameters/sustitucionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo: { type: string }
+      responses:
+        "200":
+          description: Propuesta cancelada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Sustitucion" }
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /ventas:
     post:
@@ -516,13 +791,18 @@ paths:
   /compras/{compraId}/recibir:
     post:
       tags: [Compras]
-      summary: Registrar entrada de mercancía (inventario += , genera CxP)
+      summary: Registrar entrada de mercancía (inventario += , CxP por lo recibido)
+      description: >-
+        Sin body (o sin `lineas`) recibe todo lo pendiente de la OC. Con `lineas` recibe por líneas
+        (recepción parcial): la OC se mantiene en `enviada` con badge "Recepción parcial" hasta que
+        todas las líneas estén completas → `recibida`. Sobrerecepción bloqueada (422 SOBRE_RECEPCION);
+        líneas ajenas a la OC → 422 LINEA_NO_EN_COMPRA.
       operationId: recibirCompra
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/compraId"
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
@@ -535,16 +815,269 @@ paths:
                     required: [detalleCompraId, cantidadRecibida]
                     properties:
                       detalleCompraId: { type: integer }
-                      cantidadRecibida: { type: integer, minimum: 0 }
+                      cantidadRecibida: { type: integer, minimum: 1 }
       responses:
         "200":
-          description: Mercancía recibida
+          description: Mercancía recibida (CxP acumulada; solicitudes de la OC → entregada al completar la línea)
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data: { type: object }
+        "422":
+          description: Sobrerecepción o línea ajena a la OC
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /compras/reabastecimiento:
+    get:
+      tags: [Compras]
+      summary: Sugerencias de reabastecimiento por proveedor (admin)
+      operationId: sugerenciasReabastecimiento
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Grupos de sugerencias por proveedor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      grupos:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            proveedorId: { type: [integer, "null"] }
+                            proveedorNombre: { type: [string, "null"] }
+                            esFavorito: { type: boolean }
+                            lineas:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  productoId: { type: integer }
+                                  sku: { type: string }
+                                  nombre: { type: string }
+                                  stock: { type: integer }
+                                  sugerido: { type: integer }
+                                  enOC: { type: boolean }
+                                  folioOC: { type: [string, "null"] }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /compras/comparacion-precios:
+    get:
+      tags: [Compras]
+      summary: Comparación de precios por proveedor para un producto (admin)
+      description: >-
+        Último precio por proveedor desde OCs enviadas/recibidas, ordenado asc; incluye el
+        precio_compra actual del producto como referencia y flags (favorito, más barato,
+        inactivo, por debajo del actual).
+      operationId: comparacionPrecios
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: productoId
+          in: query
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Comparativa de precios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      producto:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          sku: { type: string }
+                          nombre: { type: string }
+                          precioCompra: { type: number }
+                          proveedorFavoritoId: { type: [integer, "null"] }
+                      proveedores:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            proveedorId: { type: integer }
+                            proveedorNombre: { type: string }
+                            ultimoPrecio: { type: number }
+                            ultimaFecha: { type: string, format: date }
+                            folioOC: { type: string }
+                            cantidad: { type: integer }
+                            esFavorito: { type: boolean }
+                            esInactivo: { type: boolean }
+                            esMasBarato: { type: boolean }
+                            porDebajoDelActual: { type: boolean }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /compras/solicitudes:
+    post:
+      tags: [Compras]
+      summary: Crear solicitud de reabastecimiento (técnico/admin, solo si stock < cantidad)
+      operationId: crearSolicitud
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productoId, cantidad]
+              properties:
+                productoId: { type: integer }
+                cantidad: { type: integer, minimum: 1 }
+                ordenId: { type: integer }
+                motivo: { type: string }
+      responses:
+        "201":
+          description: Solicitud creada (NOT-05 al admin)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/SolicitudReabastecimiento" }
+        "422":
+          description: Stock suficiente (STOCK_SUFICIENTE)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      tags: [Compras]
+      summary: Listar solicitudes (admin; técnico requiere ordenId)
+      operationId: listarSolicitudes
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: estado
+          in: query
+          schema: { type: string, enum: [pendiente, aprobada, entregada, rechazada, cancelada] }
+        - name: ordenId
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/SolicitudReabastecimiento" }
+                  meta: { $ref: "#/components/schemas/PaginationMeta" }
+
+  /compras/solicitudes/aprobar:
+    post:
+      tags: [Compras]
+      summary: Aprobar solicitudes y crear OC por proveedor (admin)
+      operationId: aprobarSolicitudes
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [solicitudes]
+              properties:
+                solicitudes:
+                  type: array
+                  items: { type: integer }
+      responses:
+        "200":
+          description: OCs creadas por proveedor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      creadas:
+                        type: array
+                        items: { type: object }
+                      yaNoPendientes:
+                        type: array
+                        items: { type: integer }
+
+  /compras/solicitudes/{solicitudId}/rechazar:
+    post:
+      tags: [Compras]
+      summary: Rechazar solicitud (admin, con motivo)
+      operationId: rechazarSolicitud
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/solicitudId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo: { type: string }
+      responses:
+        "200":
+          description: Solicitud rechazada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/SolicitudReabastecimiento" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /compras/solicitudes/{solicitudId}/cancelar:
+    post:
+      tags: [Compras]
+      summary: Cancelar solicitud pendiente (técnico autor o admin, con motivo)
+      operationId: cancelarSolicitud
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/solicitudId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo: { type: string }
+      responses:
+        "200":
+          description: Solicitud cancelada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/SolicitudReabastecimiento" }
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /caja/abrir:
     post:
@@ -625,6 +1158,256 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /auditoria:
+    get:
+      tags: [Auditoria]
+      summary: Bitácora de eventos críticos (admin)
+      operationId: listAuditoria
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: accion
+          in: query
+          schema: { type: string }
+        - name: entidad
+          in: query
+          schema: { type: string }
+        - name: usuarioId
+          in: query
+          schema: { type: integer }
+        - name: desde
+          in: query
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Eventos paginados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditoriaEvento" }
+                  meta: { $ref: "#/components/schemas/PaginationMeta" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /usados:
+    get:
+      tags: [Productos]
+      summary: Listar equipos usados (estado derivado del stock)
+      operationId: listUsados
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: estado
+          in: query
+          schema: { type: string, enum: [disponible, vendido] }
+        - name: origen
+          in: query
+          schema: { type: string, enum: [parte_de_pago, reparacion, otro] }
+        - name: clienteId
+          in: query
+          schema: { type: integer }
+        - name: q
+          in: query
+          description: Búsqueda por nombre o SKU
+          schema: { type: string }
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/EquipoUsado" }
+                  meta: { $ref: "#/components/schemas/PaginationMeta" }
+    post:
+      tags: [Productos]
+      summary: Registrar equipo usado (admin; crea producto bajo la raíz "Usado")
+      operationId: createUsado
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sku, nombre, valorTradeIn, precioVenta, origen]
+              properties:
+                sku: { type: string }
+                nombre: { type: string }
+                codigoBarras: { type: string }
+                marca: { type: string }
+                modelo: { type: string }
+                valorTradeIn: { type: number, minimum: 0, description: "Costo de adquisición (precio_compra)" }
+                precioVenta: { type: number, minimum: 0.01 }
+                stock: { type: integer, minimum: 1, default: 1 }
+                origen: { type: string, enum: [parte_de_pago, reparacion, otro], default: otro }
+                clienteId: { type: integer }
+                ordenId: { type: integer }
+                observaciones: { type: string }
+      responses:
+        "201":
+          description: Equipo usado registrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/EquipoUsado" }
+        "422":
+          description: No existe la categoría 'Usado' o cliente inválido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /usados/{usadoId}:
+    put:
+      tags: [Productos]
+      summary: Editar equipo usado (admin)
+      operationId: updateUsado
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/usadoId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                valorTradeIn: { type: number, minimum: 0 }
+                precioVenta: { type: number, minimum: 0.01 }
+                origen: { type: string, enum: [parte_de_pago, reparacion, otro] }
+                observaciones: { type: [string, "null"] }
+      responses:
+        "200":
+          description: Equipo usado actualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/EquipoUsado" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /quejas:
+    get:
+      tags: [Clientes]
+      summary: Listar quejas y reclamaciones
+      operationId: listQuejas
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: clienteId
+          in: query
+          schema: { type: integer }
+        - name: estado
+          in: query
+          schema: { type: string, enum: [abierta, en_proceso, resuelta] }
+        - name: tipo
+          in: query
+          schema: { type: string, enum: [queja, reclamacion_garantia] }
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Queja" }
+                  meta: { $ref: "#/components/schemas/PaginationMeta" }
+    post:
+      tags: [Clientes]
+      summary: Registrar queja o reclamación de garantía (vendedor/admin)
+      operationId: createQueja
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clienteId, descripcion]
+              properties:
+                clienteId: { type: integer }
+                tipo: { type: string, enum: [queja, reclamacion_garantia], default: queja }
+                garantiaId: { type: integer, description: "Obligatorio si tipo = reclamacion_garantia" }
+                ordenId: { type: integer }
+                ventaId: { type: integer }
+                descripcion: { type: string }
+      responses:
+        "201":
+          description: Queja creada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Queja" }
+        "422":
+          description: Garantía requerida o ajena al cliente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /quejas/{quejaId}/estado:
+    post:
+      tags: [Clientes]
+      summary: Cambiar estado de la queja (vendedor/admin; resolución obligatoria al resolver)
+      operationId: cambiarEstadoQueja
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/quejaId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [estado]
+              properties:
+                estado: { type: string, enum: [en_proceso, resuelta] }
+                resolucion: { type: string, description: "Obligatoria si estado = resuelta" }
+      responses:
+        "200":
+          description: Queja actualizada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Queja" }
+        "409":
+          description: Transición no permitida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Resolución requerida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -648,6 +1431,11 @@ components:
       in: path
       required: true
       schema: { type: integer }
+    catalogoId:
+      name: catalogoId
+      in: path
+      required: true
+      schema: { type: integer }
     ordenId:
       name: ordenId
       in: path
@@ -655,6 +1443,26 @@ components:
       schema: { type: integer }
     cotizacionId:
       name: cotizacionId
+      in: path
+      required: true
+      schema: { type: integer }
+    sustitucionId:
+      name: sustitucionId
+      in: path
+      required: true
+      schema: { type: integer }
+    usadoId:
+      name: usadoId
+      in: path
+      required: true
+      schema: { type: integer }
+    quejaId:
+      name: quejaId
+      in: path
+      required: true
+      schema: { type: integer }
+    solicitudId:
+      name: solicitudId
       in: path
       required: true
       schema: { type: integer }
@@ -683,15 +1491,23 @@ components:
       type: object
       properties:
         id: { type: integer }
+        categoriaId: { type: integer, description: "Raíz del árbol de catálogos (categoría)" }
+        catalogoId: { type: [integer, "null"], description: "Nodo hoja del catálogo" }
         sku: { type: string }
-        codigoBarras: { type: string, nullable: true }
+        codigoBarras: { type: [string, "null"] }
         nombre: { type: string }
-        marca: { type: string, nullable: true }
-        modelo: { type: string, nullable: true }
+        marca: { type: [string, "null"] }
+        modelo: { type: [string, "null"] }
         precioCompra: { type: number }
         precioVenta: { type: number }
         stock: { type: integer }
         stockMinimo: { type: integer }
+        stockMaximo: { type: integer, default: 0 }
+        proveedorFavoritoId: { type: [integer, "null"] }
+        especificaciones:
+          type: array
+          items: { type: string }
+          description: Tags del producto (array de strings)
         isKit: { type: boolean }
         isActive: { type: boolean }
 
@@ -699,7 +1515,8 @@ components:
       type: object
       required: [categoriaId, sku, nombre, precioCompra, precioVenta]
       properties:
-        categoriaId: { type: integer }
+        categoriaId: { type: integer, description: "Debe ser un catálogo raíz" }
+        catalogoId: { type: integer }
         sku: { type: string }
         codigoBarras: { type: string }
         nombre: { type: string }
@@ -708,6 +1525,27 @@ components:
         precioCompra: { type: number, minimum: 0 }
         precioVenta: { type: number, minimum: 0 }
         stockMinimo: { type: integer, minimum: 0 }
+        stockMaximo: { type: integer, minimum: 0 }
+        proveedorFavoritoId: { type: integer }
+        especificaciones:
+          type: array
+          items: { type: string }
+
+    Catalogo:
+      type: object
+      properties:
+        id: { type: integer }
+        parentId: { type: [integer, "null"] }
+        nombre: { type: string }
+        tagsSugeridas:
+          type: array
+          items: { type: string }
+        tagsCompatibilidad:
+          type: array
+          items: { type: string }
+        hijos:
+          type: array
+          items: { $ref: "#/components/schemas/Catalogo" }
 
     ProductoListResponse:
       type: object
@@ -724,7 +1562,7 @@ components:
         id: { type: integer }
         nombre: { type: string }
         telefono: { type: string }
-        correo: { type: string, nullable: true }
+        correo: { type: [string, "null"] }
         preferenciaContacto: { type: string, enum: [whatsapp, correo, llamada] }
         limiteCredito: { type: number, description: "Default $3,000 MXN al crear cliente" }
         plazoCreditoDias: { type: integer, default: 15 }
@@ -740,20 +1578,20 @@ components:
         folio: { type: string }
         clienteId: { type: integer }
         tipoEquipo: { type: string }
-        marca: { type: string, nullable: true }
-        modelo: { type: string, nullable: true }
-        serie: { type: string, nullable: true }
-        accesorios: { type: string, nullable: true }
+        marca: { type: [string, "null"] }
+        modelo: { type: [string, "null"] }
+        serie: { type: [string, "null"] }
+        accesorios: { type: [string, "null"] }
         fallaReportada: { type: string }
-        diagnostico: { type: string, nullable: true }
+        diagnostico: { type: [string, "null"] }
         estado:
           type: string
-          enum: [pendiente, en_diagnostico, cotizado, en_reparacion, listo, entregado, cancelado]
+          enum: [pendiente, en_diagnostico, cotizado, en_reparacion, sustitucion_pendiente, listo, entregado, cancelado]
         retrasada: { type: boolean }
         fechaPrometida: { type: string, format: date }
-        fechaEntrega: { type: string, format: date, nullable: true }
-        tecnicoId: { type: integer, nullable: true }
-        firmaRecepcion: { type: string, nullable: true, description: "PNG base64 (canvas táctil, SER-10)" }
+        fechaEntrega: { type: [string, "null"], format: date }
+        tecnicoId: { type: [integer, "null"] }
+        firmaRecepcion: { type: [string, "null"], description: "PNG base64 (canvas táctil, SER-10)" }
 
     Cotizacion:
       type: object
@@ -794,23 +1632,76 @@ components:
         metodoPago: { type: string, enum: [efectivo, tarjeta_credito, tarjeta_debito, transferencia, deposito] }
         plazoDias: { type: integer }
         montoRecibido: { type: number }
+        pagos:
+          type: array
+          description: Desglose de pago mixto (solo ventas de contado; la suma debe dar total − parte de pago)
+          items:
+            type: object
+            required: [metodo, monto]
+            properties:
+              metodo: { type: string, enum: [efectivo, tarjeta_credito, tarjeta_debito, transferencia, deposito] }
+              monto: { type: number, minimum: 0.01 }
+        partesDePago:
+          type: array
+          description: Parte de pago en especie (equipo usado); solo ventas de contado
+          items:
+            type: object
+            required: [nombre, valor, precioVenta]
+            properties:
+              nombre: { type: string }
+              marca: { type: [string, "null"] }
+              modelo: { type: [string, "null"] }
+              valor: { type: number, minimum: 0 }
+              precioVenta: { type: number, minimum: 0.01 }
+              observaciones: { type: [string, "null"] }
 
     Venta:
       type: object
       properties:
         id: { type: integer }
         folio: { type: string }
-        clienteId: { type: integer, nullable: true }
+        clienteId: { type: [integer, "null"] }
         subtotal: { type: number }
         iva: { type: number }
         total: { type: number }
         descuento: { type: number }
         tipoPago: { type: string, enum: [contado, credito] }
         estado: { type: string, enum: [completada, cancelada, devuelta, credito_pendiente] }
-        fechaVencimiento: { type: string, format: date, nullable: true }
+        fechaVencimiento: { type: [string, "null"], format: date }
         lineas:
           type: array
           items: { type: object }
+        garantias:
+          type: array
+          description: Garantías generadas al vender con cliente (una por producto distinto)
+          items:
+            type: object
+            properties:
+              tipo: { type: string, enum: [producto_nuevo, usado] }
+              inicio: { type: string, format: date }
+              fin: { type: string, format: date }
+        parteDePago:
+          type: number
+          description: Valor aceptado como parte de pago en especie (reduce el efectivo a recibir)
+        totalAPagar:
+          type: number
+          description: total − parte_de_pago
+        usadosCreados:
+          type: array
+          items:
+            type: object
+            properties:
+              productoId: { type: integer }
+              nombre: { type: string }
+              valor: { type: number }
+        pagos:
+          type: array
+          description: Desglose de dinero recibido (venta de contado o abonos)
+          items:
+            type: object
+            properties:
+              metodo: { type: string }
+              monto: { type: number }
 
     Movimiento:
       type: object
@@ -819,9 +1710,9 @@ components:
         productoId: { type: integer }
         tipo: { type: string }
         cantidad: { type: integer }
-        referenciaTipo: { type: string, nullable: true }
-        referenciaId: { type: integer, nullable: true }
-        motivo: { type: string, nullable: true }
+        referenciaTipo: { type: [string, "null"] }
+        referenciaId: { type: [integer, "null"] }
+        motivo: { type: [string, "null"] }
         createdAt: { type: string, format: date-time }
 
     Caja:
@@ -831,10 +1722,10 @@ components:
         usuarioId: { type: integer }
         fecha: { type: string, format: date }
         estado: { type: string, enum: [abierta, cerrada, reabierta] }
-        efectivoFisico: { type: number, nullable: true }
-        diferencia: { type: number, nullable: true }
+        efectivoFisico: { type: [number, "null"] }
+        diferencia: { type: [number, "null"] }
         apertura: { type: string, format: date-time }
-        cierre: { type: string, format: date-time, nullable: true }
+        cierre: { type: [string, "null"], format: date-time }
 
     PaginationMeta:
       type: object
@@ -844,6 +1735,51 @@ components:
         pageSize: { type: integer }
         totalItems: { type: integer }
         totalPages: { type: integer }
+
+    EquipoUsado:
+      type: object
+      properties:
+        id: { type: integer }
+        productoId: { type: integer }
+        sku: { type: string }
+        nombre: { type: string }
+        marca: { type: [string, "null"] }
+        modelo: { type: [string, "null"] }
+        precioCompra: { type: number }
+        precioVenta: { type: number }
+        stock: { type: integer }
+        estado: { type: string, enum: [disponible, vendido], description: "Derivado del stock" }
+        clienteOrigenId: { type: [integer, "null"] }
+        clienteOrigenNombre: { type: [string, "null"] }
+        ordenId: { type: [integer, "null"] }
+        ordenFolio: { type: [string, "null"] }
+        ventaId: { type: [integer, "null"] }
+        ventaFolio: { type: [string, "null"] }
+        valorTradeIn: { type: number }
+        origen: { type: string, enum: [parte_de_pago, reparacion, otro] }
+        observaciones: { type: [string, "null"] }
+        creadoPorNombre: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    Queja:
+      type: object
+      properties:
+        id: { type: integer }
+        clienteId: { type: integer }
+        clienteNombre: { type: string }
+        tipo: { type: string, enum: [queja, reclamacion_garantia] }
+        garantiaId: { type: [integer, "null"] }
+        ordenId: { type: [integer, "null"] }
+        ordenFolio: { type: [string, "null"] }
+        ventaId: { type: [integer, "null"] }
+        ventaFolio: { type: [string, "null"] }
+        descripcion: { type: string }
+        estado: { type: string, enum: [abierta, en_proceso, resuelta] }
+        resolucion: { type: [string, "null"] }
+        registradaPorNombre: { type: string }
+        resueltaPorNombre: { type: [string, "null"] }
+        resueltaAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
 
     ErrorResponse:
       type: object
@@ -862,6 +1798,66 @@ components:
                 properties:
                   field: { type: string }
                   reason: { type: string }
+
+    Sustitucion:
+      type: object
+      properties:
+        id: { type: integer }
+        ordenId: { type: integer }
+        cotizacionId: { type: integer }
+        cotizacionFolio: { type: string }
+        lineaId: { type: integer }
+        productoOriginalId: { type: integer }
+        skuOriginal: { type: string }
+        nombreOriginal: { type: string }
+        cantidad: { type: integer }
+        sustitutoId: { type: integer }
+        skuSustituto: { type: string }
+        nombreSustituto: { type: string }
+        precioSustituto: { type: number }
+        stockSustituto: { type: integer }
+        justificacion: { type: [string, "null"] }
+        clienteAcepta: { type: [boolean, "null"] }
+        estado: { type: string, enum: [pendiente, aceptada, rechazada, cancelada] }
+        solicitudId: { type: [integer, "null"] }
+        creadaPor: { type: integer }
+        creadorNombre: { type: string }
+        createdAt: { type: string, format: date-time }
+        resueltoAt: { type: [string, "null"], format: date-time }
+
+    SolicitudReabastecimiento:
+      type: object
+      properties:
+        id: { type: integer }
+        productoId: { type: integer }
+        sku: { type: string }
+        productoNombre: { type: string }
+        cantidad: { type: integer }
+        ordenId: { type: [integer, "null"] }
+        ordenFolio: { type: [string, "null"] }
+        solicitadoPor: { type: integer }
+        solicitanteNombre: { type: string }
+        motivo: { type: [string, "null"] }
+        estado: { type: string, enum: [pendiente, aprobada, entregada, rechazada, cancelada] }
+        rechazoMotivo: { type: [string, "null"] }
+        compraId: { type: [integer, "null"] }
+        compraFolio: { type: [string, "null"] }
+        resueltoPor: { type: [integer, "null"] }
+        createdAt: { type: string, format: date-time }
+        resueltoAt: { type: [string, "null"], format: date-time }
+
+    AuditoriaEvento:
+      type: object
+      properties:
+        id: { type: integer }
+        usuarioId: { type: integer }
+        usuarioNombre: { type: string }
+        accion: { type: string }
+        entidad: { type: string }
+        entidadId: { type: [integer, "null"] }
+        antes: { type: [object, "null"] }
+        despues: { type: [object, "null"] }
+        fecha: { type: string, format: date-time }
 
   responses:
     Unauthorized:

@@ -16,7 +16,7 @@ export const listOrdenesQuery = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   estado: z
-    .enum(["pendiente", "en_diagnostico", "cotizado", "en_reparacion", "listo", "entregado", "cancelado"])
+    .enum(["pendiente", "en_diagnostico", "cotizado", "en_reparacion", "sustitucion_pendiente", "listo", "entregado", "cancelado"])
     .optional(),
   retrasadas: z.enum(["true", "false"]).optional(),
   folio: z.string().optional(),
@@ -31,7 +31,7 @@ export const cidParams = z.object({
 });
 
 export const changeEstadoSchema = z.object({
-  nuevoEstado: z.enum(["en_diagnostico", "cotizado", "en_reparacion", "listo", "entregado", "cancelado"]),
+  nuevoEstado: z.enum(["en_diagnostico", "cotizado", "en_reparacion", "sustitucion_pendiente", "listo", "entregado", "cancelado"]),
   nota: z.string().optional(),
 });
 
@@ -75,4 +75,22 @@ export const cancelarSchema = z.object({ motivo: z.string().min(1) });
 export const notificarSchema = z.object({
   tipo: z.enum(["listo", "cotizacion"]),
   canal: z.enum(["whatsapp", "correo", "llamada"]).optional(),
+});
+
+/* --- Sustituciones (validación del cliente) --- */
+
+export const crearSustitucionSchema = z.object({
+  cotizacionId: z.number().int().positive(),
+  lineaId: z.number().int().positive(),
+  sustitutoId: z.number().int().positive(),
+  justificacion: z.string().max(500).optional(),
+});
+
+export const sidParams = z.object({
+  id: z.coerce.number().int().positive(),
+  sid: z.coerce.number().int().positive(),
+});
+
+export const resolverSustitucionSchema = z.object({
+  motivo: z.string().min(1).max(500),
 });
