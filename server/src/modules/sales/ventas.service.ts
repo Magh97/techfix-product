@@ -411,24 +411,36 @@ export async function getByFolio(folio: string) {
 
 /* --- Pagos / abonos --- */
 
-export async function registrarAbono(ventaId: number, input: { monto: number; metodo: string }, user: { id: number }) {
+export async function registrarAbono(
+  ventaId: number,
+  input: { monto?: number; metodo?: string; pagos?: { metodo: string; monto: number }[] },
+  user: { id: number }
+) {
   const venta = await repo.findVenta(ventaId);
   if (!venta) throw AppError.notFound("SALE_NOT_FOUND", "Venta no encontrada");
   if (venta.tipo_pago !== "credito") throw AppError.conflict("SALE_NOT_CREDIT", "La venta no es a crédito");
+
+  const desglose: { metodo: string; monto: number }[] =
+    input.pagos && input.pagos.length
+      ? input.pagos
+      : [{ metodo: input.metodo as string, monto: input.monto as number }];
+  const totalAbono = desglose.reduce((a, p) => a + p.monto, 0);
 
   return withTransaction(async (c) => {
     const saldo = (await repo.sumPagos(c, ventaId)) as number;
     const total = Number(venta.total);
     const pendiente = Math.max(0, total - saldo);
-    if (input.monto <= 0 || input.monto > pendiente) {
+    if (totalAbono <= 0 || totalAbono > pendiente + 0.001) {
       throw AppError.business("PAYMENT_INVALID", `Monto inválido: pendiente ${pendiente}`);
     }
     const cajaId = await repo.findCajaAbierta(c, venta.vendedor_id, today());
-    await repo.insertPago(c, { ventaId, monto: input.monto, metodo: input.metodo, usuarioId: user.id, cajaId });
-    if (Math.abs(pendiente - input.monto) < 0.001) {
+    for (const p of desglose) {
+      await repo.insertPago(c, { ventaId, monto: p.monto, metodo: p.metodo, usuarioId: user.id, cajaId });
+    }
+    if (Math.abs(pendiente - totalAbono) < 0.001) {
       await repo.updateVentaEstado(c, ventaId, "completada");
     }
-    return { ventaId, monto: input.monto, saldoPendiente: Math.max(0, pendiente - input.monto) };
+    return { ventaId, monto: totalAbono, saldoPendiente: Math.max(0, pendiente - totalAbono) };
   });
 }
 
