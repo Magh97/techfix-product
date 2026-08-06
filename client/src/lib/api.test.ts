@@ -134,6 +134,21 @@ describe("ventasApi.cancelar / devolucion", () => {
     expect(JSON.parse(init.body as string)).toEqual({ lineas: [{ productoId: 3, cantidad: 1 }] });
   });
 
+  it("devolucion envía el tipo de reembolso", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonRes({ data: { id: 7, folio: "VEN-0007" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    localStorage.setItem("ts_token", "t1");
+    localStorage.setItem("ts_refresh", "rt1");
+
+    await ventasApi.devolucion(7, [{ productoId: 3, cantidad: 1 }], "Cliente devolvió", "reembolso");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      lineas: [{ productoId: 3, cantidad: 1 }],
+      motivo: "Cliente devolvió",
+      tipo: "reembolso",
+    });
+  });
+
   it("pagar envía desglose mixto cuando se pasan pagos", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonRes({ data: { ventaId: 7, saldoPendiente: 0 } }));
     vi.stubGlobal("fetch", fetchMock);
