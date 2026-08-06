@@ -17,6 +17,7 @@ Producción (docker-compose.prod.yml): caddy (TLS) → web(nginx) → api → db
 | auditoria | `src/modules/auditoria/` | bitácora de eventos críticos (GET paginado admin) | shared |
 | catalogos | `src/modules/catalogos/` | árbol de catálogos (4 niveles, tags) CRUD admin | shared |
 | compras | `src/modules/compras/` | proveedores, OC, recibir, CxP, reabastecimiento, solicitudes | inventory, services, notifications |
+| quejas | `src/modules/quejas/` | quejas y reclamaciones de garantía (abierta→en_proceso→resuelta) | crm, garantias |
 | configuracion | `src/modules/configuracion/` | clave/valor (iva, tiempos, tolerancia, garantías) | shared |
 | crm | `src/modules/crm/` | clientes, historial, etiquetas, CxC saldo | shared |
 | dashboard | `src/modules/dashboard/` | KPIs de inicio | inventory, services, sales |

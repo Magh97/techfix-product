@@ -40,7 +40,14 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 | GET / POST | /clientes | JWT | ?page&q&soloDeudores / {nombre, telefono, ...} | lista / 201 |
 | GET / PUT | /clientes/:id | JWT | -- / campos | cliente + saldo |
 | PATCH | /clientes/:id/etiquetas | admin | {etiquetas[]} | cliente |
-| GET | /clientes/:id/historial · /cxc | JWT | -- | {ordenes, ventas, cotizaciones, saldo} / {saldo, vencidas, limite} |
+| GET | /clientes/:id/historial · /cxc | JWT | -- | {ordenes, ventas, cotizaciones, quejas, saldo} / {saldo, vencidas, limite} |
+
+## Quejas
+| Method | Path | Auth | Request | Response |
+|--------|------|------|---------|----------|
+| GET | /quejas | JWT | ?page&clienteId&estado&tipo | lista |
+| POST | /quejas | vendedor/admin | {clienteId, tipo: queja\|reclamacion_garantia, garantiaId?, descripcion} | 201 (reclamación exige garantía del cliente) |
+| POST | /quejas/:quejaId/estado | vendedor/admin | {estado: en_proceso\|resuelta, resolucion?} | queja (resolución obligatoria al resolver) |
 
 ## Equipos usados
 | Method | Path | Auth | Request | Response |
