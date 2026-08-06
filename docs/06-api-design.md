@@ -53,6 +53,9 @@
 | `DISCOUNT_NOT_AUTHORIZED` | 403 | Descuento >10% sin rol admin (BR-VEN-05) |
 | `REFUND_WINDOW_EXPIRED` | 422 | Devolución fuera de 15 días (BR-VEN-08) |
 | `SALE_WITH_PAYMENTS` | 422 | No se puede cancelar/devolver una venta a crédito con abonos cobrados |
+| `NOTA_CREDITO_INVALIDA` | 422 | Nota de crédito de otro cliente o usada fuera de venta de contado |
+| `NOTA_CREDITO_NOT_FOUND` | 404 | Nota de crédito inexistente |
+| `NOTA_CREDITO_SIN_SALDO` | 422 | Nota de crédito sin saldo disponible |
 | `SALE_ALREADY_CANCELLED` | 409 | Venta ya cancelada |
 | `CUSTOMER_NOT_FOUND` | 404 | Cliente no existe (precondición SER-01) |
 | `CONFLICT` | 409 | Conflicto genérico (duplicado, estado) |
@@ -106,7 +109,7 @@
 | PUT | `/productos/:id` | admin | campos editables | `{ data: Producto }` | `NOT_FOUND` |
 | PATCH | `/productos/:id/desactivar` | admin | `{ motivo? }` | `204` | `NOT_FOUND`, `FORBIDDEN` |
 | GET | `/productos/:id/movimientos` | admin | `?page&pageSize` | `{ data, meta }` | `NOT_FOUND` |
-| POST | `/productos/:id/ajustar` | admin | `{ cantidad, motivo }` | `{ data: Movimiento }` | `VALIDATION_ERROR`, `FORBIDDEN` |
+| POST | `/productos/:id/ajustar` | admin | `{ cantidad, motivo, tipo?: ajuste\|merma\|dano }` | `{ data: Producto }` (merma/daño solo cantidad negativa; migración 0016: `MERMA`/`DANO`) | `VALIDATION_ERROR`, `STOCK_NEGATIVO`, `FORBIDDEN` |
 | GET | `/catalogos` | admin | -- | `{ data: Catalogo[] }` (árbol) | `FORBIDDEN` |
 | POST | `/catalogos` | admin | `{ nombre, parentId? (máx 4 niveles), tagsSugeridas?, tagsCompatibilidad? }` | `201 { data: Catalogo }` | `CATALOGO_DUPLICADO`, `VALIDATION_ERROR` |
 | PUT | `/catalogos/:catalogoId` | admin | campos editables | `{ data: Catalogo }` | `CATALOGO_NOT_FOUND` |
@@ -183,13 +186,14 @@
 
 | Method | Path | Auth | Request | Response | Errors |
 |--------|------|------|---------|----------|--------|
-| POST | `/ventas` | vendedor/admin | `{ clienteId?, lineas, descuento?, tipoPago, metodoPago?, montoRecibido?, ordenId?, pagos?: [{ metodo, monto }], partesDePago?: [...] }` (desglose mixto solo contado; Σ pagos = total − parte de pago) | `201 { data: Venta + ticket + garantias + parteDePago + totalAPagar + usadosCreados + pagos }` (BR-GAR-06, BR-VEN-13, BR-VEN-14) | `INSUFFICIENT_STOCK`, `DISCOUNT_NOT_AUTHORIZED`, `CREDIT_LIMIT_EXCEEDED`, `PARTE_DE_PAGO_INVALIDA`, `PAGOS_INVALIDOS`, `PAYMENT_INVALID`, `VALIDATION_ERROR` |
+| POST | `/ventas` | vendedor/admin | `{ clienteId?, lineas, descuento?, tipoPago, metodoPago?, montoRecibido?, ordenId?, pagos?: [{ metodo, monto }], partesDePago?: [...], notaCreditoId? }` (desglose mixto solo contado; Σ pagos = total − parte de pago − nota; nota solo contado del mismo cliente) | `201 { data: Venta + ticket + garantias + parteDePago + notaCredito + totalAPagar + usadosCreados + pagos }` (BR-GAR-06, BR-VEN-13, BR-VEN-14, BR-VEN-08) | `INSUFFICIENT_STOCK`, `DISCOUNT_NOT_AUTHORIZED`, `CREDIT_LIMIT_EXCEEDED`, `PARTE_DE_PAGO_INVALIDA`, `NOTA_CREDITO_INVALIDA`, `NOTA_CREDITO_NOT_FOUND`, `NOTA_CREDITO_SIN_SALDO`, `PAGOS_INVALIDOS`, `PAYMENT_INVALID`, `VALIDATION_ERROR` |
 | GET | `/ventas` | JWT | `?page&pageSize&fechaDesde&fechaHasta&vendedorId&metodoPago&estado` | `{ data, meta }` | -- |
 | GET | `/ventas/:id` | JWT | -- | `{ data: Venta + lineas + pagos }` | `NOT_FOUND` |
 | GET | `/ventas/por-folio/:folio` | JWT | -- | `{ data: Venta }` | `NOT_FOUND` (reimpresión VEN-10) |
 | POST | `/ventas/:id/cancelar` | admin | `{ motivo }` | `{ data: Venta }` (reversión stock; reintegra usados de trade-in) | `SALE_ALREADY_CANCELLED`, `SALE_WITH_PAYMENTS`, `FORBIDDEN` |
-| POST | `/ventas/:id/devolucion` | vendedor/admin | `{ lineas, motivo? }` | `{ data: Venta }` (restituye stock; `motivo` opcional va a auditoría) | `SALE_ALREADY_PROCESSED`, `SALE_WITH_PAYMENTS`, `REFUND_WINDOW_EXPIRED`, `VALIDATION_ERROR` |
-| POST | `/ventas/:id/pagos` | vendedor/admin | `{ monto, metodo, cajaId }` | `201 { data: Pago }` | `VALIDATION_ERROR` |
+| POST | `/ventas/:id/devolucion` | vendedor/admin | `{ lineas, motivo? }` | `{ data: Venta }` (restituye stock; `motivo` opcional va a auditoría; genera **nota de crédito** si es contado con cliente) | `SALE_ALREADY_PROCESSED`, `SALE_WITH_PAYMENTS`, `REFUND_WINDOW_EXPIRED`, `VALIDATION_ERROR` |
+| POST | `/ventas/:id/pagos` | vendedor/admin | `{ monto, metodo }` o `{ pagos: [{ metodo, monto }] }` (máx 5; Σ ≤ pendiente) | `201 { data: { ventaId, monto, saldoPendiente } }` | `SALE_NOT_CREDIT`, `PAYMENT_INVALID`, `VALIDATION_ERROR` |
+| GET | `/clientes/:id/notas-credito` | JWT | -- | `{ data: [{ id, folio, montoOriginal, saldo, ventaOrigenFolio, motivo }] }` (solo saldo > 0) | `NOT_FOUND` |
 | GET | `/cotizaciones` | JWT | `?page&pageSize&estado&vencidas` | `{ data, meta }` | -- |
 | POST | `/cotizaciones/:id/convertir` | vendedor/admin | `{ tipoPago, metodoPago, descuento?, ... }` | `201 { data: Venta }` | `QUOTE_EXPIRED`, `INSUFFICIENT_STOCK` |
 
@@ -202,7 +206,7 @@
 | PUT | `/proveedores/:id` | admin | campos editables | `{ data }` | `NOT_FOUND` |
 | GET | `/compras` | admin | `?page&pageSize&estado&proveedorId` | `{ data, meta }` | `FORBIDDEN` |
 | POST | `/compras` | admin | `{ proveedorId, lineas: [{ productoId, cantidad, precioUnitario }] }` | `201 { data: Compra }` | `VALIDATION_ERROR` |
-| GET | `/compras/reabastecimiento` | admin | -- | `{ data: { grupos: [{ proveedorId, proveedorNombre, esFavorito, lineas: [{ productoId, sku, nombre, stock, sugerido, enOC, folioOC }] }] } }` | `FORBIDDEN` |
+| GET | `/compras/reabastecimiento` | admin | -- | `{ data: { grupos: [{ proveedorId, proveedorNombre, esFavorito, esMasBarato, lineas: [{ productoId, sku, nombre, stock, sugerido, enOC, folioOC }] }] } }` (favorito activo → más barato activo → último) | `FORBIDDEN` |
 | GET | `/compras/comparacion-precios` | admin | `?productoId` | `{ data: { producto: { id, sku, nombre, precioCompra, proveedorFavoritoId }, proveedores: [{ proveedorId, proveedorNombre, ultimoPrecio, ultimaFecha, folioOC, cantidad, esFavorito, esInactivo, esMasBarato, porDebajoDelActual }] } }` | `FORBIDDEN`, `PRODUCT_NOT_FOUND` |
 | POST | `/compras/solicitudes` | tecnico/admin | `{ productoId, cantidad, ordenId?, motivo? }` (solo si `stock < cantidad`) | `201 { data: Solicitud }` (NOT-05 al admin) | `STOCK_SUFICIENTE`, `NOT_FOUND` |
 | GET | `/compras/solicitudes` | tecnico/admin | `?page&pageSize&estado&ordenId` (técnico debe enviar `ordenId`) | `{ data, meta }` | `VALIDATION_ERROR` |

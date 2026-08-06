@@ -29,7 +29,7 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 | GET | /productos/por-codigo/:codigo | vendedor/admin | -- | producto |
 | POST | /productos | admin | {categoriaId (raíz), catalogoId?, sku, nombre, precios, stockMinimo, stockMaximo?, especificaciones?, proveedorFavoritoId?} | 201 |
 | PUT / PATCH | /productos/:id · /desactivar | admin | campos / {motivo?} | producto / 204 |
-| GET / POST | /productos/:id/movimientos · /ajustar | admin | -- / {cantidad, motivo} | lista / movimiento |
+| GET / POST | /productos/:id/movimientos · /ajustar | admin | -- / {cantidad, motivo, tipo?: ajuste\|merma\|dano} | lista / producto (merma/daño solo negativos) |
 | GET / POST | /productos/exportar · /importar | admin | ?formato=csv\|xlsx / multipart | archivo / {importados, errores[]} |
 | GET | /productos/:id/sugerencias | JWT | -- | {compatibles[], faltante?} (sustitutos) |
 | GET / PUT | /productos/:id/bom | admin | -- / {componentes[], manoObra?} | kit + componentes |
@@ -40,7 +40,7 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 | GET / POST | /clientes | JWT | ?page&q&soloDeudores / {nombre, telefono, ...} | lista / 201 |
 | GET / PUT | /clientes/:id | JWT | -- / campos | cliente + saldo |
 | PATCH | /clientes/:id/etiquetas | admin | {etiquetas[]} | cliente |
-| GET | /clientes/:id/historial · /cxc | JWT | -- | {ordenes, ventas, cotizaciones, quejas, saldo} / {saldo, vencidas, limite} |
+| GET | /clientes/:id/historial · /cxc · /notas-credito | JWT | -- | {ordenes, ventas, cotizaciones, quejas, saldo} / {saldo, vencidas, limite} / [{folio, montoOriginal, saldo, ventaOrigenFolio, motivo}] (CxC excluye ventas devueltas) |
 
 ## Quejas
 | Method | Path | Auth | Request | Response |
@@ -79,9 +79,9 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 ## Ventas / POS
 | Method | Path | Auth | Request | Response |
 |--------|------|------|---------|----------|
-| GET / POST | /ventas | JWT | ?page&fechaDesde&fechaHasta&vendedorId / {clienteId?, lineas[], tipoPago, metodoPago?, montoRecibido?, ordenId?, pagos?: [{metodo, monto}], partesDePago?: [{nombre, valor, precioVenta}]} (desglose solo contado) | lista / 201 venta + ticket + garantias + parteDePago + totalAPagar + usadosCreados + pagos |
+| GET / POST | /ventas | JWT | ?page&fechaDesde&fechaHasta&vendedorId / {clienteId?, lineas[], tipoPago, metodoPago?, montoRecibido?, ordenId?, pagos?: [{metodo, monto}], partesDePago?: [{nombre, valor, precioVenta}], notaCreditoId?} (desglose y nota solo contado) | lista / 201 venta + ticket + garantias + parteDePago + notaCredito + totalAPagar + usadosCreados + pagos |
 | GET | /ventas/:id · /por-folio/:folio | JWT | -- | venta + líneas + pagos |
-| POST | /ventas/:id/pagos · /cancelar · /devolucion | JWT | {monto, metodo} / {motivo} / {lineas[], reembolsoMetodo?} | pago / venta / devolución |
+| POST | /ventas/:id/pagos · /cancelar · /devolucion | JWT | {monto, metodo} \| {pagos: [{metodo, monto}]} / {motivo} / {lineas[], motivo?} | pago / venta / devolución (nota de crédito si contado con cliente) |
 | GET / POST | /cotizaciones-venta | JWT | ?page&estado / {clienteId, lineas[], vigenciaDias?, descuento?} | lista / 201 |
 | POST | /cotizaciones-venta/:id/convertir | JWT | {metodoPago, tipoPago?} | {cotizacionId, folio, venta} |
 
@@ -93,7 +93,7 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 | GET / POST | /proveedores | admin | ?page&q / {nombre, contacto?, condicionesPago?} | lista / 201 |
 | PUT / DELETE | /proveedores/:id | admin | campos / -- | proveedor (delete bloqueado con compras) |
 | GET / POST | /compras | admin | ?page&estado&proveedorId / {proveedorId, lineas[]} | lista / 201 |
-| GET | /compras/reabastecimiento | admin | -- | {grupos: [{proveedorId, lineas[{productoId, sku, stock, sugerido, enOC, folioOC}]}]} |
+| GET | /compras/reabastecimiento | admin | -- | {grupos: [{proveedorId, lineas[{productoId, sku, stock, sugerido, enOC, folioOC, esFavorito, esMasBarato}]}]} (favorito activo → más barato activo → último) |
 | GET | /compras/comparacion-precios | admin | ?productoId | {producto{precioCompra, proveedorFavoritoId}, proveedores[{proveedorNombre, ultimoPrecio, ultimaFecha, folioOC, esFavorito, esInactivo, esMasBarato, porDebajoDelActual}]} |
 | POST / GET | /compras/solicitudes | tecnico/admin | {productoId, cantidad, ordenId?, motivo?} / ?page&estado&ordenId | 201 (NOT-05) / lista |
 | POST | /compras/solicitudes/aprobar | admin | {solicitudes[]} | {creadas[], yaNoPendientes[]} (OC por proveedor) |

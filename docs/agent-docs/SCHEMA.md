@@ -6,7 +6,7 @@ Fuente completa: `docs/05-data-model.md`. Resumen ejecutivo para agentes.
 
 ```
 rol: admin | vendedor | tecnico
-movimiento_tipo: ENTRADA | SALIDA_VENTA | SALIDA_CONSUMO | AJUSTE | DEVOLUCION | RESERVA | LIBERACION
+movimiento_tipo: ENTRADA | SALIDA_VENTA | SALIDA_CONSUMO | AJUSTE | DEVOLUCION | RESERVA | LIBERACION | MERMA | DANO
 estado_orden: pendiente | en_diagnostico | cotizado | en_reparacion | sustitucion_pendiente | listo | entregado | cancelado
 estado_linea_orden: cotizada | reservada | consumida | liberada
 estado_cotizacion: emitida | aprobada | rechazada | expirada | convertida
@@ -40,7 +40,7 @@ cotizaciones(id, orden_id FK CASCADE, folio UNIQUE, estado, subtotal, iva, total
 detalle_cotizacion(id, cotizacion_id FK CASCADE, tipo_linea, producto_id, cantidad, precio_neto, descripcion_mano_obra, horas, tarifa_hora)
 sustituciones(id, orden_id FK CASCADE, cotizacion_id FK CASCADE, linea_id FK CASCADE, producto_original_id FK, cantidad, sustituto_id FK, justificacion, cliente_acepta, estado VARCHAR, solicitud_id FK SET NULL, creada_por, resuelto_por, created_at, resuelto_at)
 detalle_orden(id, orden_id FK CASCADE, producto_id FK RESTRICT, cantidad, estado_linea DEFAULT 'cotizada', costo_unitario)
-ventas(id, folio UNIQUE, cliente_id, vendedor_id, orden_id, subtotal, iva, total, descuento, motivo_descuento, tipo_pago, metodo_pago, plazo_dias, fecha_vencimiento, monto_recibido, estado, caja_id)
+ventas(id, folio UNIQUE, cliente_id, vendedor_id, orden_id, subtotal, iva, total, descuento, motivo_descuento, tipo_pago, metodo_pago, plazo_dias, fecha_vencimiento, monto_recibido, estado, caja_id, parte_de_pago, nota_credito, nota_credito_id)
 detalle_venta(id, venta_id FK CASCADE, producto_id, cantidad, precio_neto, descuento_linea, descripcion_servicio)
 proveedores(id, nombre, contacto, condiciones_pago, is_active)
 compras(id, proveedor_id FK RESTRICT, folio UNIQUE, estado, total_neto, total_recibido, fecha_vencimiento, creada_por)
@@ -48,6 +48,7 @@ detalle_compra(id, compra_id FK CASCADE, producto_id, cantidad, cantidad_recibid
 solicitudes_reabastecimiento(id, producto_id FK CASCADE, cantidad, orden_id FK SET NULL, solicitado_por, motivo, estado VARCHAR, rechazo_motivo, compra_id FK SET NULL, resuelto_por, created_at, resuelto_at)
 equipos_usados(id, producto_id FK CASCADE UNIQUE, cliente_origen_id FK SET NULL, orden_id FK SET NULL, valor_trade_in, origen VARCHAR, observaciones, created_by, created_at)
 movimientos_inventario(id, producto_id FK RESTRICT, tipo, cantidad CHECK<>0, referencia_id, referencia_tipo, usuario_id, caja_id, motivo)
+notas_credito(id, folio UNIQUE, cliente_id FK RESTRICT, monto_original, saldo CHECK>=0, venta_origen_id FK SET NULL, motivo, created_by, created_at) idx cliente (saldo>0)
 pagos(id, venta_id FK RESTRICT, monto, metodo, usuario_id, caja_id)
 pagos_proveedor(id, compra_id FK RESTRICT, monto, metodo, usuario_id)
 cajas(id, usuario_id, fecha, estado, efectivo_fisico, diferencia, apertura, cierre) UNIQUE(usuario_id, fecha)

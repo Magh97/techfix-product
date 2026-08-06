@@ -26,8 +26,8 @@ Producción (docker-compose.prod.yml): caddy (TLS) → web(nginx) → api → db
 | inventory | `src/modules/inventory/` | productos, stock, movimientos, ajustes, BOM, import/export, sugerencias, **usados** | catalogos |
 | notifications | `src/modules/notifications/` | plantillas (NOT-02/03/05/06), envío, historial | crm, services |
 | quote | `src/modules/quote/` | cotizaciones de venta (CV-) y conversión a venta | inventory, crm, sales |
-| reports | `src/modules/reports/` | reportes agregados + export CSV/XLSX | inventory, sales, finance, services |
-| sales | `src/modules/sales/` | POS, tickets, descuentos, crédito, devolución, cancelación | inventory, crm, finance |
+| reports | `src/modules/reports/` | reportes agregados + export CSV/XLSX/PDF (impresión navegador) | inventory, sales, finance, services |
+| sales | `src/modules/sales/` | POS, tickets, descuentos, crédito, devolución (nota de crédito), cancelación, abonos mixtos | inventory, crm, finance |
 | services | `src/modules/services/` | órdenes, máquina de estados, cotización, consumo, entrega, **sustituciones** | inventory, crm, notifications, compras |
 | usuarios | `src/modules/usuarios/` | CRUD usuarios, cambio de rol/password | shared |
 | shared | `src/shared/` | db pool, AppError, zod utils, money, auditoria, jwt, export | — |
