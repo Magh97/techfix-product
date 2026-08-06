@@ -8,6 +8,8 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-08-06
+
 ### Added
 - Ensamblado de PCs por BOM (ADR-0003): definición de kits con componentes y mano de obra de ensamble (`PUT /productos/:id/bom`), precio recalculado como suma de componentes + ensamble, y venta de kits que desglosa líneas por componente y descuenta el stock real de cada pieza (US-SER-12, US-VEN-03).
 - Migración `0003_ensamble` (columna `productos.mano_obra`).
@@ -34,6 +36,16 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 - **Pagos mixtos en el POS (BR-VEN-02/14):** desglose de pago en ventas de contado (varios métodos, Σ = total − parte de pago) con `pagos` registrando todo el dinero recibido (venta y abonos); el **corte de caja** cuenta solo dinero realmente recibido (Σ `pagos`) y el ticket muestra el desglose.
 - **Quejas y reclamaciones (US-CRM-07/BR-CRM-08):** módulo `quejas` (abierta → en_proceso → resuelta) con vínculo opcional a garantía/orden/venta; reclamación de garantía exige garantía del cliente; resolución obligatoria al resolver; botón "Reclamar" en Garantías y tarjeta en el historial del cliente. Migración `0015_quejas`.
 - **Cancelación y devolución de ventas (US-VEN-11/12):** botones "Cancelar venta" (admin, motivo) y "Devolver" (cantidades por línea, motivo opcional) en el ticket de Ventas; bloqueo de ventas a crédito con abonos cobrados (`SALE_WITH_PAYMENTS`); reintegro del equipo usado de parte de pago al cancelar/devolver; corrección del mapeo de `lineas` en el historial (`productoId`/`descripcion`/`precio`). Reembolso/nota de crédito diferido.
+
+### Limitaciones conocidas
+- Notificaciones solo por **correo** (nodemailer/SMTP); `preferencia_contacto=whatsapp` aún no envía por WhatsApp (ADR-0007: Twilio diferido).
+- **Export PDF** no disponible: los reportes exportan CSV y XLSX únicamente.
+- **Backup offsite** documentado (rclone) pero no automatizado; el respaldo diario queda en el volumen local del VPS.
+- **Nota de crédito / reembolso en devoluciones**: la devolución restituye inventario; el dinero se gestiona fuera del sistema.
+- **Abonos mixtos en crédito** (dividir un abono en varios métodos) no implementado.
+- **Proveedor más barato** en reabastecimiento no priorizado (la comparación de precios existe en Compras).
+- NOT-01 (aviso de retraso) notifica por el canal configurado; sin WhatsApp sigue siendo correo.
+- Empaquetado YunoHost sin realizar (ruta recomendada: VPS + Docker Compose + Caddy).
 
 ## [0.1.0] — 2026-08-03
 
