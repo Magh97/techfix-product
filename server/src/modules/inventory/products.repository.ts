@@ -292,11 +292,12 @@ export function ajustarStock(client: PoolClient, productoId: number, cantidad: n
 
 export function insertMovimientoAjuste(
   client: PoolClient,
-  input: { productoId: number; cantidad: number; usuarioId: number; motivo: string }
+  input: { productoId: number; cantidad: number; usuarioId: number; motivo: string; tipo?: string }
 ) {
+  const tipo = input.tipo === "merma" ? "MERMA" : input.tipo === "dano" ? "DANO" : "AJUSTE";
   return client.query(
-    "INSERT INTO movimientos_inventario (producto_id, tipo, cantidad, usuario_id, motivo) VALUES ($1,'AJUSTE',$2,$3,$4)",
-    [input.productoId, input.cantidad, input.usuarioId, input.motivo]
+    "INSERT INTO movimientos_inventario (producto_id, tipo, cantidad, usuario_id, motivo) VALUES ($1,$2,$3,$4,$5)",
+    [input.productoId, tipo, input.cantidad, input.usuarioId, input.motivo]
   );
 }
 

@@ -181,7 +181,7 @@ export async function deactivate(id: number) {
 
 /* --- Ajustes de inventario y movimientos (INV-05, INV-06) --- */
 
-export async function ajustar(id: number, input: { cantidad: number; motivo: string }, user: { id: number }) {
+export async function ajustar(id: number, input: { cantidad: number; motivo: string; tipo?: string }, user: { id: number }) {
   const producto = await repo.findProductById(id);
   if (!producto) throw AppError.notFound("PRODUCT_NOT_FOUND", "Producto no encontrado");
   await withTransaction(async (client) => {
@@ -192,6 +192,7 @@ export async function ajustar(id: number, input: { cantidad: number; motivo: str
       cantidad: input.cantidad,
       usuarioId: user.id,
       motivo: input.motivo,
+      tipo: input.tipo,
     });
   });
   const actual = await repo.findProductById(id);
