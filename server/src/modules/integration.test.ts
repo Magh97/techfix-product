@@ -2623,6 +2623,71 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(v.status).toBe(403);
   });
 
+  it("REABASTECIMIENTO: sin favorito se elige el proveedor más barato activo (salta inactivos)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+
+    const caro = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `Caro-${suf}` })).body.data.id;
+    const barato = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `Barato-${suf}` })).body.data.id;
+    const inactivo = (await request(app).post("/api/v1/proveedores").set(auth).send({ nombre: `Inactivo-${suf}` })).body.data.id;
+
+    async function crear(sku: string) {
+      const r = await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku, nombre: sku, precioCompra: 10, precioVenta: 20, stockMinimo: 3, stockMaximo: 6 });
+      await pool.query("UPDATE productos SET stock = 1 WHERE id = $1", [r.body.data.id]);
+      return r.body.data.id;
+    }
+
+    async function oc(prov: number, prodId: number, precio: number) {
+      const r = await request(app).post("/api/v1/compras").set(auth).send({ proveedorId: prov, lineas: [{ productoId: prodId, cantidad: 1, precioUnitario: precio }] });
+      await request(app).post(`/api/v1/compras/${r.body.data.id}/enviar`).set(auth);
+      await request(app).post(`/api/v1/compras/${r.body.data.id}/recibir`).set(auth);
+    }
+
+    // Producto X: caro 20, barato 10, y un tercero (inactivo) 5 registrado ANTES de desactivarlo
+    const x = await crear(`MB-X-${suf}`);
+    await oc(caro, x, 20);
+    await oc(inactivo, x, 5);
+    await pool.query("UPDATE proveedores SET is_active = false WHERE id = $1", [inactivo]);
+    await oc(barato, x, 10);
+    await pool.query("UPDATE productos SET stock = 1 WHERE id = $1", [x]);
+
+    // Producto Y: favorito activo más caro → se mantiene el favorito
+    const y = await crear(`MB-Y-${suf}`);
+    await pool.query("UPDATE productos SET proveedor_favorito_id = $1 WHERE id = $2", [barato, y]);
+    await oc(caro, y, 20);
+    await oc(barato, y, 30);
+    await pool.query("UPDATE productos SET stock = 1 WHERE id = $1", [y]);
+
+    // Producto Z: favorito INACTIVO → se usa el más barato activo
+    const z = await crear(`MB-Z-${suf}`);
+    await pool.query("UPDATE productos SET proveedor_favorito_id = $1 WHERE id = $2", [inactivo, z]);
+    await oc(barato, z, 8);
+    await pool.query("UPDATE productos SET stock = 1 WHERE id = $1", [z]);
+
+    const res = await request(app).get("/api/v1/compras/reabastecimiento").set(auth);
+    const todos = res.body.data.grupos.flatMap((g: { lineas: { productoId: number }[] }) => g.lineas);
+
+    const lineaX = todos.find((l: { productoId: number }) => l.productoId === x);
+    expect(lineaX.esMasBarato).toBe(true);
+    expect(lineaX.esFavorito).toBe(false);
+    const grupoX = res.body.data.grupos.find((g: { lineas: { productoId: number }[] }) => g.lineas.some((l: { productoId: number }) => l.productoId === x));
+    expect(grupoX.proveedorId).toBe(barato);
+
+    const lineaY = todos.find((l: { productoId: number }) => l.productoId === y);
+    expect(lineaY.esFavorito).toBe(true);
+    expect(lineaY.esMasBarato).toBe(false);
+    const grupoY = res.body.data.grupos.find((g: { lineas: { productoId: number }[] }) => g.lineas.some((l: { productoId: number }) => l.productoId === y));
+    expect(grupoY.proveedorId).toBe(barato);
+
+    const lineaZ = todos.find((l: { productoId: number }) => l.productoId === z);
+    expect(lineaZ.esMasBarato).toBe(true);
+    const grupoZ = res.body.data.grupos.find((g: { lineas: { productoId: number }[] }) => g.lineas.some((l: { productoId: number }) => l.productoId === z));
+    expect(grupoZ.proveedorId).toBe(barato);
+  });
+
   it("SOLICITUDES: técnico crea (regla de stock), admin aprueba creando OC y rechaza", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const authT = { Authorization: `Bearer ${tecnicoToken}` };

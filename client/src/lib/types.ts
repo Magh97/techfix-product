@@ -45,6 +45,7 @@ export interface ReabastecimientoLinea {
   precio: number;
   subtotal: number;
   esFavorito: boolean;
+  esMasBarato: boolean;
   enOC: boolean;
   folioOC: string | null;
 }

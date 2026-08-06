@@ -188,6 +188,7 @@ export default function ReabastecimientoPage() {
                               <p>
                                 {l.nombre}
                                 {l.esFavorito && <Badge variant="accent" className="ml-2">favorito</Badge>}
+                                {l.esMasBarato && <Badge variant="success" className="ml-2">más barato</Badge>}
                                 {l.enOC && <Badge variant="warning" className="ml-2">Ya en OC · {l.folioOC}</Badge>}
                               </p>
                               <p className="font-mono text-xs text-muted">{l.sku}</p>

@@ -296,6 +296,7 @@ interface LineaReabastecimiento {
   precio: number;
   subtotal: number;
   esFavorito: boolean;
+  esMasBarato: boolean;
   enOC: boolean;
   folioOC: string | null;
 }
@@ -327,6 +328,7 @@ export async function reabastecimiento() {
       precio,
       subtotal: sugerido * precio,
       esFavorito: r.es_favorito,
+      esMasBarato: r.es_mas_barato,
       enOC: !!r.en_oc_folio,
       folioOC: r.en_oc_folio,
     });
