@@ -292,6 +292,7 @@ export interface ReabastecimientoRow {
   proveedor_id: number | null;
   proveedor_nombre: string | null;
   es_favorito: boolean;
+  es_mas_barato: boolean;
   en_oc_folio: string | null;
 }
 
@@ -311,15 +312,36 @@ export function listarReabastecimiento() {
        JOIN proveedores p ON p.id = c.proveedor_id
        WHERE c.estado IN ('enviada','recibida')
        ORDER BY dc.producto_id, c.id DESC
+     ),
+     mejor_precio AS (
+       SELECT DISTINCT ON (dc.producto_id) dc.producto_id, c.proveedor_id, p.nombre AS proveedor_nombre
+       FROM detalle_compra dc
+       JOIN compras c ON c.id = dc.compra_id
+       JOIN proveedores p ON p.id = c.proveedor_id
+       WHERE c.estado IN ('enviada','recibida') AND p.is_active = true
+       ORDER BY dc.producto_id, dc.precio_unitario ASC, c.id DESC
      )
      SELECT pr.id, pr.sku, pr.nombre, pr.stock, pr.stock_minimo, pr.stock_maximo, pr.precio_compra,
-            COALESCE(pr.proveedor_favorito_id, up.proveedor_id) AS proveedor_id,
-            COALESCE(pf.nombre, up.proveedor_nombre) AS proveedor_nombre,
-            (pr.proveedor_favorito_id IS NOT NULL) AS es_favorito,
+            CASE
+              WHEN pr.proveedor_favorito_id IS NOT NULL
+                AND EXISTS (SELECT 1 FROM proveedores pf WHERE pf.id = pr.proveedor_favorito_id AND pf.is_active = true)
+                THEN pr.proveedor_favorito_id
+              ELSE COALESCE(mp.proveedor_id, up.proveedor_id)
+            END AS proveedor_id,
+            CASE
+              WHEN pr.proveedor_favorito_id IS NOT NULL
+                AND EXISTS (SELECT 1 FROM proveedores pf WHERE pf.id = pr.proveedor_favorito_id AND pf.is_active = true)
+                THEN (SELECT nombre FROM proveedores WHERE id = pr.proveedor_favorito_id)
+              ELSE COALESCE(mp.proveedor_nombre, up.proveedor_nombre)
+            END AS proveedor_nombre,
+            (pr.proveedor_favorito_id IS NOT NULL
+              AND EXISTS (SELECT 1 FROM proveedores pf WHERE pf.id = pr.proveedor_favorito_id AND pf.is_active = true)) AS es_favorito,
+            (pr.proveedor_favorito_id IS NULL OR NOT EXISTS (SELECT 1 FROM proveedores pf WHERE pf.id = pr.proveedor_favorito_id AND pf.is_active = true))
+              AND mp.proveedor_id IS NOT NULL AS es_mas_barato,
             ao.folio AS en_oc_folio
      FROM productos pr
      LEFT JOIN ultimo_proveedor up ON up.producto_id = pr.id
-     LEFT JOIN proveedores pf ON pf.id = pr.proveedor_favorito_id
+     LEFT JOIN mejor_precio mp ON mp.producto_id = pr.id
      LEFT JOIN activos_oc ao ON ao.producto_id = pr.id
      WHERE pr.is_active = true AND pr.is_kit = false
        AND pr.stock <= pr.stock_minimo
@@ -327,7 +349,7 @@ export function listarReabastecimiento() {
   ).then((r) => r.rows);
 }
 
-// Proveedor de un producto: favorito → si no, último proveedor que le vendió
+// Proveedor de un producto: favorito activo → si no, el de menor último precio activo → si no, el último que le vendió
 export function proveedorDeProducto(productoId: number) {
   return query<{ proveedor_id: number | null; proveedor_nombre: string | null }>(
     `WITH ultimo AS (
@@ -335,11 +357,32 @@ export function proveedorDeProducto(productoId: number) {
        JOIN compras c ON c.id = dc.compra_id
        WHERE dc.producto_id = $1 AND c.estado IN ('enviada','recibida')
        ORDER BY c.id DESC LIMIT 1
+     ),
+     mejor_precio AS (
+       SELECT c.proveedor_id FROM detalle_compra dc
+       JOIN compras c ON c.id = dc.compra_id
+       JOIN proveedores p ON p.id = c.proveedor_id
+       WHERE dc.producto_id = $1 AND c.estado IN ('enviada','recibida') AND p.is_active = true
+       ORDER BY dc.precio_unitario ASC, c.id DESC LIMIT 1
      )
-     SELECT COALESCE(p.proveedor_favorito_id, u.proveedor_id) AS proveedor_id, pr.nombre AS proveedor_nombre
+     SELECT COALESCE(
+              CASE WHEN p.proveedor_favorito_id IS NOT NULL
+                     AND EXISTS (SELECT 1 FROM proveedores pf WHERE pf.id = p.proveedor_favorito_id AND pf.is_active = true)
+                   THEN p.proveedor_favorito_id END,
+              mp.proveedor_id,
+              u.proveedor_id
+            ) AS proveedor_id,
+            pr.nombre AS proveedor_nombre
      FROM productos p
      LEFT JOIN ultimo u ON true
-     LEFT JOIN proveedores pr ON pr.id = COALESCE(p.proveedor_favorito_id, u.proveedor_id)
+     LEFT JOIN mejor_precio mp ON true
+     LEFT JOIN proveedores pr ON pr.id = COALESCE(
+              CASE WHEN p.proveedor_favorito_id IS NOT NULL
+                     AND EXISTS (SELECT 1 FROM proveedores pf WHERE pf.id = p.proveedor_favorito_id AND pf.is_active = true)
+                   THEN p.proveedor_favorito_id END,
+              mp.proveedor_id,
+              u.proveedor_id
+            )
      WHERE p.id = $1`,
     [productoId]
   ).then((r) => r.rows[0]);
