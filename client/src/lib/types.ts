@@ -342,6 +342,7 @@ export interface Venta {
   parteDePago?: number;
   totalAPagar?: number;
   usadosCreados?: { productoId: number; nombre: string; valor: number }[];
+  pagos?: { metodo: string; monto: number }[];
   lineas: VentaLinea[];
 }
 
@@ -355,6 +356,7 @@ export interface CreateVenta {
   plazoDias?: number | null;
   montoRecibido?: number | null;
   partesDePago?: { nombre: string; marca?: string | null; modelo?: string | null; valor: number; precioVenta: number; observaciones?: string | null }[];
+  pagos?: { metodo: string; monto: number }[];
 }
 
 export interface Caja {

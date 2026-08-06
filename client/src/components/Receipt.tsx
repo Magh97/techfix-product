@@ -78,6 +78,22 @@ export default function Receipt({ venta, reimpresion = false }: { venta: Venta; 
             <span>{mxn(venta.totalAPagar ?? venta.total - venta.parteDePago)}</span>
           </div>
         )}
+        {venta.pagos && venta.pagos.length > 0 && (
+          <div className="mt-1 border-t border-dashed border-black/60 pt-1 text-[10px]">
+            {venta.pagos.map((p, i) => (
+              <div key={i} className="flex justify-between gap-2">
+                <span className="capitalize">{p.metodo.replace("_", " ")}</span>
+                <span>{mxn(p.monto)}</span>
+              </div>
+            ))}
+            {typeof venta.cambio === "number" && venta.cambio > 0 && (
+              <div className="flex justify-between gap-2">
+                <span>Cambio</span>
+                <span>{mxn(venta.cambio)}</span>
+              </div>
+            )}
+          </div>
+        )}
         {typeof venta.cambio === "number" && venta.cambio > 0 && (
           <div className="flex justify-between gap-2">
             <span>Cambio</span>

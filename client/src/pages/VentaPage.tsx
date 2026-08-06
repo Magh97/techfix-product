@@ -38,8 +38,8 @@ export default function VentaPage() {
   const [clienteId, setClienteId] = useState("");
   const [descuento, setDescuento] = useState("0");
   const [tipoPago, setTipoPago] = useState<"contado" | "credito">("contado");
-  const [metodo, setMetodo] = useState("efectivo");
-  const [montoRecibido, setMontoRecibido] = useState("");
+  const [pagos, setPagos] = useState<{ metodo: string; monto: string }[]>([]);
+  const [efectivoEntregado, setEfectivoEntregado] = useState("");
   const [ticket, setTicket] = useState<Venta | null>(null);
   const [sugerencias, setSugerencias] = useState<Sugerencias | null>(null);
   const [sugerenciaDe, setSugerenciaDe] = useState<Producto | null>(null);
@@ -67,6 +67,13 @@ export default function VentaPage() {
     partesDePago.every((p) => p.nombre.trim() && (Number(p.valor) || 0) > 0 && (Number(p.precioVenta) || 0) > 0) &&
     parteDePago <= montos.total;
 
+  // Desglose efectivo: por defecto "todo en efectivo"; los pagos del usuario lo reemplazan
+  const pagosActuales = pagos.length ? pagos : cart.length > 0 ? [{ metodo: "efectivo", monto: String(totalAPagar) }] : [];
+  const sumaPagos = pagosActuales.reduce((a, p) => a + (Number(p.monto) || 0), 0);
+  const pagosOk = pagosActuales.length > 0 && pagosActuales.every((p) => (Number(p.monto) || 0) > 0) && Math.abs(sumaPagos - totalAPagar) < 0.01;
+  const efectivoPortion = pagosActuales.filter((p) => p.metodo === "efectivo").reduce((a, p) => a + (Number(p.monto) || 0), 0);
+  const cambio = efectivoPortion > 0 ? Math.max(0, (Number(efectivoEntregado) || efectivoPortion) - efectivoPortion) : 0;
+
   const descOk = esAdmin || montos.desc <= montos.subtotal * 0.1;
 
   function add(p: { id: number; nombre: string; precioVenta: number; isKit: boolean; kitDisponible?: number | null }) {
@@ -93,8 +100,9 @@ export default function VentaPage() {
         lineas: cart.map((c) => ({ tipo: "producto", productoId: c.productoId, cantidad: c.qty })),
         descuento: montos.desc,
         tipoPago,
-        metodoPago: tipoPago === "contado" ? metodo : undefined,
-        montoRecibido: tipoPago === "contado" ? (metodo === "efectivo" ? Number(montoRecibido || totalAPagar) : undefined) : undefined,
+        metodoPago: tipoPago === "contado" ? pagosActuales[0]?.metodo : undefined,
+        montoRecibido: tipoPago === "contado" && efectivoPortion > 0 ? Number(efectivoEntregado || efectivoPortion) : undefined,
+        pagos: tipoPago === "contado" && pagosActuales.length ? pagosActuales.map((p) => ({ metodo: p.metodo, monto: Number(p.monto) })) : undefined,
         partesDePago: partesDePago.length
           ? partesDePago.map((p) => ({
               nombre: p.nombre,
@@ -110,7 +118,8 @@ export default function VentaPage() {
       setTicket(res.data);
       setCart([]);
       setDescuento("0");
-      setMontoRecibido("");
+      setEfectivoEntregado("");
+      setPagos([]);
       setClienteId("");
       setPartesDePago([]);
       qc.invalidateQueries({ queryKey: ["productos"] });
@@ -119,9 +128,17 @@ export default function VentaPage() {
     onError: (e) => toast.error("No se pudo cobrar", e instanceof Error ? e.message : "Intenta de nuevo"),
   });
 
-  const cambio = metodo === "efectivo" ? Math.max(0, (Number(montoRecibido) || totalAPagar) - totalAPagar) : 0;
   const cobrarDisabled =
-    !cart.length || !descOk || !tradeInValido || (tipoPago === "credito" && !clienteId) || venta.isPending;
+    !cart.length || !descOk || !tradeInValido || (tipoPago === "contado" && !pagosOk) || (tipoPago === "credito" && !clienteId) || venta.isPending;
+
+  function agregarMetodo() {
+    setPagos((ps) => (pagosActuales.length < 5 ? [...pagosActuales, { metodo: "efectivo", monto: "" }] : ps));
+  }
+
+  function pagarTodo(metodo: string) {
+    setPagos([{ metodo, monto: String(totalAPagar) }]);
+    setEfectivoEntregado("");
+  }
 
   function agregarParteDePago() {
     if (!usadoDraft.nombre.trim() || (Number(usadoDraft.valor) || 0) <= 0 || (Number(usadoDraft.precioVenta) || 0) <= 0) {
@@ -353,29 +370,83 @@ export default function VentaPage() {
             <div className="rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">Selecciona un cliente para vender a crédito.</div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label>Tipo</Label>
-              <select value={tipoPago} onChange={(e) => setTipoPago(e.target.value as "contado" | "credito")} className="h-10 w-full rounded-md border border-border-line bg-surface px-2 text-sm">
-                <option value="contado">Contado</option>
-                <option value="credito">Crédito</option>
-              </select>
-            </div>
-            <div>
-              <Label>Método</Label>
-              <select value={metodo} onChange={(e) => setMetodo(e.target.value)} disabled={tipoPago === "credito"} className="h-10 w-full rounded-md border border-border-line bg-surface px-2 text-sm">
-                <option value="efectivo">Efectivo</option>
-                <option value="tarjeta_debito">Tarjeta débito</option>
-                <option value="transferencia">Transferencia</option>
-              </select>
-            </div>
+          <div>
+            <Label>Tipo</Label>
+            <select
+              value={tipoPago}
+              onChange={(e) => {
+                setTipoPago(e.target.value as "contado" | "credito");
+                if (e.target.value === "credito") setPagos([]);
+              }}
+              className="h-10 w-full rounded-md border border-border-line bg-surface px-2 text-sm"
+            >
+              <option value="contado">Contado</option>
+              <option value="credito">Crédito</option>
+            </select>
           </div>
 
-          {tipoPago === "contado" && metodo === "efectivo" && (
-            <div className="space-y-1">
-              <Label>Recibido</Label>
-              <Input type="number" min={0} value={montoRecibido} onChange={(e) => setMontoRecibido(e.target.value)} />
-              <p className="text-xs text-muted">Cambio: <span className="font-semibold text-primary">{mxn(cambio)}</span></p>
+          {tipoPago === "contado" && (
+            <div className="space-y-2 rounded-md border border-border-line p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Desglose de pago</p>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => pagarTodo("efectivo")}>Todo efectivo</Button>
+                  <Button size="sm" variant="ghost" onClick={() => pagarTodo("tarjeta_debito")}>Todo tarjeta</Button>
+                </div>
+              </div>
+              {pagosActuales.map((p, i) => (
+                <div key={i} className="flex items-center gap-1">
+                  <select
+                    value={p.metodo}
+                    onChange={(e) => setPagos((ps) => (ps.length ? ps.map((x, j) => (j === i ? { ...x, metodo: e.target.value } : x)) : pagosActuales.map((x, j) => (j === i ? { ...x, metodo: e.target.value } : x))))}
+                    className="h-9 w-40 rounded-md border border-border-line bg-surface px-1 text-sm"
+                  >
+                    <option value="efectivo">Efectivo</option>
+                    <option value="tarjeta_debito">Tarjeta débito</option>
+                    <option value="tarjeta_credito">Tarjeta crédito</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="deposito">Depósito</option>
+                  </select>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={p.monto}
+                    onChange={(e) => setPagos((ps) => (ps.length ? ps.map((x, j) => (j === i ? { ...x, monto: e.target.value } : x)) : pagosActuales.map((x, j) => (j === i ? { ...x, monto: e.target.value } : x))))}
+                    className="h-9 flex-1 text-right"
+                  />
+                  <button className="text-danger" onClick={() => setPagos((ps) => (ps.length ? ps.filter((_, j) => j !== i) : []))}>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+              {pagosActuales.length < 5 && (
+                <Button size="sm" variant="outline" onClick={agregarMetodo}>
+                  <Plus className="h-3.5 w-3.5" /> Agregar método
+                </Button>
+              )}
+              {pagosActuales.length > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted">Asignado</span>
+                  <span className="font-semibold">{mxn(sumaPagos)}</span>
+                </div>
+              )}
+              {pagosActuales.length > 0 && Math.abs(sumaPagos - totalAPagar) > 0.01 && (
+                <p className="text-xs text-warning" role="alert">
+                  {sumaPagos < totalAPagar
+                    ? `Falta ${mxn(totalAPagar - sumaPagos)} · total a pagar ${mxn(totalAPagar)}`
+                    : `Excede en ${mxn(sumaPagos - totalAPagar)} · total a pagar ${mxn(totalAPagar)}`}
+                </p>
+              )}
+              {efectivoPortion > 0 && (
+                <div className="space-y-1">
+                  <Label>Efectivo entregado</Label>
+                  <Input type="number" min={0} value={efectivoEntregado} onChange={(e) => setEfectivoEntregado(e.target.value)} />
+                  <p className="text-xs text-muted">
+                    Cambio: <span className="font-semibold text-primary">{mxn(cambio)}</span>
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
