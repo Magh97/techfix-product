@@ -128,6 +128,7 @@
 - `[NOTA]` BR-VEN-13: **parte de pago en especie (trade-in)** implementada en el POS — solo ventas de contado, crea el usado (raíz "Usado", `equipos_usados.venta_id`) y el corte de caja lo excluye del efectivo con desglose.
 - `[NOTA]` BR-US-07: **usados desde órdenes + historial CRM** implementados — alta desde el detalle de órdenes no entregadas (origen reparación, nota en historial), `ordenFolio`/`ventaFolio` en el listado y tarjeta "Equipos usados entregados" en el detalle del cliente.
 - `[NOTA]` BR-VEN-02/14: **pagos mixtos en el POS** implementados — desglose de métodos en ventas de contado (Σ = total − parte de pago), `pagos` registra todo el dinero recibido y el corte de caja cuenta solo lo recibido. Diferido: abonos mixtos en crédito y reembolso proporcional en devoluciones.
+- `[NOTA]` US-CRM-07: **quejas y reclamaciones** implementadas (BR-CRM-08) — flujo abierta→en_proceso→resuelta, reclamación de garantía vinculada (garantía del cliente), resolución obligatoria y tarjeta en el historial del cliente.
 - `[ASSUMED]` US-VEN-09: folio de venta `VEN-XXXX` global (no por año).
 - `[NOTA]` US-SER-12 / US-VEN-03: ensamblado por BOM implementado (ADR-0003) — `PUT /productos/:id/bom`, venta con desglose de componentes + mano de obra de ensamble (migración `0003_ensamble`).
 - `[NOTA]` US-VEN-04..06: cotizaciones de venta implementadas — folio `CV-`, vigencia, sin reserva de stock al cotizar, conversión a venta con validación de stock, descuentos con BR-VEN-05 (migración `0004_cotizaciones_venta`).

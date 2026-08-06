@@ -133,9 +133,19 @@
 | GET | `/clientes/:id` | JWT | -- | `{ data: Cliente + saldo }` | `NOT_FOUND` |
 | POST | `/clientes` | vendedor/admin | `{ nombre, telefono, correo?, direccion?, preferenciaContacto, limiteCredito? (default 3000), plazoCreditoDias? (default 15) }` | `201` | `VALIDATION_ERROR`, `CONFLICT` |
 | PUT | `/clientes/:id` | vendedor/admin | campos editables | `{ data: Cliente }` | `NOT_FOUND` |
-| GET | `/clientes/:id/historial` | vendedor/admin | `?page&pageSize` | `{ data: { ordenes, ventas, cotizaciones, saldo } }` | `NOT_FOUND` |
+| GET | `/clientes/:id/historial` | vendedor/admin | `?page&pageSize` | `{ data: { ordenes, ventas, cotizaciones, quejas } }` | `NOT_FOUND` |
 | PATCH | `/clientes/:id/etiquetas` | admin | `{ etiquetas: string[] }` | `{ data: Cliente }` | `NOT_FOUND` |
 | GET | `/clientes/:id/cxc` | vendedor/admin | -- | `{ data: { saldo, vencidas[], limite } }` | `NOT_FOUND` |
+
+## Quejas y Reclamaciones (vendedor/admin)
+
+| Method | Path | Auth | Request | Response | Errors |
+|--------|------|------|---------|----------|--------|
+| GET | `/quejas` | JWT | `?page&pageSize&clienteId&estado&tipo` | `{ data, meta }` | -- |
+| POST | `/quejas` | vendedor/admin | `{ clienteId, tipo: queja\|reclamacion_garantia, garantiaId?, ordenId?, ventaId?, descripcion }` | `201 { data: Queja }` (reclamación exige garantía del cliente) | `CUSTOMER_NOT_FOUND`, `GARANTIA_REQUERIDA`, `GARANTIA_INVALIDA` |
+| POST | `/quejas/:quejaId/estado` | vendedor/admin | `{ estado: en_proceso\|resuelta, resolucion? (obligatoria al resolver) }` | `{ data: Queja }` | `QUEJA_NOT_FOUND`, `ESTADO_INVALIDO`, `RESOLUCION_REQUERIDA` |
+
+> Estados: `abierta → en_proceso → resuelta`. Visible en el historial del cliente (BR-CRM-08).
 
 ## Órdenes de Servicio
 

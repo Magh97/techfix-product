@@ -15,6 +15,7 @@ import { productsRouter } from "./modules/inventory/products.routes";
 import { usadosRouter } from "./modules/inventory/usados.routes";
 import { notificacionesRouter } from "./modules/notifications/notifications.routes";
 import { quoteRouter } from "./modules/quote/quote.routes";
+import { quejasRouter } from "./modules/quejas/quejas.routes";
 import { reportsRouter } from "./modules/reports/reports.routes";
 import { ventasRouter } from "./modules/sales/ventas.routes";
 import { ordenesRouter } from "./modules/services/ordenes.routes";
@@ -60,6 +61,7 @@ export function createApp() {
   app.use("/api/v1/configuracion", configuracionRouter);
   app.use("/api/v1/garantias", garantiasRouter);
   app.use("/api/v1/auditoria", auditoriaRouter);
+  app.use("/api/v1/quejas", quejasRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

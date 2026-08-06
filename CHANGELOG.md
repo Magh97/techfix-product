@@ -32,6 +32,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 - **Usados desde órdenes + historial CRM (BR-US-07):** botón "Registrar usado" en el detalle de órdenes no entregadas (admin) que vincula el equipo abandonado a la orden (`origen='reparacion'`, nota en `historial_orden`); el listado de usados expone `ordenFolio`/`ventaFolio` y el detalle del cliente muestra la tarjeta "Equipos usados entregados".
 - **Fase producción:** seed **condicional** (`SEED_DEMO=false` no crea usuarios/datos demo; bootstrap esencial siempre), `docker-compose.prod.yml` con **Caddy** (TLS) y servicio **backup** (pg_dump diario con retención, BR-DAT-01), `scripts/backup-loop.sh`/`restore.sh`, `.env.production.example`, job **deploy** en CI para `main` (SSH + compose up --build) y runbook `docs/09-despliegue.md` (incl. notas YunoHost).
 - **Pagos mixtos en el POS (BR-VEN-02/14):** desglose de pago en ventas de contado (varios métodos, Σ = total − parte de pago) con `pagos` registrando todo el dinero recibido (venta y abonos); el **corte de caja** cuenta solo dinero realmente recibido (Σ `pagos`) y el ticket muestra el desglose.
+- **Quejas y reclamaciones (US-CRM-07/BR-CRM-08):** módulo `quejas` (abierta → en_proceso → resuelta) con vínculo opcional a garantía/orden/venta; reclamación de garantía exige garantía del cliente; resolución obligatoria al resolver; botón "Reclamar" en Garantías y tarjeta en el historial del cliente. Migración `0015_quejas`.
 
 ## [0.1.0] — 2026-08-03
 

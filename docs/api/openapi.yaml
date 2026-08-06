@@ -1303,6 +1303,111 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /quejas:
+    get:
+      tags: [Clientes]
+      summary: Listar quejas y reclamaciones
+      operationId: listQuejas
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: clienteId
+          in: query
+          schema: { type: integer }
+        - name: estado
+          in: query
+          schema: { type: string, enum: [abierta, en_proceso, resuelta] }
+        - name: tipo
+          in: query
+          schema: { type: string, enum: [queja, reclamacion_garantia] }
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Queja" }
+                  meta: { $ref: "#/components/schemas/PaginationMeta" }
+    post:
+      tags: [Clientes]
+      summary: Registrar queja o reclamación de garantía (vendedor/admin)
+      operationId: createQueja
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clienteId, descripcion]
+              properties:
+                clienteId: { type: integer }
+                tipo: { type: string, enum: [queja, reclamacion_garantia], default: queja }
+                garantiaId: { type: integer, description: "Obligatorio si tipo = reclamacion_garantia" }
+                ordenId: { type: integer }
+                ventaId: { type: integer }
+                descripcion: { type: string }
+      responses:
+        "201":
+          description: Queja creada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Queja" }
+        "422":
+          description: Garantía requerida o ajena al cliente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /quejas/{quejaId}/estado:
+    post:
+      tags: [Clientes]
+      summary: Cambiar estado de la queja (vendedor/admin; resolución obligatoria al resolver)
+      operationId: cambiarEstadoQueja
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/quejaId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [estado]
+              properties:
+                estado: { type: string, enum: [en_proceso, resuelta] }
+                resolucion: { type: string, description: "Obligatoria si estado = resuelta" }
+      responses:
+        "200":
+          description: Queja actualizada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Queja" }
+        "409":
+          description: Transición no permitida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Resolución requerida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1348,6 +1453,11 @@ components:
       schema: { type: integer }
     usadoId:
       name: usadoId
+      in: path
+      required: true
+      schema: { type: integer }
+    quejaId:
+      name: quejaId
       in: path
       required: true
       schema: { type: integer }
@@ -1649,6 +1759,26 @@ components:
         origen: { type: string, enum: [parte_de_pago, reparacion, otro] }
         observaciones: { type: [string, "null"] }
         creadoPorNombre: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    Queja:
+      type: object
+      properties:
+        id: { type: integer }
+        clienteId: { type: integer }
+        clienteNombre: { type: string }
+        tipo: { type: string, enum: [queja, reclamacion_garantia] }
+        garantiaId: { type: [integer, "null"] }
+        ordenId: { type: [integer, "null"] }
+        ordenFolio: { type: [string, "null"] }
+        ventaId: { type: [integer, "null"] }
+        ventaFolio: { type: [string, "null"] }
+        descripcion: { type: string }
+        estado: { type: string, enum: [abierta, en_proceso, resuelta] }
+        resolucion: { type: [string, "null"] }
+        registradaPorNombre: { type: string }
+        resueltaPorNombre: { type: [string, "null"] }
+        resueltaAt: { type: [string, "null"], format: date-time }
         createdAt: { type: string, format: date-time }
 
     ErrorResponse:

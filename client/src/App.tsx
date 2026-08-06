@@ -21,6 +21,7 @@ import NotificacionesPage from "@/pages/NotificacionesPage";
 import OrdenDetallePage from "@/pages/OrdenDetallePage";
 import OrdenesPage from "@/pages/OrdenesPage";
 import ProductosPage from "@/pages/ProductosPage";
+import QuejasPage from "@/pages/QuejasPage";
 import UsadosPage from "@/pages/UsadosPage";
 import ProveedoresPage from "@/pages/ProveedoresPage";
 import ReabastecimientoPage from "@/pages/ReabastecimientoPage";
@@ -65,6 +66,7 @@ const router = createBrowserRouter([
       { path: "notificaciones", element: <NotificacionesPage /> },
       { path: "configuracion", element: <ConfiguracionPage /> },
       { path: "garantias", element: <GarantiasPage /> },
+      { path: "quejas", element: <QuejasPage /> },
       { path: "auditoria", element: <AuditoriaPage /> },
       { path: "compras", element: <ComprasPage /> },
       { path: "compras/nueva", element: <NuevaCompraPage /> },

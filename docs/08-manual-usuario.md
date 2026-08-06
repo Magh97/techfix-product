@@ -105,7 +105,7 @@ Cuando una pieza no tiene stock suficiente, el **técnico** puede proponer un **
 ## 7. Clientes
 
 - **Registrar**: nombre, teléfono, correo, dirección, preferencia de contacto (WhatsApp/correo/llamada), **límite de crédito** (default $3,000) y **plazo** (default 15 días).
-- **Detalle**: historial (órdenes, ventas, cotizaciones, **equipos usados entregados**) y **cuentas por cobrar** (saldo, vencidas, límite).
+- **Detalle**: historial (órdenes, ventas, cotizaciones, **equipos usados entregados**, **quejas**) y **cuentas por cobrar** (saldo, vencidas, límite).
 - **Etiquetas** (admin) para segmentar; filtro de deudores en el listado.
 
 ## 8. Productos y Catálogos
@@ -186,6 +186,11 @@ Alta/edición de proveedores (nombre, contacto, condiciones de pago). El proveed
 Consulta de garantías con su cobertura y vigencia. Se generan automáticamente:
 - Al **entregar una reparación**: garantía de servicio.
 - Al **vender productos a un cliente** (con cliente registrado): **una garantía por producto** — **producto nuevo 30 días** o **usado 15 días**. En el ticket de venta aparece "Garantía: {tipo} hasta {fin}". Las ventas a **mostrador (sin cliente)** no generan garantía.
+
+### Quejas y reclamaciones (`/quejas`)
+- Registra **quejas** (queja general o **reclamación de garantía**) con estado `Abierta → En proceso → Resuelta`; la reclamación exige vincular la **garantía del cliente**.
+- Desde **Garantías** usa el botón **"Reclamar"** para registrar una reclamación vinculada a esa garantía. Al resolver, la **resolución es obligatoria** y queda quién la atendió.
+- Las quejas aparecen en el **historial del cliente**.
 
 ## 13. Notificaciones
 
