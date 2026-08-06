@@ -81,4 +81,5 @@ export const devolucionSchema = z.object({
     .array(z.object({ productoId: z.number().int().positive(), cantidad: z.number().int().positive() }))
     .min(1),
   motivo: z.string().max(500).optional(),
+  tipo: z.enum(["reembolso", "nota_credito"]).optional(),
 });

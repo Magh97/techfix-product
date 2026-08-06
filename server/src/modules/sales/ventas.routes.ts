@@ -87,7 +87,7 @@ ventasRouter.post(
   validate(devolucionSchema),
   async (req: AuthedRequest, res) => {
     const { ventaId } = getValidated<{ ventaId: number }>(req, "params");
-    const { lineas, motivo } = getValidated<{ lineas: { productoId: number; cantidad: number }[]; motivo?: string }>(req, "body");
-    ok(res, await service.devolucion(ventaId, { lineas, motivo }, req.user!));
+    const { lineas, motivo, tipo } = getValidated<{ lineas: { productoId: number; cantidad: number }[]; motivo?: string; tipo?: string }>(req, "body");
+    ok(res, await service.devolucion(ventaId, { lineas, motivo, tipo }, req.user!));
   }
 );

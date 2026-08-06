@@ -1157,6 +1157,161 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(cxc.body.data.saldoTotal).toBe(0);
   });
 
+  it("REEMBOLSO: devolver contado con cliente eligiendo reembolso crea egreso y no genera nota", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const cliente = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('NC Reembolso', '5550009001', 5000, 30) RETURNING id"
+    );
+    const clienteId = cliente.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `REM-${Date.now()}`, nombre: "Prod reembolso", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    // Asegurar caja abierta del admin
+    const actual = await request(app).get("/api/v1/caja/actual").set(auth);
+    if (!actual.body.data) await request(app).post("/api/v1/caja/abrir").set(auth);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 2 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const ventaId = venta.body.data.id;
+
+    const dev = await request(app)
+      .post(`/api/v1/ventas/${ventaId}/devolucion`)
+      .set(auth)
+      .send({ lineas: [{ productoId, cantidad: 1 }], tipo: "reembolso" });
+    expect(dev.status).toBe(200);
+
+    // Sin nota de crédito
+    const notas = await request(app).get(`/api/v1/clientes/${clienteId}/notas-credito`).set(auth);
+    expect(notas.body.data).toHaveLength(0);
+
+    // Egreso "Reembolso venta ..." en la caja del admin
+    const egresos = await pool.query<{ concepto: string; categoria: string; monto: string }>(
+      "SELECT concepto, categoria, monto FROM egresos WHERE concepto ILIKE 'Reembolso venta %' ORDER BY id DESC LIMIT 1"
+    );
+    expect(egresos.rows[0]?.categoria).toBe("Reembolso");
+    expect(Number(egresos.rows[0]?.monto)).toBe(100);
+
+    // El corte refleja el reembolso como egreso de efectivo
+    const corte = await request(app).get("/api/v1/caja/corte").set(auth);
+    expect(corte.body.data.egresosPorMetodo["efectivo"] ?? 0).toBeGreaterThanOrEqual(100);
+  });
+
+  it("REEMBOLSO: devolver mostrador sin tipo fuerza reembolso en efectivo", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const actual = await request(app).get("/api/v1/caja/actual").set(auth);
+    if (!actual.body.data) await request(app).post("/api/v1/caja/abrir").set(auth);
+
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `REMM-${Date.now()}`, nombre: "Prod reembolso mostrador", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const ventaId = venta.body.data.id;
+
+    const dev = await request(app)
+      .post(`/api/v1/ventas/${ventaId}/devolucion`)
+      .set(auth)
+      .send({ lineas: [{ productoId, cantidad: 1 }] });
+    expect(dev.status).toBe(200);
+
+    const egresos = await pool.query<{ categoria: string }>(
+      "SELECT categoria FROM egresos WHERE concepto ILIKE 'Reembolso venta %' ORDER BY id DESC LIMIT 1"
+    );
+    expect(egresos.rows[0]?.categoria).toBe("Reembolso");
+  });
+
+  it("REEMBOLSO: devolver contado con cliente sin tipo sigue generando nota (regresión)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const cliente = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('NC Regresión', '5550009002', 5000, 30) RETURNING id"
+    );
+    const clienteId = cliente.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `REGR-${Date.now()}`, nombre: "Prod regresión nota", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const ventaId = venta.body.data.id;
+
+    const dev = await request(app)
+      .post(`/api/v1/ventas/${ventaId}/devolucion`)
+      .set(auth)
+      .send({ lineas: [{ productoId, cantidad: 1 }] });
+    expect(dev.status).toBe(200);
+
+    const notas = await request(app).get(`/api/v1/clientes/${clienteId}/notas-credito`).set(auth);
+    expect(notas.body.data).toHaveLength(1);
+  });
+
+  it("REEMBOLSO: devolver venta a crédito con reembolso → 422 y sin caja → 422", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const cliente = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('NC Reembolso Crédito', '5550009003', 5000, 30) RETURNING id"
+    );
+    const clienteId = cliente.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `REMC-${Date.now()}`, nombre: "Prod reembolso crédito", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+
+    // Crédito sin abonos + tipo reembolso → REEMBOLSO_INVALIDO
+    const ventaC = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito" });
+    const ventaCId = ventaC.body.data.id;
+    const resC = await request(app)
+      .post(`/api/v1/ventas/${ventaCId}/devolucion`)
+      .set(auth)
+      .send({ lineas: [{ productoId, cantidad: 1 }], tipo: "reembolso" });
+    expect(resC.status).toBe(422);
+    expect(resC.body.error.code).toBe("REEMBOLSO_INVALIDO");
+  });
+
+  it("REEMBOLSO: devolver sin caja abierta → 422 CAJA_NOT_OPEN", async () => {
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    // El vendedor no abre caja en la suite → reembolso debe fallar
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set({ Authorization: `Bearer ${token}` })
+      .send({ categoriaId: 1, sku: `REMS-${Date.now()}`, nombre: "Prod reembolso sin caja", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(authV)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const ventaId = venta.body.data.id;
+
+    const dev = await request(app)
+      .post(`/api/v1/ventas/${ventaId}/devolucion`)
+      .set(authV)
+      .send({ lineas: [{ productoId, cantidad: 1 }], tipo: "reembolso" });
+    expect(dev.status).toBe(422);
+    expect(dev.body.error.code).toBe("CAJA_NOT_OPEN");
+  });
+
   it("CAJA: corte y cierre con arqueo", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const actual = await request(app).get("/api/v1/caja/actual").set(auth);

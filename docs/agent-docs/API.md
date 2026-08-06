@@ -81,7 +81,7 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 |--------|------|------|---------|----------|
 | GET / POST | /ventas | JWT | ?page&fechaDesde&fechaHasta&vendedorId / {clienteId?, lineas[], tipoPago, metodoPago?, montoRecibido?, ordenId?, pagos?: [{metodo, monto}], partesDePago?: [{nombre, valor, precioVenta}], notaCreditoId?} (desglose y nota solo contado) | lista / 201 venta + ticket + garantias + parteDePago + notaCredito + totalAPagar + usadosCreados + pagos |
 | GET | /ventas/:id · /por-folio/:folio | JWT | -- | venta + líneas + pagos |
-| POST | /ventas/:id/pagos · /cancelar · /devolucion | JWT | {monto, metodo} \| {pagos: [{metodo, monto}]} / {motivo} / {lineas[], motivo?} | pago / venta / devolución (nota de crédito si contado con cliente) |
+| POST | /ventas/:id/pagos · /cancelar · /devolucion | JWT | {monto, metodo} \| {pagos: [{metodo, monto}]} / {motivo} / {lineas[], motivo?, tipo?: reembolso\|nota_credito} | pago / venta / devolución (reembolso → egreso en caja; nota si contado con cliente) |
 | GET / POST | /cotizaciones-venta | JWT | ?page&estado / {clienteId, lineas[], vigenciaDias?, descuento?} | lista / 201 |
 | POST | /cotizaciones-venta/:id/convertir | JWT | {metodoPago, tipoPago?} | {cotizacionId, folio, venta} |
 
