@@ -1,15 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileSearch } from "lucide-react";
 import { useState } from "react";
 import { Pagination } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import TicketDialog from "@/components/TicketDialog";
 import { useToast } from "@/components/ui/toast";
+import { getSessionUser } from "@/lib/auth";
 import { ventasApi } from "@/lib/api";
 import { fechaCorta, mxn } from "@/lib/utils";
 import type { Venta } from "@/lib/types";
@@ -22,14 +25,56 @@ const estadoVariant: Record<string, "success" | "danger" | "warning"> = {
 
 export default function VentasPage() {
   const toast = useToast();
+  const qc = useQueryClient();
   const [folio, setFolio] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [ticket, setTicket] = useState<Venta | null>(null);
+  const [devolver, setDevolver] = useState<Venta | null>(null);
+  const [cancelar, setCancelar] = useState<Venta | null>(null);
+  const [cantidades, setCantidades] = useState<Record<number, number>>({});
+  const [motivoDevolucion, setMotivoDevolucion] = useState("");
+  const [motivoCancelar, setMotivoCancelar] = useState("");
+
+  const rol = getSessionUser()?.rol;
 
   const { data, isLoading } = useQuery({
     queryKey: ["ventas-historial", page, pageSize],
     queryFn: () => ventasApi.list({ page, pageSize }),
+  });
+
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: ["ventas-historial"] });
+  }
+
+  const devolverMut = useMutation({
+    mutationFn: () =>
+      ventasApi.devolucion(
+        devolver!.id,
+        (devolver?.lineas ?? [])
+          .filter((l) => l.productoId && (cantidades[l.productoId] ?? 0) > 0)
+          .map((l) => ({ productoId: l.productoId!, cantidad: cantidades[l.productoId!] ?? 0 })),
+        motivoDevolucion.trim() || undefined
+      ),
+    onSuccess: () => {
+      toast.success("Devolución registrada");
+      setDevolver(null);
+      setCantidades({});
+      setMotivoDevolucion("");
+      invalidate();
+    },
+    onError: (e) => toast.error("Error al devolver", e instanceof Error ? e.message : "Intenta de nuevo"),
+  });
+
+  const cancelarMut = useMutation({
+    mutationFn: () => ventasApi.cancelar(cancelar!.id, motivoCancelar.trim()),
+    onSuccess: () => {
+      toast.success("Venta cancelada");
+      setCancelar(null);
+      setMotivoCancelar("");
+      invalidate();
+    },
+    onError: (e) => toast.error("Error al cancelar", e instanceof Error ? e.message : "Intenta de nuevo"),
   });
 
   function buscarFolio() {
@@ -40,6 +85,8 @@ export default function VentasPage() {
       .then((r) => setTicket(r.data))
       .catch((e) => toast.error("Venta no encontrada", e instanceof Error ? e.message : ""));
   }
+
+  const lineasDevolvibles = (devolver?.lineas ?? []).filter((l) => l.productoId);
 
   return (
     <div className="space-y-4">
@@ -112,7 +159,100 @@ export default function VentasPage() {
         </CardBody>
       </Card>
 
-      <TicketDialog venta={ticket} onClose={() => setTicket(null)} reimpresion />
+      <TicketDialog
+        venta={ticket}
+        onClose={() => setTicket(null)}
+        reimpresion
+        acciones={
+          ticket &&
+          ticket.estado !== "cancelada" && (
+            <>
+              {rol !== "tecnico" && ticket.estado !== "devuelta" && (ticket.lineas ?? []).some((l) => l.productoId) && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const inicial: Record<number, number> = {};
+                    for (const l of ticket.lineas ?? []) {
+                      if (l.productoId) inicial[l.productoId] = l.cantidad;
+                    }
+                    setCantidades(inicial);
+                    setDevolver(ticket);
+                  }}
+                >
+                  Devolver
+                </Button>
+              )}
+              {rol === "admin" && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setMotivoCancelar("");
+                    setCancelar(ticket);
+                  }}
+                >
+                  Cancelar venta
+                </Button>
+              )}
+            </>
+          )
+        }
+      />
+
+      <Dialog open={!!devolver} onClose={() => setDevolver(null)} title={`Devolución · ${devolver?.folio ?? ""}`}>
+        <div className="space-y-3">
+          <p className="text-xs text-muted">
+            La devolución restituye el inventario. El reembolso / nota de crédito se gestiona fuera del sistema.
+          </p>
+          {lineasDevolvibles.length === 0 && <p className="text-sm text-danger">Esta venta no tiene productos devolvibles.</p>}
+          {lineasDevolvibles.map((l) => (
+            <div key={l.productoId} className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{l.descripcion}</p>
+                <p className="text-xs text-muted">
+                  {mxn(l.precio)} × {l.cantidad}
+                </p>
+              </div>
+              <Input
+                type="number"
+                min={0}
+                max={l.cantidad}
+                value={cantidades[l.productoId!] ?? 0}
+                onChange={(e) =>
+                  setCantidades((c) => ({ ...c, [l.productoId!]: Math.max(0, Math.min(l.cantidad, Number(e.target.value) || 0)) }))
+                }
+                className="w-24"
+                aria-label={`Cantidad a devolver de ${l.descripcion}`}
+              />
+            </div>
+          ))}
+          <div>
+            <Label>Motivo (opcional)</Label>
+            <Input value={motivoDevolucion} onChange={(e) => setMotivoDevolucion(e.target.value)} placeholder="Motivo de la devolución…" />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setDevolver(null)}>Cancelar</Button>
+            <Button disabled={lineasDevolvibles.length === 0 || devolverMut.isPending} onClick={() => devolverMut.mutate()}>
+              {devolverMut.isPending ? "Devolviendo…" : "Registrar devolución"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <Dialog open={!!cancelar} onClose={() => setCancelar(null)} title={`Cancelar venta · ${cancelar?.folio ?? ""}`}>
+        <div className="space-y-3">
+          <p className="text-xs text-muted">Se revierte el inventario de la venta. Requiere rol admin.</p>
+          <div>
+            <Label>Motivo *</Label>
+            <Input value={motivoCancelar} onChange={(e) => setMotivoCancelar(e.target.value)} placeholder="Motivo de la cancelación…" />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setCancelar(null)}>Cancelar</Button>
+            <Button variant="danger" disabled={!motivoCancelar.trim() || cancelarMut.isPending} onClick={() => cancelarMut.mutate()}>
+              {cancelarMut.isPending ? "Cancelando…" : "Cancelar venta"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SESSION_EXPIRED_EVENT } from "./auth";
-import { agendarAutoRefresh, api } from "./api";
+import { agendarAutoRefresh, api, ventasApi } from "./api";
 
 function jsonRes(data: unknown, status = 200) {
   return {
@@ -93,5 +93,44 @@ describe("api auto-refresh", () => {
     const refreshCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/auth/refresh"));
     expect(refreshCalls).toHaveLength(1);
     expect(localStorage.getItem("ts_token")).toBe("nuevo");
+  });
+});
+
+describe("ventasApi.cancelar / devolucion", () => {
+  it("cancelar envía POST con motivo", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonRes({ data: { id: 7, folio: "VEN-0007" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    localStorage.setItem("ts_token", "t1");
+    localStorage.setItem("ts_refresh", "rt1");
+
+    await ventasApi.cancelar(7, "Error del vendedor");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toContain("/ventas/7/cancelar");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ motivo: "Error del vendedor" });
+  });
+
+  it("devolucion envía POST con líneas y motivo", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonRes({ data: { id: 7, folio: "VEN-0007" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    localStorage.setItem("ts_token", "t1");
+    localStorage.setItem("ts_refresh", "rt1");
+
+    await ventasApi.devolucion(7, [{ productoId: 3, cantidad: 2 }], "Cambio de opinión");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toContain("/ventas/7/devolucion");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ lineas: [{ productoId: 3, cantidad: 2 }], motivo: "Cambio de opinión" });
+  });
+
+  it("devolucion omite el motivo si no se envía", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonRes({ data: { id: 7, folio: "VEN-0007" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    localStorage.setItem("ts_token", "t1");
+    localStorage.setItem("ts_refresh", "rt1");
+
+    await ventasApi.devolucion(7, [{ productoId: 3, cantidad: 1 }]);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ lineas: [{ productoId: 3, cantidad: 1 }] });
   });
 });

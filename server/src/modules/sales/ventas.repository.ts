@@ -90,6 +90,23 @@ export function sumPagos(client: PoolClient, ventaId: number) {
     .then((r) => Number(r.rows[0]?.s ?? 0));
 }
 
+export function sumPagosVenta(ventaId: number) {
+  return query<{ s: string }>("SELECT COALESCE(SUM(monto),0)::numeric AS s FROM pagos WHERE venta_id = $1", [ventaId]).then(
+    (r) => Number(r.rows[0]?.s ?? 0)
+  );
+}
+
+// Reintegra a inventario los equipos usados recibidos como parte de pago de una venta
+// que se cancela o devuelve: los desvincula de la venta si aún no fueron vendidos (stock > 0).
+export function reintegrarUsadosVenta(client: PoolClient, ventaId: number) {
+  return client.query(
+    `UPDATE equipos_usados eu SET venta_id = NULL
+     WHERE eu.venta_id = $1
+       AND EXISTS (SELECT 1 FROM productos p WHERE p.id = eu.producto_id AND p.stock > 0)`,
+    [ventaId]
+  );
+}
+
 export async function nextVentaFolio(client: PoolClient): Promise<string> {
   const r = await client.query<{ n: string }>("SELECT COALESCE(MAX(id), 0) + 1 AS n FROM ventas");
   return `VEN-${String(Number(r.rows[0]?.n ?? 1)).padStart(4, "0")}`;

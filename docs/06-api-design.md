@@ -52,6 +52,7 @@
 | `QUOTE_NOT_APPROVED` | 422 | Cotización no aprobada |
 | `DISCOUNT_NOT_AUTHORIZED` | 403 | Descuento >10% sin rol admin (BR-VEN-05) |
 | `REFUND_WINDOW_EXPIRED` | 422 | Devolución fuera de 15 días (BR-VEN-08) |
+| `SALE_WITH_PAYMENTS` | 422 | No se puede cancelar/devolver una venta a crédito con abonos cobrados |
 | `SALE_ALREADY_CANCELLED` | 409 | Venta ya cancelada |
 | `CUSTOMER_NOT_FOUND` | 404 | Cliente no existe (precondición SER-01) |
 | `CONFLICT` | 409 | Conflicto genérico (duplicado, estado) |
@@ -186,8 +187,8 @@
 | GET | `/ventas` | JWT | `?page&pageSize&fechaDesde&fechaHasta&vendedorId&metodoPago&estado` | `{ data, meta }` | -- |
 | GET | `/ventas/:id` | JWT | -- | `{ data: Venta + lineas + pagos }` | `NOT_FOUND` |
 | GET | `/ventas/por-folio/:folio` | JWT | -- | `{ data: Venta }` | `NOT_FOUND` (reimpresión VEN-10) |
-| POST | `/ventas/:id/cancelar` | admin | `{ motivo }` | `{ data: Venta }` (reversión stock) | `SALE_ALREADY_CANCELLED`, `FORBIDDEN` |
-| POST | `/ventas/:id/devolucion` | vendedor/admin | `{ lineas, reembolsoMetodo?, notaCredito? }` | `{ data: Devolucion }` | `REFUND_WINDOW_EXPIRED`, `VALIDATION_ERROR` |
+| POST | `/ventas/:id/cancelar` | admin | `{ motivo }` | `{ data: Venta }` (reversión stock; reintegra usados de trade-in) | `SALE_ALREADY_CANCELLED`, `SALE_WITH_PAYMENTS`, `FORBIDDEN` |
+| POST | `/ventas/:id/devolucion` | vendedor/admin | `{ lineas, motivo? }` | `{ data: Venta }` (restituye stock; `motivo` opcional va a auditoría) | `SALE_ALREADY_PROCESSED`, `SALE_WITH_PAYMENTS`, `REFUND_WINDOW_EXPIRED`, `VALIDATION_ERROR` |
 | POST | `/ventas/:id/pagos` | vendedor/admin | `{ monto, metodo, cajaId }` | `201 { data: Pago }` | `VALIDATION_ERROR` |
 | GET | `/cotizaciones` | JWT | `?page&pageSize&estado&vencidas` | `{ data, meta }` | -- |
 | POST | `/cotizaciones/:id/convertir` | vendedor/admin | `{ tipoPago, metodoPago, descuento?, ... }` | `201 { data: Venta }` | `QUOTE_EXPIRED`, `INSUFFICIENT_STOCK` |

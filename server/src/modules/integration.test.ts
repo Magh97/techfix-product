@@ -746,11 +746,169 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     const dev = await request(app)
       .post(`/api/v1/ventas/${ventaId}/devolucion`)
       .set(auth)
-      .send({ lineas: [{ productoId, cantidad: 2 }] });
+      .send({ lineas: [{ productoId, cantidad: 2 }], motivo: "Cliente cambió de opinión" });
     expect(dev.status).toBe(200);
 
     const stock = await pool.query<{ stock: number }>("SELECT stock FROM productos WHERE id = $1", [productoId]);
     expect(Number(stock.rows[0]?.stock)).toBe(5);
+  });
+
+  it("POS: vendedor no puede cancelar una venta (403)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const authV = { Authorization: `Bearer ${vendedorToken}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `NCV-${Date.now()}`, nombre: "Prod cancelar vendedor", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const ventaId = venta.body.data.id;
+
+    const res = await request(app).post(`/api/v1/ventas/${ventaId}/cancelar`).set(authV).send({ motivo: "No autorizado" });
+    expect(res.status).toBe(403);
+  });
+
+  it("POS: no se cancela una venta a crédito con abonos (SALE_WITH_PAYMENTS)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const cliente = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('CxC Bloqueo', '5550000999', 5000, 30) RETURNING id"
+    );
+    const clienteId = cliente.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `CANC-${Date.now()}`, nombre: "Prod bloqueo cancel", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito" });
+    const ventaId = venta.body.data.id;
+    await request(app).post(`/api/v1/ventas/${ventaId}/pagos`).set(auth).send({ monto: 40, metodo: "efectivo" });
+
+    const res = await request(app).post(`/api/v1/ventas/${ventaId}/cancelar`).set(auth).send({ motivo: "Prueba" });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("SALE_WITH_PAYMENTS");
+  });
+
+  it("POS: no se devuelve una venta a crédito con abonos (SALE_WITH_PAYMENTS)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const cliente = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('CxC Devolución', '5550000888', 5000, 30) RETURNING id"
+    );
+    const clienteId = cliente.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `DEVBL-${Date.now()}`, nombre: "Prod bloqueo devol", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito" });
+    const ventaId = venta.body.data.id;
+    await request(app).post(`/api/v1/ventas/${ventaId}/pagos`).set(auth).send({ monto: 40, metodo: "efectivo" });
+
+    const res = await request(app)
+      .post(`/api/v1/ventas/${ventaId}/devolucion`)
+      .set(auth)
+      .send({ lineas: [{ productoId, cantidad: 1 }] });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("SALE_WITH_PAYMENTS");
+  });
+
+  it("POS: devolución fuera de la ventana (REFUND_WINDOW_EXPIRED)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `WIND-${Date.now()}`, nombre: "Prod ventana", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const ventaId = venta.body.data.id;
+    await pool.query("UPDATE ventas SET created_at = NOW() - INTERVAL '30 days' WHERE id = $1", [ventaId]);
+
+    const res = await request(app)
+      .post(`/api/v1/ventas/${ventaId}/devolucion`)
+      .set(auth)
+      .send({ lineas: [{ productoId, cantidad: 1 }] });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("REFUND_WINDOW_EXPIRED");
+  });
+
+  it("POS: el historial devuelve líneas mapeadas (productoId/descripcion/precio)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `LINEAS-${Date.now()}`, nombre: "Prod líneas mapeadas", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 2 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const ventaId = venta.body.data.id;
+
+    const listado = await request(app).get("/api/v1/ventas").set(auth);
+    const row = listado.body.data.find((v: { id: number }) => v.id === ventaId);
+    expect(row.lineas[0]).toMatchObject({ productoId, cantidad: 2, precio: 20 });
+    expect(row.lineas[0].descripcion).toBe("Prod líneas mapeadas");
+
+    const detalle = await request(app).get(`/api/v1/ventas/${ventaId}`).set(auth);
+    expect(detalle.body.data.lineas[0].productoId).toBe(productoId);
+  });
+
+  it("POS: cancelar venta con trade-in reintegra el usado y lo desvincula", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `TRADE-${Date.now()}`, nombre: "Prod trade-in", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        lineas: [{ tipo: "producto", productoId, cantidad: 1 }],
+        tipoPago: "contado",
+        metodoPago: "efectivo",
+        partesDePago: [{ nombre: "Laptop usada", valor: 50, precioVenta: 90 }],
+      });
+    expect(venta.status).toBe(201);
+    const ventaId = venta.body.data.id;
+    const usado = await pool.query<{ id: number; venta_id: number | null }>(
+      "SELECT id, venta_id FROM equipos_usados WHERE venta_id = $1 LIMIT 1",
+      [ventaId]
+    );
+    expect(usado.rows[0]?.venta_id).toBe(ventaId);
+
+    const res = await request(app).post(`/api/v1/ventas/${ventaId}/cancelar`).set(auth).send({ motivo: "Se cancela trade-in" });
+    expect(res.status).toBe(200);
+
+    const despues = await pool.query<{ venta_id: number | null; stock: number }>(
+      `SELECT eu.venta_id, p.stock FROM equipos_usados eu JOIN productos p ON p.id = eu.producto_id WHERE eu.id = $1`,
+      [usado.rows[0]!.id]
+    );
+    expect(despues.rows[0]?.venta_id).toBeNull();
+    expect(Number(despues.rows[0]?.stock)).toBe(1);
   });
 
   it("CAJA: corte y cierre con arqueo", async () => {

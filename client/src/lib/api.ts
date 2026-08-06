@@ -268,6 +268,11 @@ export const ventasApi = {
   pagar: (id: number, input: { monto: number; metodo: string }) =>
     api<{ data: unknown }>(`/ventas/${id}/pagos`, { method: "POST", body: JSON.stringify(input) }),
   cancelar: (id: number, motivo: string) => api<{ data: Venta }>(`/ventas/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),
+  devolucion: (id: number, lineas: { productoId: number; cantidad: number }[], motivo?: string) =>
+    api<{ data: Venta }>(`/ventas/${id}/devolucion`, {
+      method: "POST",
+      body: JSON.stringify({ lineas, ...(motivo ? { motivo } : {}) }),
+    }),
 };
 
 export const cajaApi = {

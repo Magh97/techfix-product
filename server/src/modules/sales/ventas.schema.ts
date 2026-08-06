@@ -69,4 +69,5 @@ export const devolucionSchema = z.object({
   lineas: z
     .array(z.object({ productoId: z.number().int().positive(), cantidad: z.number().int().positive() }))
     .min(1),
+  motivo: z.string().max(500).optional(),
 });

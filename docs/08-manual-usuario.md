@@ -54,8 +54,9 @@ Muestra el resumen del día: ventas, órdenes en curso (incl. retrasadas), produ
 - Listado con filtros por fecha, vendedor, método de pago y estado.
 - Detalle de cada venta: líneas, pagos y saldo pendiente.
 - **Abono** a venta a crédito (botón en el detalle).
-- **Devolución**: solo dentro de **15 días** desde la venta y con ticket; reembolsa y revierte el inventario.
-- **Cancelación**: solo admin, con motivo; revierte stock.
+- **Devolución** (botón en el ticket): solo dentro de **15 días** desde la venta; restituye el inventario por las cantidades indicadas por línea y marca la venta como **devuelta**. El motivo es opcional. El **reembolso / nota de crédito se gestiona fuera del sistema**. No se puede devolver una venta a **crédito con abonos ya cobrados**.
+- **Cancelación** (botón en el ticket): solo admin, con motivo obligatorio; revierte el stock. No se puede cancelar una venta a **crédito con abonos cobrados**.
+- Al cancelar o devolver una venta que incluyó un **equipo usado como parte de pago**, el equipo regresa al inventario como **disponible** (si aún no se vendió).
 
 ## 5. Cotizaciones
 
