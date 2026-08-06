@@ -44,6 +44,8 @@ export default function VentaPage() {
   const [sugerencias, setSugerencias] = useState<Sugerencias | null>(null);
   const [sugerenciaDe, setSugerenciaDe] = useState<Producto | null>(null);
   const [codigoInput, setCodigoInput] = useState("");
+  const [partesDePago, setPartesDePago] = useState<{ nombre: string; marca: string; modelo: string; valor: string; precioVenta: string; observaciones: string }[]>([]);
+  const [usadoDraft, setUsadoDraft] = useState({ nombre: "", marca: "", modelo: "", valor: "", precioVenta: "" });
 
   const { data: productos, isLoading } = useQuery({
     queryKey: ["productos", "pos", busqueda],
@@ -58,6 +60,12 @@ export default function VentaPage() {
     const iva = base * 0.16;
     return { subtotal, desc, iva, total: base + iva };
   }, [cart, descuento]);
+
+  const parteDePago = partesDePago.reduce((a, p) => a + (Number(p.valor) || 0), 0);
+  const totalAPagar = Math.max(0, montos.total - parteDePago);
+  const tradeInValido =
+    partesDePago.every((p) => p.nombre.trim() && (Number(p.valor) || 0) > 0 && (Number(p.precioVenta) || 0) > 0) &&
+    parteDePago <= montos.total;
 
   const descOk = esAdmin || montos.desc <= montos.subtotal * 0.1;
 
@@ -86,7 +94,17 @@ export default function VentaPage() {
         descuento: montos.desc,
         tipoPago,
         metodoPago: tipoPago === "contado" ? metodo : undefined,
-        montoRecibido: tipoPago === "contado" ? (metodo === "efectivo" ? Number(montoRecibido || montos.total) : undefined) : undefined,
+        montoRecibido: tipoPago === "contado" ? (metodo === "efectivo" ? Number(montoRecibido || totalAPagar) : undefined) : undefined,
+        partesDePago: partesDePago.length
+          ? partesDePago.map((p) => ({
+              nombre: p.nombre,
+              marca: p.marca || null,
+              modelo: p.modelo || null,
+              valor: Number(p.valor),
+              precioVenta: Number(p.precioVenta),
+              observaciones: p.observaciones || null,
+            }))
+          : undefined,
       }),
     onSuccess: (res) => {
       setTicket(res.data);
@@ -94,14 +112,25 @@ export default function VentaPage() {
       setDescuento("0");
       setMontoRecibido("");
       setClienteId("");
+      setPartesDePago([]);
       qc.invalidateQueries({ queryKey: ["productos"] });
       qc.invalidateQueries({ queryKey: ["clientes"] });
     },
     onError: (e) => toast.error("No se pudo cobrar", e instanceof Error ? e.message : "Intenta de nuevo"),
   });
 
-  const cambio = metodo === "efectivo" ? Math.max(0, (Number(montoRecibido) || montos.total) - montos.total) : 0;
-  const cobrarDisabled = !cart.length || !descOk || (tipoPago === "credito" && !clienteId) || venta.isPending;
+  const cambio = metodo === "efectivo" ? Math.max(0, (Number(montoRecibido) || totalAPagar) - totalAPagar) : 0;
+  const cobrarDisabled =
+    !cart.length || !descOk || !tradeInValido || (tipoPago === "credito" && !clienteId) || venta.isPending;
+
+  function agregarParteDePago() {
+    if (!usadoDraft.nombre.trim() || (Number(usadoDraft.valor) || 0) <= 0 || (Number(usadoDraft.precioVenta) || 0) <= 0) {
+      toast.error("Completa nombre, valor de parte de pago y precio de reventa");
+      return;
+    }
+    setPartesDePago((ps) => [...ps, { ...usadoDraft, observaciones: "" }]);
+    setUsadoDraft({ nombre: "", marca: "", modelo: "", valor: "", precioVenta: "" });
+  }
 
   function verSustitutos(p: Producto) {
     setSugerenciaDe(p);
@@ -270,7 +299,50 @@ export default function VentaPage() {
             </div>
             <div className="flex justify-between"><span>IVA (16%)</span><span>{mxn(montos.iva)}</span></div>
             <div className="flex justify-between text-lg font-bold"><span>Total</span><span>{mxn(montos.total)}</span></div>
+            {parteDePago > 0 && (
+              <>
+                <div className="flex justify-between text-warning"><span>Parte de pago (usados)</span><span>-{mxn(parteDePago)}</span></div>
+                <div className="flex justify-between font-semibold"><span>Total a pagar</span><span>{mxn(totalAPagar)}</span></div>
+              </>
+            )}
           </div>
+
+          {tipoPago === "contado" && (
+            <div className="space-y-2 rounded-md border border-border-line p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Parte de pago (equipo usado)</p>
+                {partesDePago.length > 0 && (
+                  <button className="text-xs text-muted hover:text-danger" onClick={() => setPartesDePago([])}>Limpiar</button>
+                )}
+              </div>
+              {partesDePago.length > 0 && (
+                <div className="space-y-1">
+                  {partesDePago.map((p, i) => (
+                    <div key={i} className="flex items-center justify-between rounded border border-border-line px-2 py-1 text-xs">
+                      <span className="truncate">
+                        {p.nombre}
+                        {p.marca && <span className="text-muted"> · {p.marca}</span>}
+                      </span>
+                      <span className="ml-2 font-semibold">{mxn(Number(p.valor))}</span>
+                      <button className="ml-2 text-danger" onClick={() => setPartesDePago((ps) => ps.filter((_, j) => j !== i))}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <Input placeholder="Nombre del equipo" value={usadoDraft.nombre} onChange={(e) => setUsadoDraft((d) => ({ ...d, nombre: e.target.value }))} className="h-8" />
+                <Input placeholder="Valor parte de pago" type="number" min={0} value={usadoDraft.valor} onChange={(e) => setUsadoDraft((d) => ({ ...d, valor: e.target.value }))} className="h-8" />
+                <Input placeholder="Marca (opcional)" value={usadoDraft.marca} onChange={(e) => setUsadoDraft((d) => ({ ...d, marca: e.target.value }))} className="h-8" />
+                <Input placeholder="Precio de reventa" type="number" min={0.01} value={usadoDraft.precioVenta} onChange={(e) => setUsadoDraft((d) => ({ ...d, precioVenta: e.target.value }))} className="h-8" />
+                <Input placeholder="Modelo (opcional)" value={usadoDraft.modelo} onChange={(e) => setUsadoDraft((d) => ({ ...d, modelo: e.target.value }))} className="h-8" />
+                <Button size="sm" variant="outline" onClick={agregarParteDePago}>
+                  <Plus className="h-3.5 w-3.5" /> Agregar
+                </Button>
+              </div>
+            </div>
+          )}
 
           {!descOk && (
             <div className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger" role="alert">
