@@ -1,4 +1,5 @@
 import { query } from "../../shared/db";
+import type { PoolClient } from "pg";
 
 export interface CajaRow {
   id: number;
@@ -106,6 +107,23 @@ export function insertEgreso(input: {
   cajaId: number | null;
 }) {
   return query(
+    "INSERT INTO egresos (concepto, categoria, monto, metodo, usuario_id, caja_id) VALUES ($1,$2,$3,$4,$5,$6)",
+    [input.concepto, input.categoria, input.monto, input.metodo, input.usuarioId, input.cajaId]
+  );
+}
+
+export function insertEgresoClient(
+  client: PoolClient,
+  input: {
+    concepto: string;
+    categoria: string;
+    monto: number;
+    metodo: string;
+    usuarioId: number;
+    cajaId: number | null;
+  }
+) {
+  return client.query(
     "INSERT INTO egresos (concepto, categoria, monto, metodo, usuario_id, caja_id) VALUES ($1,$2,$3,$4,$5,$6)",
     [input.concepto, input.categoria, input.monto, input.metodo, input.usuarioId, input.cajaId]
   );

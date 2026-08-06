@@ -7,6 +7,7 @@ import { registrarAuditoria } from "../../shared/auditoria";
 import * as repo from "./ventas.repository";
 import * as garantiasRepo from "../garantias/garantias.repository";
 import * as usadosRepo from "../inventory/usados.repository";
+import { insertEgresoClient } from "../finance/finance.repository";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -479,7 +480,7 @@ export async function cancelar(ventaId: number, motivo: string, user: { id: numb
 
 export async function devolucion(
   ventaId: number,
-  input: { lineas: { productoId: number; cantidad: number }[]; motivo?: string },
+  input: { lineas: { productoId: number; cantidad: number }[]; motivo?: string; tipo?: string },
   user: { id: number; rol: string }
 ) {
   const venta = await repo.findVenta(ventaId);
@@ -507,6 +508,20 @@ export async function devolucion(
   }
   const totalDevuelto = input.lineas.reduce((acc, l) => acc + (precioUnitarioPorProducto.get(l.productoId) ?? 0) * l.cantidad, 0);
 
+  // Forma de reembolso: explícita, o nota con cliente / reembolso en mostrador (sin cliente).
+  // En ventas a crédito sin abonos no se genera ni nota ni reembolso (no hay dinero cobrado).
+  const tipo: "reembolso" | "nota_credito" | "ninguno" =
+    input.tipo === "reembolso" || input.tipo === "nota_credito"
+      ? input.tipo
+      : venta.tipo_pago === "contado"
+        ? venta.cliente_id
+          ? "nota_credito"
+          : "reembolso"
+        : "ninguno";
+  if (tipo === "reembolso" && venta.tipo_pago !== "contado") {
+    throw AppError.business("REEMBOLSO_INVALIDO", "El reembolso en efectivo solo aplica a ventas de contado");
+  }
+
   await withTransaction(async (c) => {
     for (const l of input.lineas) {
       await repo.incrementStock(c, l.productoId, l.cantidad);
@@ -519,9 +534,7 @@ export async function devolucion(
       });
     }
     await repo.reintegrarUsadosVenta(c, ventaId);
-    // Nota de crédito por el total devuelto: solo ventas de contado con cliente.
-    // (Una venta a crédito sin abonos se devuelve sin dinero cobrado; la CxC se excluye por estado devuelta.)
-    if (venta.tipo_pago === "contado" && venta.cliente_id && totalDevuelto > 0) {
+    if (tipo === "nota_credito" && venta.cliente_id && totalDevuelto > 0) {
       const folioNota = await repo.nextNotaCreditoFolio(c);
       await repo.insertNotaCredito(c, {
         folio: folioNota,
@@ -531,6 +544,18 @@ export async function devolucion(
         motivo: input.motivo ?? null,
         createdBy: user.id,
       });
+    } else if (tipo === "reembolso" && totalDevuelto > 0) {
+      // Reembolso en efectivo: egreso en la caja abierta del día (reduce el esperado del corte).
+      const cajaId = await repo.findCajaAbierta(c, user.id, today());
+      if (!cajaId) throw AppError.business("CAJA_NOT_OPEN", "Abre una caja para registrar el reembolso en efectivo");
+      await insertEgresoClient(c, {
+        concepto: `Reembolso venta ${venta.folio}`,
+        categoria: "Reembolso",
+        monto: totalDevuelto,
+        metodo: "efectivo",
+        usuarioId: user.id,
+        cajaId,
+      });
     }
     await repo.updateVentaEstado(c, ventaId, "devuelta");
   });
@@ -539,7 +564,7 @@ export async function devolucion(
     accion: "DEVOLUCION",
     entidad: "venta",
     entidadId: ventaId,
-    despues: { lineas: input.lineas, motivo: input.motivo ?? null, notaCredito: totalDevuelto },
+    despues: { lineas: input.lineas, motivo: input.motivo ?? null, tipo, monto: totalDevuelto },
   });
   return getById(ventaId);
 }
