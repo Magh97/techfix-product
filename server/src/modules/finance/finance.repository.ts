@@ -46,14 +46,6 @@ export function cerrarCaja(id: number, efectivoFisico: number, diferencia: numbe
   ).then((r) => r.rows[0]);
 }
 
-export function sumVentasPorMetodo(cajaId: number) {
-  return query<{ metodo_pago: string; total: string }>(
-    `SELECT metodo_pago, COALESCE(SUM(total - parte_de_pago),0)::numeric AS total FROM ventas
-     WHERE caja_id = $1 AND estado IN ('completada','credito_pendiente') GROUP BY metodo_pago`,
-    [cajaId]
-  ).then((r) => r.rows);
-}
-
 export function sumPartesDePago(cajaId: number) {
   return query<{ total: string }>(
     `SELECT COALESCE(SUM(parte_de_pago),0)::numeric AS total FROM ventas

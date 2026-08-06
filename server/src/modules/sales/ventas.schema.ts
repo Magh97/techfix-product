@@ -20,6 +20,16 @@ export const crearVentaSchema = z.object({
   metodoPago: z.enum(["efectivo", "tarjeta_credito", "tarjeta_debito", "transferencia", "deposito"]).optional(),
   plazoDias: z.number().int().positive().optional().nullable(),
   montoRecibido: z.number().nonnegative().optional().nullable(),
+  // Desglose de pago (pagos mixtos). Solo ventas de contado; la suma debe dar total − parte_de_pago.
+  pagos: z
+    .array(
+      z.object({
+        metodo: z.enum(["efectivo", "tarjeta_credito", "tarjeta_debito", "transferencia", "deposito"]),
+        monto: z.number().positive(),
+      })
+    )
+    .min(1)
+    .optional(),
   // Parte de pago en especie (equipo usado). Solo ventas de contado.
   partesDePago: z
     .array(
