@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { query } from "../../shared/db";
 
 export interface GarantiaRow {
@@ -69,4 +70,31 @@ export function findGarantiasPorVencer() {
   return query<GarantiaRow>(
     `${SELECT} WHERE g.fin >= CURRENT_DATE AND g.fin <= (CURRENT_DATE + 3) ORDER BY g.fin ASC`
   ).then((r) => r.rows);
+}
+
+/* --- Garantía por venta de producto (US-GAR-venta) --- */
+
+export function insertGarantiaVenta(
+  client: PoolClient,
+  data: { ventaId: number; clienteId: number; tipo: string; inicio: string; fin: string }
+) {
+  return client.query(
+    `INSERT INTO garantias (venta_id, cliente_id, tipo, inicio, fin) VALUES ($1,$2,$3,$4,$5)`,
+    [data.ventaId, data.clienteId, data.tipo, data.inicio, data.fin]
+  );
+}
+
+// Productos de la venta cuya categoría raíz es "Usado" (BR-US-01).
+// Recibe el client de la transacción: el detalle_venta aún no está commiteado.
+export function productosUsadosDeVenta(client: PoolClient, ventaId: number) {
+  return client
+    .query<{ producto_id: number }>(
+      `SELECT DISTINCT dv.producto_id
+       FROM detalle_venta dv
+       JOIN productos p ON p.id = dv.producto_id
+       WHERE dv.venta_id = $1 AND dv.producto_id IS NOT NULL
+         AND p.categoria_id IN (SELECT id FROM catalogos WHERE parent_id IS NULL AND nombre = 'Usado')`,
+      [ventaId]
+    )
+    .then((r) => r.rows.map((x) => x.producto_id));
 }

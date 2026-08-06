@@ -7,6 +7,8 @@ export interface BusinessConfig {
   descuentoVendedorMax: number;
   diasDevolucion: number;
   diasGarantiaServicio: number;
+  diasGarantiaProducto: number;
+  diasGarantiaUsado: number;
   toleranciaRetrasoDias: number;
 }
 
@@ -17,6 +19,8 @@ const DEFAULTS: BusinessConfig = {
   descuentoVendedorMax: 0.1,
   diasDevolucion: 15,
   diasGarantiaServicio: 30,
+  diasGarantiaProducto: 30,
+  diasGarantiaUsado: 15,
   toleranciaRetrasoDias: 1,
 };
 
@@ -27,6 +31,8 @@ export const CONFIG_KEYS: Record<string, keyof BusinessConfig> = {
   "ventas.descuento_vendedor_max": "descuentoVendedorMax",
   "ventas.dias_devolucion": "diasDevolucion",
   "servicios.dias_garantia": "diasGarantiaServicio",
+  "ventas.dias_garantia_producto": "diasGarantiaProducto",
+  "ventas.dias_garantia_usado": "diasGarantiaUsado",
   "ordenes.tolerancia_retraso_dias": "toleranciaRetrasoDias",
 };
 

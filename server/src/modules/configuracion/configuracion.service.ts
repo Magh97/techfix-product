@@ -15,6 +15,8 @@ const RANGOS: Record<string, Rango> = {
   "ventas.descuento_vendedor_max": { min: 0, max: 1 },
   "ventas.dias_devolucion": { min: 0, int: true },
   "servicios.dias_garantia": { min: 0, int: true },
+  "ventas.dias_garantia_producto": { min: 0, int: true },
+  "ventas.dias_garantia_usado": { min: 0, int: true },
   "ordenes.tolerancia_retraso_dias": { min: 0, int: true },
 };
 
