@@ -47,6 +47,7 @@ Muestra el resumen del día: ventas, órdenes en curso (incl. retrasadas), produ
 4. Aplica **descuento**: hasta 10% lo aplica cualquier vendedor; mayor a 10% requiere rol **admin** y motivo.
 5. Selecciona **contado** o **crédito** (para crédito necesitas cliente y respetar su límite/plazo).
 6. Registra el pago; se emite el **ticket** con formato térmico 80mm (Imprimir → elige la impresora). Si la venta es con **cliente**, el ticket indica la **garantía** de los productos vendidos.
+7. **Pagos mixtos**: en ventas de **contado** puedes dividir el pago en varios métodos (efectivo, tarjeta, transferencia, depósito) con el **Desglose de pago** — el ticket muestra cada método. Con fila de efectivo, captura el **efectivo entregado** para calcular el **cambio**. Atajos: "Todo efectivo" / "Todo tarjeta".
 7. **Parte de pago (equipo usado)**: en ventas de **contado** puedes aceptar un equipo usado como parte de pago desde el panel del carrito — captura nombre, valor que se acredita y precio de reventa. El **total a pagar** baja ese valor (contra el total con IVA); el usado entra a **Equipos usados** y el **corte de caja** lo excluye del efectivo (se muestra como "Partes de pago").
 
 ### Ventas (`/ventas`)

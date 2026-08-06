@@ -21,6 +21,7 @@ export interface RegistrarVentaInput {
   plazoDias?: number | null;
   montoRecibido?: number | null;
   partesDePago?: { nombre: string; marca?: string | null; modelo?: string | null; valor: number; precioVenta: number; observaciones?: string | null }[];
+  pagos?: { metodo: string; monto: number }[];
 }
 
 export interface ProductoVentaRow {

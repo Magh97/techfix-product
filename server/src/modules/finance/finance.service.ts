@@ -40,14 +40,13 @@ function mapCaja(c: repo.CajaRow) {
 }
 
 async function computarCaja(cajaId: number) {
-  const ventas = await repo.sumVentasPorMetodo(cajaId);
+  // Todo dinero recibido se registra en `pagos` (venta de contado al crear, abonos después).
   const abonos = await repo.sumAbonosPorMetodo(cajaId);
   const egresos = await repo.sumEgresosPorMetodo(cajaId);
   const partesDePago = await repo.sumPartesDePago(cajaId);
 
   const ingresosPorMetodo: Record<string, number> = {};
-  for (const v of ventas) ingresosPorMetodo[v.metodo_pago ?? "efectivo"] = toNum(v.total);
-  for (const p of abonos) ingresosPorMetodo[p.metodo] = (ingresosPorMetodo[p.metodo] ?? 0) + toNum(p.total);
+  for (const p of abonos) ingresosPorMetodo[p.metodo] = toNum(p.total);
 
   const egresosPorMetodo: Record<string, number> = {};
   for (const e of egresos) egresosPorMetodo[e.metodo] = toNum(e.total);

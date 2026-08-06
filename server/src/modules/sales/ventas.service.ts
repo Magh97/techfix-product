@@ -39,6 +39,7 @@ export interface VentaDTO {
   parteDePago: number;
   totalAPagar: number;
   usadosCreados: { productoId: number; nombre: string; valor: number }[];
+  pagos: { metodo: string; monto: number }[];
 }
 
 export async function registrarVenta(
@@ -143,10 +144,34 @@ export async function registrarVenta(
       }
     }
     const totalAPagar = Math.max(0, mon.total - parteDePago);
-    const recibido = input.tipoPago === "contado" && input.metodoPago === "efectivo" ? (input.montoRecibido ?? totalAPagar) : null;
-    if (recibido !== null && recibido < totalAPagar) {
-      throw AppError.business("PAYMENT_INVALID", `El efectivo recibido (${recibido}) es menor al total a pagar (${totalAPagar})`);
+
+    // Desglose de pago (pagos mixtos): todo dinero recibido se registra en `pagos`.
+    if (input.pagos?.length && input.tipoPago !== "contado") {
+      throw AppError.business("PAGOS_INVALIDOS", "El desglose de pagos solo aplica en ventas de contado");
     }
+    let detallePagos: { metodo: string; monto: number }[];
+    if (input.tipoPago === "contado") {
+      if (input.pagos?.length) {
+        if (input.pagos.length > 5) throw AppError.business("PAGOS_INVALIDOS", "Máximo 5 métodos de pago por venta");
+        const suma = input.pagos.reduce((a, p) => a + p.monto, 0);
+        if (Math.abs(suma - totalAPagar) > 0.01) {
+          throw AppError.business("PAGOS_INVALIDOS", `La suma del desglose (${suma}) debe ser igual al total a pagar (${totalAPagar})`);
+        }
+        detallePagos = input.pagos.map((p) => ({ metodo: p.metodo, monto: p.monto }));
+      } else {
+        detallePagos = [{ metodo: input.metodoPago ?? "efectivo", monto: totalAPagar }];
+      }
+    } else {
+      detallePagos = [];
+    }
+
+    const efectivoPortion = detallePagos.filter((p) => p.metodo === "efectivo").reduce((a, p) => a + p.monto, 0);
+    const recibido = efectivoPortion > 0 ? (input.montoRecibido ?? efectivoPortion) : null;
+    if (recibido !== null && recibido < efectivoPortion) {
+      throw AppError.business("PAYMENT_INVALID", `El efectivo recibido (${recibido}) es menor a la porción en efectivo (${efectivoPortion})`);
+    }
+    const cambio = efectivoPortion > 0 ? Math.max(0, (recibido ?? 0) - efectivoPortion) : 0;
+    const metodoPrimario = detallePagos[0]?.metodo ?? input.metodoPago ?? null;
 
     let fechaVencimiento: string | null = null;
     let plazoDias: number | null = null;
@@ -175,7 +200,7 @@ export async function registrarVenta(
       descuento: mon.descuento,
       motivoDescuento: descuento > 0 ? (input.motivoDescuento ?? "Autorizado en caja") : null,
       tipoPago: input.tipoPago,
-      metodoPago: input.metodoPago ?? null,
+      metodoPago: metodoPrimario,
       plazoDias: input.tipoPago === "credito" ? plazoDias : null,
       fechaVencimiento,
       montoRecibido: recibido,
@@ -184,6 +209,11 @@ export async function registrarVenta(
     });
     if (!ventaId) throw AppError.business("INTERNAL_ERROR", "No se pudo registrar la venta");
     await repo.insertDetalleVenta(c, ventaId, lineasDetalle);
+
+    // Registrar el desglose de pagos (todo dinero recibido en la venta)
+    for (const p of detallePagos) {
+      await repo.insertPago(c, { ventaId, monto: p.monto, metodo: p.metodo, usuarioId: user.id, cajaId });
+    }
 
     // Crear los usados recibidos como parte de pago (en la misma transacción)
     const usadosCreados: { productoId: number; nombre: string; valor: number }[] = [];
@@ -253,12 +283,13 @@ export async function registrarVenta(
       metodoPago: input.metodoPago ?? null,
       fechaVencimiento,
       estado: "completada",
-      cambio: input.tipoPago === "contado" && input.metodoPago === "efectivo" ? Math.max(0, (recibido ?? totalAPagar) - totalAPagar) : 0,
+      cambio,
       lineas: lineasDetalle,
       garantias,
       parteDePago,
       totalAPagar,
       usadosCreados,
+      pagos: detallePagos,
     };
   };
 
