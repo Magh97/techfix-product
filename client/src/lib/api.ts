@@ -26,6 +26,7 @@ import type {
   ImportResult,
   LoginResponse,
   Movimiento,
+  NotaCredito,
   NotificacionHistorial,
   OrdenServicio,
   Paginated,
@@ -252,6 +253,7 @@ export const clientesApi = {
     }>(`/clientes/${id}/historial`),
   cxc: (id: number) =>
     api<{ data: { limiteCredito: number; saldoTotal: number; items: { ventaId: number; folio: string; total: number; saldo: number; fechaVencimiento: string | null; estado: string }[] } }>(`/clientes/${id}/cxc`),
+  notasCredito: (id: number) => api<{ data: NotaCredito[] }>(`/clientes/${id}/notas-credito`),
 };
 
 export const ventasApi = {

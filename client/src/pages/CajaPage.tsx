@@ -72,7 +72,10 @@ export default function CajaPage() {
             {(corte?.data.partesDePago ?? 0) > 0 && (
               <div className="flex justify-between text-warning"><span>Partes de pago (usados)</span><span>{mxn(corte!.data.partesDePago)}</span></div>
             )}
-            {Object.keys(corte?.data.ingresosPorMetodo ?? {}).length === 0 && (corte?.data.partesDePago ?? 0) === 0 && <p className="text-muted">Sin ventas.</p>}
+            {(corte?.data.notasCredito ?? 0) > 0 && (
+              <div className="flex justify-between text-primary"><span>Notas de crédito</span><span>{mxn(corte!.data.notasCredito)}</span></div>
+            )}
+            {Object.keys(corte?.data.ingresosPorMetodo ?? {}).length === 0 && (corte?.data.partesDePago ?? 0) === 0 && (corte?.data.notasCredito ?? 0) === 0 && <p className="text-muted">Sin ventas.</p>}
           </CardBody>
         </Card>
         <Card>

@@ -34,6 +34,7 @@ export default function ClienteDetallePage() {
   const { data: historial } = useQuery({ queryKey: ["cliente-historial", clienteId], queryFn: () => clientesApi.historial(clienteId) });
   const { data: cxc } = useQuery({ queryKey: ["cliente-cxc", clienteId], queryFn: () => clientesApi.cxc(clienteId) });
   const { data: usados } = useQuery({ queryKey: ["cliente-usados", clienteId], queryFn: () => usadosApi.list({ clienteId, pageSize: 50 }) });
+  const { data: notas } = useQuery({ queryKey: ["cliente-notas-credito", clienteId], queryFn: () => clientesApi.notasCredito(clienteId) });
 
   const pagar = useMutation({
     mutationFn: () => ventasApi.pagar(abono!.ventaId, { monto: Number(monto), metodo: "efectivo" }),
@@ -148,6 +149,28 @@ export default function ClienteDetallePage() {
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">{mxn(u.valorTradeIn)}</span>
                   <Badge variant={u.estado === "disponible" ? "success" : "default"}>{u.estado}</Badge>
+                </div>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Notas de crédito</CardTitle></CardHeader>
+          <CardBody className="space-y-2 text-sm">
+            {(notas?.data.length ?? 0) === 0 && <p className="text-muted">Sin notas de crédito.</p>}
+            {notas?.data.map((n) => (
+              <div key={n.id} className="flex items-center justify-between gap-2 rounded-md border border-border-line px-3 py-2">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs font-semibold">{n.folio}</p>
+                  <p className="text-xs text-muted">
+                    {n.ventaOrigenFolio ? `Origen: venta ${n.ventaOrigenFolio}` : "Devolución"}
+                    {n.motivo ? ` · ${n.motivo}` : ""}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{mxn(n.saldo)}</span>
+                  {n.saldo > 0 && <Badge variant="success">activa</Badge>}
                 </div>
               </div>
             ))}

@@ -340,6 +340,7 @@ export interface Venta {
   createdAt?: string;
   garantias?: { tipo: string; inicio: string; fin: string }[];
   parteDePago?: number;
+  notaCredito?: number;
   totalAPagar?: number;
   usadosCreados?: { productoId: number; nombre: string; valor: number }[];
   pagos?: { metodo: string; monto: number }[];
@@ -357,6 +358,17 @@ export interface CreateVenta {
   montoRecibido?: number | null;
   partesDePago?: { nombre: string; marca?: string | null; modelo?: string | null; valor: number; precioVenta: number; observaciones?: string | null }[];
   pagos?: { metodo: string; monto: number }[];
+  notaCreditoId?: number | null;
+}
+
+export interface NotaCredito {
+  id: number;
+  folio: string;
+  montoOriginal: number;
+  saldo: number;
+  ventaOrigenFolio: string | null;
+  motivo: string | null;
+  createdAt: string;
 }
 
 export interface Caja {
@@ -378,6 +390,7 @@ export interface Corte {
   egresos: number;
   esperadoEfectivo: number;
   partesDePago: number;
+  notasCredito: number;
 }
 
 export interface CxcItem {
