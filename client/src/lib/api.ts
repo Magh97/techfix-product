@@ -267,7 +267,7 @@ export const ventasApi = {
   },
   get: (id: number) => api<{ data: Venta }>(`/ventas/${id}`),
   getByFolio: (folio: string) => api<{ data: Venta }>(`/ventas/por-folio/${encodeURIComponent(folio)}`),
-  pagar: (id: number, input: { monto: number; metodo: string }) =>
+  pagar: (id: number, input: { monto: number; metodo: string } | { pagos: { metodo: string; monto: number }[] }) =>
     api<{ data: unknown }>(`/ventas/${id}/pagos`, { method: "POST", body: JSON.stringify(input) }),
   cancelar: (id: number, motivo: string) => api<{ data: Venta }>(`/ventas/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),
   devolucion: (id: number, lineas: { productoId: number; cantidad: number }[], motivo?: string) =>

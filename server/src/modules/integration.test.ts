@@ -704,6 +704,80 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(item.saldo).toBeCloseTo(venta.body.data.total - 40, 2);
   });
 
+  it("POS: abono mixto en crédito divide el pago en varios métodos y completa la venta", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const cliente = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('CxC Mixto', '5550001111', 5000, 30) RETURNING id"
+    );
+    const clienteId = cliente.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `MIX-${Date.now()}`, nombre: "Prod abono mixto", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito" });
+    const ventaId = venta.body.data.id;
+    const total = venta.body.data.total; // 116
+
+    // Abono mixto: efectivo 60 + tarjeta 56 = 116 (completa la venta)
+    const abono = await request(app)
+      .post(`/api/v1/ventas/${ventaId}/pagos`)
+      .set(auth)
+      .send({ pagos: [{ metodo: "efectivo", monto: 60 }, { metodo: "tarjeta_credito", monto: 56 }] });
+    expect(abono.status).toBe(200);
+    expect(abono.body.data.saldoPendiente).toBe(0);
+
+    const pagos = await pool.query<{ metodo: string; monto: string }>("SELECT metodo, monto FROM pagos WHERE venta_id = $1 ORDER BY id", [ventaId]);
+    expect(pagos.rows).toHaveLength(2);
+    expect(pagos.rows[0]?.metodo).toBe("efectivo");
+    expect(pagos.rows[1]?.metodo).toBe("tarjeta_credito");
+    expect(Number(pagos.rows[0]?.monto) + Number(pagos.rows[1]?.monto)).toBeCloseTo(total, 2);
+
+    const estado = await pool.query<{ estado: string }>("SELECT estado FROM ventas WHERE id = $1", [ventaId]);
+    expect(estado.rows[0]?.estado).toBe("completada");
+  });
+
+  it("POS: abono mixto inválido (suma != monto o mezcla con monto) → 400/422", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const cliente = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('CxC Mixto Inválido', '5550002222', 5000, 30) RETURNING id"
+    );
+    const clienteId = cliente.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `MIXI-${Date.now()}`, nombre: "Prod mixto inválido", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito" });
+    const ventaId = venta.body.data.id;
+
+    // Suma del desglose (200) > pendiente (116)
+    const sobre = await request(app)
+      .post(`/api/v1/ventas/${ventaId}/pagos`)
+      .set(auth)
+      .send({ pagos: [{ metodo: "efectivo", monto: 100 }, { metodo: "tarjeta_credito", monto: 100 }] });
+    expect(sobre.status).toBe(422);
+    expect(sobre.body.error.code).toBe("PAYMENT_INVALID");
+
+    // Mezclar monto con pagos → VALIDATION_ERROR
+    const mezcla = await request(app)
+      .post(`/api/v1/ventas/${ventaId}/pagos`)
+      .set(auth)
+      .send({ monto: 50, metodo: "efectivo", pagos: [{ metodo: "efectivo", monto: 50 }] });
+    expect(mezcla.status).toBe(400);
+    expect(mezcla.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
   it("POS: cancelar venta revierte el stock", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const prod = await request(app)

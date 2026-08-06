@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import DesglosePago from "@/components/DesglosePago";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -22,17 +23,28 @@ export default function FinanzasPage() {
   const [egreso, setEgreso] = useState({ concepto: "", categoria: "Operativo", monto: "", metodo: "efectivo" });
   const [abono, setAbono] = useState<{ ventaId: number; folio: string; saldo: number } | null>(null);
   const [monto, setMonto] = useState("0");
+  const [pagosAbono, setPagosAbono] = useState<{ metodo: string; monto: string }[]>([]);
   const [pagoProv, setPagoProv] = useState<{ compraId: number; folio: string; saldo: number } | null>(null);
   const [montoProv, setMontoProv] = useState("0");
   const [metodoProv, setMetodoProv] = useState("transferencia");
+
+  const desgloseAbonoOk =
+    pagosAbono.length === 0 ||
+    (pagosAbono.every((p) => (Number(p.monto) || 0) > 0) && Math.abs(pagosAbono.reduce((a, p) => a + (Number(p.monto) || 0), 0) - Number(monto)) < 0.01);
 
   const { data: cxc } = useQuery({ queryKey: ["finanzas-cxc"], queryFn: finanzasApi.cxc });
   const { data: cxp } = useQuery({ queryKey: ["finanzas-cxp"], queryFn: comprasApi.cxp });
   const { data: egresos } = useQuery({ queryKey: ["finanzas-egresos"], queryFn: finanzasApi.egresos });
 
   const pagar = useMutation({
-    mutationFn: () => ventasApi.pagar(abono!.ventaId, { monto: Number(monto), metodo: "efectivo" }),
-    onSuccess: () => { toast.success("Abono registrado"); setAbono(null); qc.invalidateQueries({ queryKey: ["finanzas-cxc"] }); },
+    mutationFn: () =>
+      ventasApi.pagar(
+        abono!.ventaId,
+        pagosAbono.length
+          ? { pagos: pagosAbono.map((p) => ({ metodo: p.metodo, monto: Number(p.monto) })) }
+          : { monto: Number(monto), metodo: "efectivo" }
+      ),
+    onSuccess: () => { toast.success("Abono registrado"); setAbono(null); setPagosAbono([]); qc.invalidateQueries({ queryKey: ["finanzas-cxc"] }); },
     onError: (e) => toast.error("Error", e instanceof Error ? e.message : ""),
   });
 
@@ -109,7 +121,7 @@ export default function FinanzasPage() {
                       <Badge variant={i.estado === "vencido" ? "danger" : i.estado === "pagado" ? "success" : "warning"}>{i.estado}</Badge>
                     </TD>
                     <TD className="text-right">
-                      {i.saldo > 0 && <Button size="sm" variant="outline" onClick={() => { setAbono({ ventaId: i.ventaId, folio: i.folio, saldo: i.saldo }); setMonto(String(i.saldo)); }}>Abonar</Button>}
+                      {i.saldo > 0 && <Button size="sm" variant="outline" onClick={() => { setAbono({ ventaId: i.ventaId, folio: i.folio, saldo: i.saldo }); setMonto(String(i.saldo)); setPagosAbono([]); }}>Abonar</Button>}
                     </TD>
                   </TR>
                 ))}
@@ -143,9 +155,10 @@ export default function FinanzasPage() {
         <div className="space-y-3">
           <div><Label>Monto</Label><Input type="number" min={0.01} max={abono?.saldo} value={monto} onChange={(e) => setMonto(e.target.value)} /></div>
           <p className="text-xs text-muted">Saldo: {abono ? mxn(abono.saldo) : ""}</p>
+          <DesglosePago pagos={pagosAbono} onChange={setPagosAbono} />
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setAbono(null)}>Cancelar</Button>
-            <Button disabled={pagar.isPending} onClick={() => pagar.mutate()}>Abonar</Button>
+            <Button disabled={pagar.isPending || desgloseAbonoOk === false} onClick={() => pagar.mutate()}>Abonar</Button>
           </div>
         </div>
       </Dialog>

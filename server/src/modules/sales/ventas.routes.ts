@@ -63,7 +63,7 @@ ventasRouter.post(
   validate(pagoSchema),
   async (req: AuthedRequest, res) => {
     const { ventaId } = getValidated<{ ventaId: number }>(req, "params");
-    const body = getValidated<{ monto: number; metodo: string }>(req, "body");
+    const body = getValidated<{ monto?: number; metodo?: string; pagos?: { metodo: string; monto: number }[] }>(req, "body");
     ok(res, await service.registrarAbono(ventaId, body, req.user!));
   }
 );
