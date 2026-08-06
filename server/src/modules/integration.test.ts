@@ -911,6 +911,178 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(Number(despues.rows[0]?.stock)).toBe(1);
   });
 
+  it("NOTA CRÉDITO: devolver contado con cliente genera nota por el total devuelto", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const cliente = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('NC Devolución', '5550000777', 5000, 30) RETURNING id"
+    );
+    const clienteId = cliente.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `NCD-${Date.now()}`, nombre: "Prod nota devolución", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 2 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const ventaId = venta.body.data.id;
+
+    // Devolución de 1 unidad → nota de crédito por el precio unitario (100)
+    const dev = await request(app)
+      .post(`/api/v1/ventas/${ventaId}/devolucion`)
+      .set(auth)
+      .send({ lineas: [{ productoId, cantidad: 1 }], motivo: "Cliente devolvió" });
+    expect(dev.status).toBe(200);
+
+    const notas = await request(app).get(`/api/v1/clientes/${clienteId}/notas-credito`).set(auth);
+    expect(notas.status).toBe(200);
+    expect(notas.body.data).toHaveLength(1);
+    expect(notas.body.data[0].montoOriginal).toBe(100);
+    expect(notas.body.data[0].saldo).toBe(100);
+    expect(notas.body.data[0].folio).toMatch(/^NC-/);
+    expect(notas.body.data[0].ventaOrigenFolio).toBe(venta.body.data.folio);
+  });
+
+  it("NOTA CRÉDITO: devolver a mostrador o venta a crédito sin abonos no genera nota", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const cliente = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('NC Mostrador', '5550000666', 5000, 30) RETURNING id"
+    );
+    const clienteId = cliente.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `NCM-${Date.now()}`, nombre: "Prod nota mostrador", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+
+    // Mostrador (sin cliente)
+    const mostrador = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const mostradorId = mostrador.body.data.id;
+    await request(app).post(`/api/v1/ventas/${mostradorId}/devolucion`).set(auth).send({ lineas: [{ productoId, cantidad: 1 }] });
+
+    // Crédito sin abonos
+    const credito = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito" });
+    const creditoId = credito.body.data.id;
+    await request(app).post(`/api/v1/ventas/${creditoId}/devolucion`).set(auth).send({ lineas: [{ productoId, cantidad: 1 }] });
+
+    const notas = await request(app).get(`/api/v1/clientes/${clienteId}/notas-credito`).set(auth);
+    expect(notas.body.data).toHaveLength(0);
+  });
+
+  it("NOTA CRÉDITO: aplicar nota en venta reduce totalAPagar y decrementa saldo", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const cliente = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('NC Aplica', '5550000555', 5000, 30) RETURNING id"
+    );
+    const clienteId = cliente.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `NCA-${Date.now()}`, nombre: "Prod nota aplica", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+
+    // Crear la nota vía devolución (venta 1 = 200, devuelve 1 de 2 → nota 100)
+    const v1 = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 2 }], tipoPago: "contado", metodoPago: "efectivo" });
+    const v1Id = v1.body.data.id;
+    await request(app).post(`/api/v1/ventas/${v1Id}/devolucion`).set(auth).send({ lineas: [{ productoId, cantidad: 1 }] });
+    const nota = (await request(app).get(`/api/v1/clientes/${clienteId}/notas-credito`).set(auth)).body.data[0];
+
+    // Venta 2 = 116 (100 + IVA) con nota de 100 → se paga solo el resto (16)
+    const v2 = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", notaCreditoId: nota.id });
+    expect(v2.status).toBe(201);
+    expect(v2.body.data.notaCredito).toBe(100);
+    expect(v2.body.data.totalAPagar).toBeCloseTo(16, 2);
+    expect(v2.body.data.pagos).toHaveLength(1);
+    expect(v2.body.data.pagos[0].monto).toBeCloseTo(16, 2);
+
+    const restantes = (await request(app).get(`/api/v1/clientes/${clienteId}/notas-credito`).set(auth)).body.data;
+    expect(restantes).toHaveLength(0);
+  });
+
+  it("NOTA CRÉDITO: nota ajena y sin saldo se rechazan", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const c1 = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('NC Ajeno', '5550000444', 5000, 30) RETURNING id"
+    );
+    const c2 = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('NC Dueño', '5550000333', 5000, 30) RETURNING id"
+    );
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `NCX-${Date.now()}`, nombre: "Prod nota ajena", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+
+    // Nota para c2 (100)
+    const v = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId: c2.rows[0]!.id, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    await request(app).post(`/api/v1/ventas/${v.body.data.id}/devolucion`).set(auth).send({ lineas: [{ productoId, cantidad: 1 }] });
+    const nota = (await request(app).get(`/api/v1/clientes/${c2.rows[0]!.id}/notas-credito`).set(auth)).body.data[0];
+
+    // Aplicarla con otro cliente
+    const ajeno = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId: c1.rows[0]!.id, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "contado", notaCreditoId: nota.id });
+    expect(ajeno.status).toBe(422);
+    expect(ajeno.body.error.code).toBe("NOTA_CREDITO_INVALIDA");
+
+    // Aplicarla en venta a crédito
+    const credito = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId: c2.rows[0]!.id, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito", notaCreditoId: nota.id });
+    expect(credito.status).toBe(422);
+    expect(credito.body.error.code).toBe("NOTA_CREDITO_INVALIDA");
+  });
+
+  it("NOTA CRÉDITO: venta a crédito devuelta sale de la CxC", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const cliente = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, limite_credito, plazo_credito_dias) VALUES ('NC CxC', '5550000222', 5000, 30) RETURNING id"
+    );
+    const clienteId = cliente.rows[0]!.id;
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `NCQ-${Date.now()}`, nombre: "Prod nota cxc", precioCompra: 5, precioVenta: 100 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId, lineas: [{ tipo: "producto", productoId, cantidad: 1 }], tipoPago: "credito" });
+    const ventaId = venta.body.data.id;
+    expect((await request(app).get(`/api/v1/clientes/${clienteId}/cxc`).set(auth)).body.data.saldoTotal).toBeGreaterThan(0);
+
+    await request(app).post(`/api/v1/ventas/${ventaId}/devolucion`).set(auth).send({ lineas: [{ productoId, cantidad: 1 }] });
+
+    const cxc = await request(app).get(`/api/v1/clientes/${clienteId}/cxc`).set(auth);
+    expect(cxc.body.data.items).toHaveLength(0);
+    expect(cxc.body.data.saldoTotal).toBe(0);
+  });
+
   it("CAJA: corte y cierre con arqueo", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const actual = await request(app).get("/api/v1/caja/actual").set(auth);
