@@ -788,6 +788,7 @@ cajas                 idx_cajas_usuario_fecha            (usuario_id, fecha)    
 - **CxC/CxP derivadas:** no hay tablas de saldos; el saldo = `total − Σ pagos`, con `fecha_vencimiento` para detectar vencidos. Evita doble fuente de verdad.
 - **Recepción parcial:** `detalle_compra.cantidad_recibida` acumula lo recibido por línea y `compras.total_recibido` es la base de la CxP; la OC pasa a `recibida` solo cuando todas las líneas están completas (migración `0012`).
 - **Equipos usados:** el usado es un `producto` bajo la raíz "Usado" + metadatos en `equipos_usados` (origen, cliente, valor de parte de pago); el estado es derivado del stock (migración `0013`).
+- **Garantías por venta:** `garantias` también se crea al vender productos con cliente (una por producto distinto: `producto_nuevo` 30d / `usado` 15d) con `venta_id`; la de servicio se crea en la entrega de reparación (BR-GAR-06).
 - **Límite de crédito default:** `clientes.limite_credito` = $3,000 MXN al crear el cliente; se amplía individualmente (BR-CRE-01).
 - **Firma de recepción:** `ordenes_servicio.firma_recepcion` guarda el PNG (base64) de la firma capturada en canvas táctil (BR-SER-01).
 - **Soft delete:** `is_active` en usuarios, clientes, productos, proveedores. Ordenes/ventas/movimientos nunca se eliminan (BR-DAT-02/03).
