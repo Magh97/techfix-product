@@ -1688,6 +1688,75 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(enCredito.body.error.code).toBe("PAGOS_INVALIDOS");
   });
 
+  it("QUEJAS: crear queja y reclamación (la reclamación exige garantía del cliente)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const a = (await pool.query<{ id: number }>("INSERT INTO clientes (nombre, telefono) VALUES ($1,$2) RETURNING id", [`Cliente Queja ${suf}`, `62${suf}`.slice(0, 10)])).rows[0]!.id;
+    const b = (await pool.query<{ id: number }>("INSERT INTO clientes (nombre, telefono) VALUES ($1,$2) RETURNING id", [`Otro Cliente ${suf}`, `63${suf}`.slice(0, 10)])).rows[0]!.id;
+    const g = (await pool.query<{ id: number }>("INSERT INTO garantias (cliente_id, tipo, inicio, fin) VALUES ($1,'servicio',CURRENT_DATE,CURRENT_DATE+10) RETURNING id", [a])).rows[0]!.id;
+
+    const queja = await request(app).post("/api/v1/quejas").set(auth).send({ clienteId: a, tipo: "queja", descripcion: "Atención lenta" });
+    expect(queja.status).toBe(201);
+    expect(queja.body.data.estado).toBe("abierta");
+
+    const reclamacion = await request(app)
+      .post("/api/v1/quejas")
+      .set(auth)
+      .send({ clienteId: a, tipo: "reclamacion_garantia", garantiaId: g, descripcion: "No cubre la falla" });
+    expect(reclamacion.status).toBe(201);
+    expect(reclamacion.body.data.garantiaId).toBe(g);
+
+    const sinGarantia = await request(app)
+      .post("/api/v1/quejas")
+      .set(auth)
+      .send({ clienteId: a, tipo: "reclamacion_garantia", descripcion: "Sin garantía" });
+    expect(sinGarantia.status).toBe(422);
+    expect(sinGarantia.body.error.code).toBe("GARANTIA_REQUERIDA");
+
+    const garantiaAjeno = await request(app)
+      .post("/api/v1/quejas")
+      .set(auth)
+      .send({ clienteId: b, tipo: "reclamacion_garantia", garantiaId: g, descripcion: "Garantía de otro" });
+    expect(garantiaAjeno.status).toBe(422);
+    expect(garantiaAjeno.body.error.code).toBe("GARANTIA_INVALIDA");
+
+    // Sin token → 401
+    const sinAuth = await request(app).get("/api/v1/quejas");
+    expect(sinAuth.status).toBe(401);
+  });
+
+  it("QUEJAS: listado con filtros, en historial del cliente y resolver exige resolución", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const a = (await pool.query<{ id: number }>("INSERT INTO clientes (nombre, telefono) VALUES ($1,$2) RETURNING id", [`Cliente Queja2 ${suf}`, `64${suf}`.slice(0, 10)])).rows[0]!.id;
+    const q = (await request(app).post("/api/v1/quejas").set(auth).send({ clienteId: a, tipo: "queja", descripcion: `Falla ${suf}` })).body.data;
+
+    const lista = await request(app).get(`/api/v1/quejas?clienteId=${a}`).set(auth);
+    expect(lista.status).toBe(200);
+    expect(lista.body.data.some((x: { id: number }) => x.id === q.id)).toBe(true);
+
+    const historial = await request(app).get(`/api/v1/clientes/${a}/historial`).set(auth);
+    expect(historial.body.data.quejas.some((x: { id: number }) => x.id === q.id)).toBe(true);
+
+    // Resolver sin resolución → 422
+    const sinResolucion = await request(app).post(`/api/v1/quejas/${q.id}/estado`).set(auth).send({ estado: "resuelta" });
+    expect(sinResolucion.status).toBe(422);
+    expect(sinResolucion.body.error.code).toBe("RESOLUCION_REQUERIDA");
+
+    // en_proceso → resuelta con resolución
+    await request(app).post(`/api/v1/quejas/${q.id}/estado`).set(auth).send({ estado: "en_proceso" });
+    const resuelta = await request(app).post(`/api/v1/quejas/${q.id}/estado`).set(auth).send({ estado: "resuelta", resolucion: "Se reemplazó el componente" });
+    expect(resuelta.status).toBe(200);
+    expect(resuelta.body.data.estado).toBe("resuelta");
+    expect(resuelta.body.data.resolucion).toBe("Se reemplazó el componente");
+    expect(resuelta.body.data.resueltaPorNombre).toBe("Administrador");
+
+    // Transición inválida desde resuelta → 409
+    const reabrir = await request(app).post(`/api/v1/quejas/${q.id}/estado`).set(auth).send({ estado: "en_proceso" });
+    expect(reabrir.status).toBe(409);
+    expect(reabrir.body.error.code).toBe("ESTADO_INVALIDO");
+  });
+
   it("DASHBOARD: resumen devuelve la estructura esperada", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const res = await request(app).get("/api/v1/dashboard/resumen").set(auth);
