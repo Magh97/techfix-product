@@ -72,7 +72,7 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 ## Ventas / POS
 | Method | Path | Auth | Request | Response |
 |--------|------|------|---------|----------|
-| GET / POST | /ventas | JWT | ?page&fechaDesde&fechaHasta&vendedorId / {clienteId?, lineas[], tipoPago, metodoPago?, descuento?, ordenId?} | lista / 201 venta + ticket + garantias[{tipo, inicio, fin}] (por producto distinto si hay cliente) |
+| GET / POST | /ventas | JWT | ?page&fechaDesde&fechaHasta&vendedorId / {clienteId?, lineas[], tipoPago, metodoPago?, descuento?, ordenId?, partesDePago?: [{nombre, valor, precioVenta}]} (parte de pago solo contado) | lista / 201 venta + ticket + garantias + parteDePago + totalAPagar + usadosCreados |
 | GET | /ventas/:id · /por-folio/:folio | JWT | -- | venta + líneas + pagos |
 | POST | /ventas/:id/pagos · /cancelar · /devolucion | JWT | {monto, metodo} / {motivo} / {lineas[], reembolsoMetodo?} | pago / venta / devolución |
 | GET / POST | /cotizaciones-venta | JWT | ?page&estado / {clienteId, lineas[], vigenciaDias?, descuento?} | lista / 201 |

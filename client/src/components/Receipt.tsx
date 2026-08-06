@@ -66,6 +66,18 @@ export default function Receipt({ venta, reimpresion = false }: { venta: Venta; 
           <span>Total</span>
           <span>{mxn(venta.total)}</span>
         </div>
+        {typeof venta.parteDePago === "number" && venta.parteDePago > 0 && (
+          <div className="flex justify-between gap-2">
+            <span>Parte de pago (usados)</span>
+            <span>-{mxn(venta.parteDePago)}</span>
+          </div>
+        )}
+        {typeof venta.parteDePago === "number" && venta.parteDePago > 0 && (
+          <div className="flex justify-between gap-2 font-bold">
+            <span>Total a pagar</span>
+            <span>{mxn(venta.totalAPagar ?? venta.total - venta.parteDePago)}</span>
+          </div>
+        )}
         {typeof venta.cambio === "number" && venta.cambio > 0 && (
           <div className="flex justify-between gap-2">
             <span>Cambio</span>

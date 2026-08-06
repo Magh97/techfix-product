@@ -578,6 +578,7 @@ TABLE ventas {
   plazo_dias      INT CHECK(plazo_dias > 0)
   fecha_vencimiento DATE
   monto_recibido  NUMERIC(19,4)
+  parte_de_pago   NUMERIC(19,4) NOT NULL DEFAULT 0 CHECK(parte_de_pago >= 0)  -- trade-in en especie (reduce efectivo a recibir)
   estado          estado_venta NOT NULL DEFAULT 'completada'
   caja_id         INTEGER FK→cajas.id ON DELETE RESTRICT
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -668,6 +669,7 @@ TABLE equipos_usados {
   producto_id       INTEGER NOT NULL UNIQUE FK→productos.id ON DELETE CASCADE  -- el usado ES un producto (raíz "Usado")
   cliente_origen_id INTEGER FK→clientes.id ON DELETE SET NULL
   orden_id          INTEGER FK→ordenes_servicio.id ON DELETE SET NULL
+  venta_id          INTEGER FK→ventas.id ON DELETE SET NULL  -- venta donde se recibió como parte de pago
   valor_trade_in    NUMERIC(19,4) NOT NULL DEFAULT 0 CHECK(valor_trade_in >= 0)
   origen            VARCHAR(20) NOT NULL DEFAULT 'otro' CHECK(origen IN ('parte_de_pago','reparacion','otro'))
   observaciones     TEXT
@@ -760,6 +762,7 @@ sustituciones         idx_sustituciones_orden            (orden_id)             
 solicitudes_reabastecimiento idx_solicitudes_estado       (estado)                                   B-tree    cola de aprobación admin
 solicitudes_reabastecimiento idx_solicitudes_producto     (producto_id)                              B-tree    "Ya en OC" y entregada al recibir
 equipos_usados        idx_equipos_usados_estado           (origen)                                  B-tree    filtro por origen de usados
+equipos_usados        idx_equipos_usados_venta            (venta_id)                                B-tree    trade-ins por venta
 cotizaciones          idx_cotizaciones_vigencia          (vigencia_hasta) WHERE estado='emitida'    PARTIAL   expiración automática
 detalle_orden         idx_detalle_orden_orden            (orden_id)                                 B-tree    JOIN orden→piezas
 detalle_orden         idx_detalle_orden_reserva          (producto_id) WHERE estado_linea='reservada' PARTIAL  validación de reservas vs stock
@@ -789,6 +792,7 @@ cajas                 idx_cajas_usuario_fecha            (usuario_id, fecha)    
 - **Recepción parcial:** `detalle_compra.cantidad_recibida` acumula lo recibido por línea y `compras.total_recibido` es la base de la CxP; la OC pasa a `recibida` solo cuando todas las líneas están completas (migración `0012`).
 - **Equipos usados:** el usado es un `producto` bajo la raíz "Usado" + metadatos en `equipos_usados` (origen, cliente, valor de parte de pago); el estado es derivado del stock (migración `0013`).
 - **Garantías por venta:** `garantias` también se crea al vender productos con cliente (una por producto distinto: `producto_nuevo` 30d / `usado` 15d) con `venta_id`; la de servicio se crea en la entrega de reparación (BR-GAR-06).
+- **Parte de pago (trade-in):** `ventas.parte_de_pago` registra el valor aceptado en especie y `equipos_usados.venta_id` lo vincula a la venta; el corte de caja excluye el trade-in del efectivo (migración `0014`).
 - **Límite de crédito default:** `clientes.limite_credito` = $3,000 MXN al crear el cliente; se amplía individualmente (BR-CRE-01).
 - **Firma de recepción:** `ordenes_servicio.firma_recepcion` guarda el PNG (base64) de la firma capturada en canvas táctil (BR-SER-01).
 - **Soft delete:** `is_active` en usuarios, clientes, productos, proveedores. Ordenes/ventas/movimientos nunca se eliminan (BR-DAT-02/03).

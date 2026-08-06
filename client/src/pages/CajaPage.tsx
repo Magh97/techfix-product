@@ -69,7 +69,10 @@ export default function CajaPage() {
             {Object.entries(corte?.data.ingresosPorMetodo ?? {}).map(([m, v]) => (
               <div key={m} className="flex justify-between"><span className="capitalize">{m}</span><span>{mxn(v)}</span></div>
             ))}
-            {Object.keys(corte?.data.ingresosPorMetodo ?? {}).length === 0 && <p className="text-muted">Sin ventas.</p>}
+            {(corte?.data.partesDePago ?? 0) > 0 && (
+              <div className="flex justify-between text-warning"><span>Partes de pago (usados)</span><span>{mxn(corte!.data.partesDePago)}</span></div>
+            )}
+            {Object.keys(corte?.data.ingresosPorMetodo ?? {}).length === 0 && (corte?.data.partesDePago ?? 0) === 0 && <p className="text-muted">Sin ventas.</p>}
           </CardBody>
         </Card>
         <Card>

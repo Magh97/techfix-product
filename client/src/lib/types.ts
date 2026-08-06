@@ -339,6 +339,9 @@ export interface Venta {
   cambio?: number;
   createdAt?: string;
   garantias?: { tipo: string; inicio: string; fin: string }[];
+  parteDePago?: number;
+  totalAPagar?: number;
+  usadosCreados?: { productoId: number; nombre: string; valor: number }[];
   lineas: VentaLinea[];
 }
 
@@ -351,6 +354,7 @@ export interface CreateVenta {
   metodoPago?: string;
   plazoDias?: number | null;
   montoRecibido?: number | null;
+  partesDePago?: { nombre: string; marca?: string | null; modelo?: string | null; valor: number; precioVenta: number; observaciones?: string | null }[];
 }
 
 export interface Caja {
@@ -371,6 +375,7 @@ export interface Corte {
   ingresos: number;
   egresos: number;
   esperadoEfectivo: number;
+  partesDePago: number;
 }
 
 export interface CxcItem {

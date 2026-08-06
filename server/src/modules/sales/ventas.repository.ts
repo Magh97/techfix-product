@@ -20,6 +20,7 @@ export interface RegistrarVentaInput {
   metodoPago?: string;
   plazoDias?: number | null;
   montoRecibido?: number | null;
+  partesDePago?: { nombre: string; marca?: string | null; modelo?: string | null; valor: number; precioVenta: number; observaciones?: string | null }[];
 }
 
 export interface ProductoVentaRow {
@@ -108,6 +109,7 @@ export interface InsertVentaInput {
   plazoDias: number | null;
   fechaVencimiento: string | null;
   montoRecibido: number | null;
+  parteDePago: number;
   cajaId: number | null;
 }
 
@@ -116,8 +118,8 @@ export function insertVenta(client: PoolClient, input: InsertVentaInput) {
     .query<{ id: number }>(
       `INSERT INTO ventas
         (folio, cliente_id, vendedor_id, orden_id, subtotal, iva, total, descuento, motivo_descuento,
-         tipo_pago, metodo_pago, plazo_dias, fecha_vencimiento, monto_recibido, caja_id, estado)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'completada') RETURNING id`,
+         tipo_pago, metodo_pago, plazo_dias, fecha_vencimiento, monto_recibido, parte_de_pago, caja_id, estado)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'completada') RETURNING id`,
       [
         input.folio,
         input.clienteId,
@@ -133,6 +135,7 @@ export function insertVenta(client: PoolClient, input: InsertVentaInput) {
         input.plazoDias,
         input.fechaVencimiento,
         input.montoRecibido,
+        input.parteDePago,
         input.cajaId,
       ]
     )

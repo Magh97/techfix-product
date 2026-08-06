@@ -43,6 +43,7 @@ async function computarCaja(cajaId: number) {
   const ventas = await repo.sumVentasPorMetodo(cajaId);
   const abonos = await repo.sumAbonosPorMetodo(cajaId);
   const egresos = await repo.sumEgresosPorMetodo(cajaId);
+  const partesDePago = await repo.sumPartesDePago(cajaId);
 
   const ingresosPorMetodo: Record<string, number> = {};
   for (const v of ventas) ingresosPorMetodo[v.metodo_pago ?? "efectivo"] = toNum(v.total);
@@ -55,7 +56,14 @@ async function computarCaja(cajaId: number) {
   const totalEgresos = Object.values(egresosPorMetodo).reduce((a, b) => a + b, 0);
   const esperadoEfectivo = (ingresosPorMetodo["efectivo"] ?? 0) - (egresosPorMetodo["efectivo"] ?? 0);
 
-  return { ingresosPorMetodo, egresosPorMetodo, ingresos, egresos: totalEgresos, esperadoEfectivo };
+  return {
+    ingresosPorMetodo,
+    egresosPorMetodo,
+    ingresos,
+    egresos: totalEgresos,
+    esperadoEfectivo,
+    partesDePago: toNum(partesDePago?.total),
+  };
 }
 
 export async function corte(usuarioId: number) {
@@ -66,7 +74,7 @@ export async function corte(usuarioId: number) {
 }
 
 async function computarCajaVacio() {
-  return { ingresosPorMetodo: {}, egresosPorMetodo: {}, ingresos: 0, egresos: 0, esperadoEfectivo: 0 };
+  return { ingresosPorMetodo: {}, egresosPorMetodo: {}, ingresos: 0, egresos: 0, esperadoEfectivo: 0, partesDePago: 0 };
 }
 
 export async function cerrar(usuarioId: number, efectivoFisico: number) {
