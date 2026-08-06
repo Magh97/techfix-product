@@ -1588,6 +1588,106 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(item.clienteOrigenId).toBe(cliente);
   });
 
+  it("PAGOS MIXTOS: venta contado dividida en efectivo+tarjeta crea 2 pagos y el corte refleja cada método", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const actual = await request(app).get("/api/v1/caja/actual").set(auth);
+    const abiertaPorMi = !actual.body.data;
+    if (abiertaPorMi) await request(app).post("/api/v1/caja/abrir").set(auth);
+    const antes = await request(app).get("/api/v1/caja/corte").set(auth);
+
+    const suf = Date.now();
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `MIX-${suf}`, nombre: "Prod pagos mixtos", precioCompra: 50, precioVenta: 100 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [prod]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        lineas: [{ tipo: "producto", productoId: prod, cantidad: 1 }],
+        tipoPago: "contado",
+        pagos: [
+          { metodo: "efectivo", monto: 60 },
+          { metodo: "tarjeta_debito", monto: 56 },
+        ],
+      });
+    expect(venta.status).toBe(201);
+    // total = 116
+    expect(venta.body.data.pagos).toHaveLength(2);
+    expect(venta.body.data.pagos[0]).toEqual({ metodo: "efectivo", monto: 60 });
+    expect(venta.body.data.pagos[1]).toEqual({ metodo: "tarjeta_debito", monto: 56 });
+    const ventaId = venta.body.data.id;
+
+    const rows = await pool.query<{ metodo: string; monto: string }>(
+      "SELECT metodo, monto FROM pagos WHERE venta_id = $1 ORDER BY id",
+      [ventaId]
+    );
+    expect(rows.rows).toHaveLength(2);
+    expect(rows.rows[0]?.metodo).toBe("efectivo");
+    expect(Number(rows.rows[0]?.monto)).toBeCloseTo(60, 2);
+    expect(rows.rows[1]?.metodo).toBe("tarjeta_debito");
+
+    // Corte: el efectivo sube solo la porción de efectivo (60), no el total
+    const despues = await request(app).get("/api/v1/caja/corte").set(auth);
+    expect(despues.body.data.ingresosPorMetodo["efectivo"] - (antes.body.data.ingresosPorMetodo["efectivo"] ?? 0)).toBeCloseTo(60, 2);
+    expect(despues.body.data.ingresosPorMetodo["tarjeta_debito"] - (antes.body.data.ingresosPorMetodo["tarjeta_debito"] ?? 0)).toBeCloseTo(56, 2);
+
+    // Regresión: una venta de contado simple genera un solo pago
+    const simple = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId: prod, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    expect(simple.status).toBe(201);
+    expect(simple.body.data.pagos).toHaveLength(1);
+    expect(simple.body.data.pagos[0].metodo).toBe("efectivo");
+
+    if (abiertaPorMi) {
+      await request(app)
+        .post("/api/v1/caja/cerrar")
+        .set(auth)
+        .send({ efectivoFisico: despues.body.data.esperadoEfectivo });
+    }
+  });
+
+  it("PAGOS MIXTOS: validaciones (suma != totalAPagar 422, pagos en crédito 422)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `MXV-${suf}`, nombre: "Prod validación mixta", precioCompra: 50, precioVenta: 100 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [prod]);
+
+    const sumaIncorrecta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        lineas: [{ tipo: "producto", productoId: prod, cantidad: 1 }],
+        tipoPago: "contado",
+        pagos: [{ metodo: "efectivo", monto: 50 }],
+      });
+    expect(sumaIncorrecta.status).toBe(422);
+    expect(sumaIncorrecta.body.error.code).toBe("PAGOS_INVALIDOS");
+
+    const enCredito = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        clienteId: clienteId,
+        lineas: [{ tipo: "producto", productoId: prod, cantidad: 1 }],
+        tipoPago: "credito",
+        pagos: [{ metodo: "efectivo", monto: 10 }],
+      });
+    expect(enCredito.status).toBe(422);
+    expect(enCredito.body.error.code).toBe("PAGOS_INVALIDOS");
+  });
+
   it("DASHBOARD: resumen devuelve la estructura esperada", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const res = await request(app).get("/api/v1/dashboard/resumen").set(auth);
