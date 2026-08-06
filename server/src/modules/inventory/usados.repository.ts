@@ -73,6 +73,7 @@ export function insertEquipoUsado(
     productoId: number;
     clienteOrigenId: number | null;
     ordenId: number | null;
+    ventaId: number | null;
     valorTradeIn: number;
     origen: string;
     observaciones: string | null;
@@ -80,12 +81,13 @@ export function insertEquipoUsado(
   }
 ) {
   return client.query<{ id: number }>(
-    `INSERT INTO equipos_usados (producto_id, cliente_origen_id, orden_id, valor_trade_in, origen, observaciones, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+    `INSERT INTO equipos_usados (producto_id, cliente_origen_id, orden_id, venta_id, valor_trade_in, origen, observaciones, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
     [
       input.productoId,
       input.clienteOrigenId,
       input.ordenId,
+      input.ventaId,
       input.valorTradeIn,
       input.origen,
       input.observaciones,

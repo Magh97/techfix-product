@@ -6,6 +6,7 @@ import { calcMoney } from "../../shared/money";
 import { registrarAuditoria } from "../../shared/auditoria";
 import * as repo from "./ventas.repository";
 import * as garantiasRepo from "../garantias/garantias.repository";
+import * as usadosRepo from "../inventory/usados.repository";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -35,6 +36,9 @@ export interface VentaDTO {
   cambio: number;
   lineas: { descripcion: string; cantidad: number; precio: number; productoId?: number | null }[];
   garantias: { tipo: string; inicio: string; fin: string }[];
+  parteDePago: number;
+  totalAPagar: number;
+  usadosCreados: { productoId: number; nombre: string; valor: number }[];
 }
 
 export async function registrarVenta(
@@ -127,6 +131,23 @@ export async function registrarVenta(
 
     const mon = calcMoney(subtotal, descuento, config.ivaRate);
 
+    // Parte de pago en especie (equipo usado). Solo ventas de contado.
+    const partesDePago = input.partesDePago ?? [];
+    const parteDePago = partesDePago.reduce((a, p) => a + p.valor, 0);
+    if (parteDePago > 0) {
+      if (input.tipoPago !== "contado") {
+        throw AppError.business("PARTE_DE_PAGO_INVALIDA", "La parte de pago solo aplica en ventas de contado");
+      }
+      if (parteDePago > mon.total) {
+        throw AppError.business("PARTE_DE_PAGO_INVALIDA", `La parte de pago (${parteDePago}) supera el total (${mon.total})`);
+      }
+    }
+    const totalAPagar = Math.max(0, mon.total - parteDePago);
+    const recibido = input.tipoPago === "contado" && input.metodoPago === "efectivo" ? (input.montoRecibido ?? totalAPagar) : null;
+    if (recibido !== null && recibido < totalAPagar) {
+      throw AppError.business("PAYMENT_INVALID", `El efectivo recibido (${recibido}) es menor al total a pagar (${totalAPagar})`);
+    }
+
     let fechaVencimiento: string | null = null;
     let plazoDias: number | null = null;
     if (input.tipoPago === "credito") {
@@ -157,11 +178,50 @@ export async function registrarVenta(
       metodoPago: input.metodoPago ?? null,
       plazoDias: input.tipoPago === "credito" ? plazoDias : null,
       fechaVencimiento,
-      montoRecibido: input.tipoPago === "contado" ? (input.montoRecibido ?? mon.total) : null,
+      montoRecibido: recibido,
+      parteDePago,
       cajaId,
     });
     if (!ventaId) throw AppError.business("INTERNAL_ERROR", "No se pudo registrar la venta");
     await repo.insertDetalleVenta(c, ventaId, lineasDetalle);
+
+    // Crear los usados recibidos como parte de pago (en la misma transacción)
+    const usadosCreados: { productoId: number; nombre: string; valor: number }[] = [];
+    if (parteDePago > 0) {
+      const categoriaUsado = await usadosRepo.findCategoriaUsado();
+      if (!categoriaUsado) {
+        throw AppError.business("CATEGORIA_USADO_NOT_FOUND", "No existe la categoría raíz 'Usado' en el catálogo");
+      }
+      let i = 0;
+      for (const p of partesDePago) {
+        i++;
+        const productoId = await usadosRepo.insertProductoUsado(c, {
+          categoriaId: categoriaUsado.id,
+          sku: `USO-${Date.now()}-${i}`,
+          nombre: p.nombre,
+          marca: p.marca ?? null,
+          modelo: p.modelo ?? null,
+          precioCompra: p.valor,
+          precioVenta: p.precioVenta,
+          stock: 1,
+          catalogoId: null,
+        });
+        if (!productoId) throw AppError.business("INTERNAL_ERROR", "No se pudo crear el producto usado");
+        const equipoId = await usadosRepo.insertEquipoUsado(c, {
+          productoId,
+          clienteOrigenId: input.clienteId ?? null,
+          ordenId: null,
+          ventaId,
+          valorTradeIn: p.valor,
+          origen: "parte_de_pago",
+          observaciones: p.observaciones ?? null,
+          createdBy: user.id,
+        });
+        if (!equipoId) throw AppError.business("INTERNAL_ERROR", "No se pudo registrar el equipo usado");
+        await usadosRepo.insertMovimientoEntrada(c, { productoId, cantidad: 1, usuarioId: user.id, equipoId });
+        usadosCreados.push({ productoId, nombre: p.nombre, valor: p.valor });
+      }
+    }
 
     // Garantía por producto distinto cuando la venta tiene cliente
     // (usado → dias_garantia_usado; resto → dias_garantia_producto). BR-GAR-06.
@@ -193,12 +253,12 @@ export async function registrarVenta(
       metodoPago: input.metodoPago ?? null,
       fechaVencimiento,
       estado: "completada",
-      cambio:
-        input.tipoPago === "contado" && input.metodoPago === "efectivo"
-          ? Math.max(0, (input.montoRecibido ?? mon.total) - mon.total)
-          : 0,
+      cambio: input.tipoPago === "contado" && input.metodoPago === "efectivo" ? Math.max(0, (recibido ?? totalAPagar) - totalAPagar) : 0,
       lineas: lineasDetalle,
       garantias,
+      parteDePago,
+      totalAPagar,
+      usadosCreados,
     };
   };
 

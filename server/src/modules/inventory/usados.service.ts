@@ -77,6 +77,7 @@ export async function crear(
       productoId,
       clienteOrigenId: input.clienteId ?? null,
       ordenId: input.ordenId ?? null,
+      ventaId: null,
       valorTradeIn,
       origen: input.origen,
       observaciones: input.observaciones ?? null,
