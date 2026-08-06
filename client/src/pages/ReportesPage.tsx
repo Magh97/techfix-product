@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Download, FileSpreadsheet } from "lucide-react";
+import { Download, FileSpreadsheet, Printer } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -120,6 +120,9 @@ export default function ReportesPage() {
           </Button>
           <Button variant="outline" onClick={() => exportar(tab, "xlsx")}>
             <FileSpreadsheet className="h-4 w-4" /> Excel
+          </Button>
+          <Button variant="outline" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" /> PDF
           </Button>
         </div>
       </div>
@@ -523,6 +526,92 @@ export default function ReportesPage() {
           </Card>
         </div>
       )}
+
+      <div id="report-print-area">
+        <h2 className="text-xl font-bold">Reporte · {TAB_LABEL[tab]}</h2>
+        <p className="mb-3 text-sm text-muted">
+          Generado: {new Date().toLocaleString("es-MX")}
+          {desde || hasta ? ` · Período: ${desde || "inicio"} → ${hasta || "hoy"}` : ""}
+          {tab === "ventas" ? ` · Agrupar: ${labelCategoria(agrupar)}` : ""}
+        </p>
+        {tab === "inventario" && inventario.data && (
+          <PrintTable
+            columns={["SKU", "Producto", "Categoría", "Stock", "Valoración"]}
+            rows={inventario.data.data.data.map((p) => [p.sku, p.nombre, labelCategoria(p.categoria), String(p.stock), mxn(p.valoracionCosto)])}
+          />
+        )}
+        {tab === "ventas" && ventas.data && (
+          <PrintTable
+            columns={["Grupo", "Ventas", ...(agrupar === "producto" ? ["Unidades"] : []), "Total"]}
+            rows={ventas.data.data.data.map((v) => [
+              v.grupo,
+              String(v.ventas),
+              ...(agrupar === "producto" ? [String(v.unidades ?? 0)] : []),
+              mxn(v.total),
+            ])}
+          />
+        )}
+        {tab === "servicios" && servicios.data && (
+          <PrintTable
+            columns={["Segmento", "Concepto", "Órdenes"]}
+            rows={[
+              ...servicios.data.data.porEstado.map((s) => ["Estado", ESTADOS_LABEL[s.estado] ?? s.estado, String(s.ordenes)]),
+              ...servicios.data.data.porTecnico.map((s) => ["Técnico", s.tecnico, String(s.ordenes)]),
+              ...servicios.data.data.porTipoEquipo.map((s) => ["Tipo de equipo", s.tipoEquipo, String(s.ordenes)]),
+            ]}
+          />
+        )}
+        {tab === "rentabilidad" && rentabilidad.data && (
+          <PrintTable
+            columns={["Producto", "Unidades", "Ingreso", "Margen", "Margen %"]}
+            rows={rentabilidad.data.data.data.map((p) => [p.producto, String(p.unidades), mxn(p.ingreso), mxn(p.margen), `${p.margenPct}%`])}
+          />
+        )}
+        {tab === "clientes" && clientes.data && (
+          <PrintTable
+            columns={["Cliente", "Ventas", "Total compras", "Ticket promedio", "Saldo"]}
+            rows={clientes.data.data.data.map((c) => [c.cliente, String(c.ventas), mxn(c.totalCompras), mxn(c.ticketPromedio), mxn(c.saldo)])}
+          />
+        )}
+        {tab === "financiero" && financiero.data && (
+          <PrintTable
+            columns={["Mes", "Ventas", "Ingresos", "Egresos", "Utilidad"]}
+            rows={financiero.data.data.data.map((f) => [f.mes, String(f.ventas), mxn(f.ingresos), mxn(f.egresos), mxn(f.utilidad)])}
+          />
+        )}
+      </div>
     </div>
+  );
+}
+
+const TAB_LABEL: Record<Tab, string> = {
+  inventario: "Inventario",
+  ventas: "Ventas",
+  servicios: "Servicios",
+  rentabilidad: "Rentabilidad",
+  clientes: "Clientes",
+  financiero: "Financiero",
+};
+
+function PrintTable({ columns, rows }: { columns: string[]; rows: (string | number)[][] }) {
+  return (
+    <table className="w-full border-collapse text-sm">
+      <thead>
+        <tr>
+          {columns.map((c) => (
+            <th key={c} className="border-b border-black/40 px-2 py-1 text-left font-semibold">{c}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i}>
+            {r.map((cell, j) => (
+              <td key={j} className="border-b border-black/10 px-2 py-1">{cell}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
