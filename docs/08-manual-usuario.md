@@ -30,6 +30,8 @@ El menú de la izquierda se adapta al rol: las secciones de administración (Usu
 | `vendedor` | `vendedor1234` | Vendedor |
 | `tecnico` | `tecnico1234` | Técnico |
 
+> Las credenciales demo solo existen en desarrollo/seed (`SEED_DEMO=true`). En **producción** los usuarios los crea el administrador por el módulo Usuarios.
+
 La sesión expira automáticamente (15 min de inactividad); si tu sesión caduca se te regresa a la pantalla de acceso sin perder trabajo.
 
 ## 3. Dashboard
