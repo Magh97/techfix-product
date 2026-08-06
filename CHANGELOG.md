@@ -31,6 +31,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 - **Parte de pago en POS (BR-VEN-13):** aceptar un equipo usado como parte de pago en ventas de **contado** — crea el usado (raíz "Usado", stock 1, precio de reventa obligatorio, `equipos_usados.venta_id`) y reduce el efectivo/terminal a recibir (`ventas.parte_de_pago`); el **corte de caja** excluye el trade-in del efectivo y lo desglosa como ingreso no monetario. Migración `0014_trade_in`.
 - **Usados desde órdenes + historial CRM (BR-US-07):** botón "Registrar usado" en el detalle de órdenes no entregadas (admin) que vincula el equipo abandonado a la orden (`origen='reparacion'`, nota en `historial_orden`); el listado de usados expone `ordenFolio`/`ventaFolio` y el detalle del cliente muestra la tarjeta "Equipos usados entregados".
 - **Fase producción:** seed **condicional** (`SEED_DEMO=false` no crea usuarios/datos demo; bootstrap esencial siempre), `docker-compose.prod.yml` con **Caddy** (TLS) y servicio **backup** (pg_dump diario con retención, BR-DAT-01), `scripts/backup-loop.sh`/`restore.sh`, `.env.production.example`, job **deploy** en CI para `main` (SSH + compose up --build) y runbook `docs/09-despliegue.md` (incl. notas YunoHost).
+- **Pagos mixtos en el POS (BR-VEN-02/14):** desglose de pago en ventas de contado (varios métodos, Σ = total − parte de pago) con `pagos` registrando todo el dinero recibido (venta y abonos); el **corte de caja** cuenta solo dinero realmente recibido (Σ `pagos`) y el ticket muestra el desglose.
 
 ## [0.1.0] — 2026-08-03
 

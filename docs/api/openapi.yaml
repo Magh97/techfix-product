@@ -1522,6 +1522,15 @@ components:
         metodoPago: { type: string, enum: [efectivo, tarjeta_credito, tarjeta_debito, transferencia, deposito] }
         plazoDias: { type: integer }
         montoRecibido: { type: number }
+        pagos:
+          type: array
+          description: Desglose de pago mixto (solo ventas de contado; la suma debe dar total − parte de pago)
+          items:
+            type: object
+            required: [metodo, monto]
+            properties:
+              metodo: { type: string, enum: [efectivo, tarjeta_credito, tarjeta_debito, transferencia, deposito] }
+              monto: { type: number, minimum: 0.01 }
         partesDePago:
           type: array
           description: Parte de pago en especie (equipo usado); solo ventas de contado
@@ -1575,6 +1584,14 @@ components:
               productoId: { type: integer }
               nombre: { type: string }
               valor: { type: number }
+        pagos:
+          type: array
+          description: Desglose de dinero recibido (venta de contado o abonos)
+          items:
+            type: object
+            properties:
+              metodo: { type: string }
+              monto: { type: number }
 
     Movimiento:
       type: object

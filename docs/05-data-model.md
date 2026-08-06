@@ -793,6 +793,7 @@ cajas                 idx_cajas_usuario_fecha            (usuario_id, fecha)    
 - **Equipos usados:** el usado es un `producto` bajo la raíz "Usado" + metadatos en `equipos_usados` (origen, cliente, valor de parte de pago); el estado es derivado del stock (migración `0013`).
 - **Garantías por venta:** `garantias` también se crea al vender productos con cliente (una por producto distinto: `producto_nuevo` 30d / `usado` 15d) con `venta_id`; la de servicio se crea en la entrega de reparación (BR-GAR-06).
 - **Parte de pago (trade-in):** `ventas.parte_de_pago` registra el valor aceptado en especie y `equipos_usados.venta_id` lo vincula a la venta; el corte de caja excluye el trade-in del efectivo (migración `0014`).
+- **Pagos mixtos (BR-VEN-02/14):** `pagos` registra todo el dinero recibido — filas del desglose al crear una venta de contado y abonos a crédito; el corte de caja suma `pagos` (solo dinero realmente recibido).
 - **Límite de crédito default:** `clientes.limite_credito` = $3,000 MXN al crear el cliente; se amplía individualmente (BR-CRE-01).
 - **Firma de recepción:** `ordenes_servicio.firma_recepcion` guarda el PNG (base64) de la firma capturada en canvas táctil (BR-SER-01).
 - **Soft delete:** `is_active` en usuarios, clientes, productos, proveedores. Ordenes/ventas/movimientos nunca se eliminan (BR-DAT-02/03).

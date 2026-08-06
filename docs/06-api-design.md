@@ -172,7 +172,7 @@
 
 | Method | Path | Auth | Request | Response | Errors |
 |--------|------|------|---------|----------|--------|
-| POST | `/ventas` | vendedor/admin | `{ clienteId?, lineas: [{ productoId?, cantidad?, servicioDescripcion?, precioNeto? }], descuento?, motivoDescuento?, tipoPago, metodoPago, plazoDias?, montoRecibido?, ordenId?, partesDePago?: [{ nombre, marca?, modelo?, valor, precioVenta, observaciones? }] }` (solo contado) | `201 { data: Venta + ticket + garantias + parteDePago + totalAPagar + usadosCreados }` (BR-GAR-06, BR-VEN-13) | `INSUFFICIENT_STOCK`, `DISCOUNT_NOT_AUTHORIZED`, `CREDIT_LIMIT_EXCEEDED`, `PARTE_DE_PAGO_INVALIDA`, `PAYMENT_INVALID`, `VALIDATION_ERROR` |
+| POST | `/ventas` | vendedor/admin | `{ clienteId?, lineas, descuento?, tipoPago, metodoPago?, montoRecibido?, ordenId?, pagos?: [{ metodo, monto }], partesDePago?: [...] }` (desglose mixto solo contado; Σ pagos = total − parte de pago) | `201 { data: Venta + ticket + garantias + parteDePago + totalAPagar + usadosCreados + pagos }` (BR-GAR-06, BR-VEN-13, BR-VEN-14) | `INSUFFICIENT_STOCK`, `DISCOUNT_NOT_AUTHORIZED`, `CREDIT_LIMIT_EXCEEDED`, `PARTE_DE_PAGO_INVALIDA`, `PAGOS_INVALIDOS`, `PAYMENT_INVALID`, `VALIDATION_ERROR` |
 | GET | `/ventas` | JWT | `?page&pageSize&fechaDesde&fechaHasta&vendedorId&metodoPago&estado` | `{ data, meta }` | -- |
 | GET | `/ventas/:id` | JWT | -- | `{ data: Venta + lineas + pagos }` | `NOT_FOUND` |
 | GET | `/ventas/por-folio/:folio` | JWT | -- | `{ data: Venta }` | `NOT_FOUND` (reimpresión VEN-10) |
@@ -212,7 +212,7 @@
 | POST | `/caja/abrir` | vendedor/admin | -- | `201 { data: Caja }` | `CONFLICT` (ya abierta) |
 | GET | `/caja/actual` | JWT | -- | `{ data: Caja \| null }` | -- |
 | GET | `/caja/movimientos` | JWT | `?page&pageSize&tipo&desde&hasta&usuarioId` | `{ data, meta }` | -- |
-| GET | `/caja/corte` | vendedor/admin | `?fecha&usuarioId` | `{ data: { ingresos, egresos, porMetodo[], diferencia, partesDePago } }` (el efectivo excluye trade-ins; `partesDePago` = ingreso no monetario) | -- |
+| GET | `/caja/corte` | vendedor/admin | `?fecha&usuarioId` | `{ data: { ingresos, egresos, porMetodo[], diferencia, partesDePago } }` (efectivo = Σ pagos recibidos; `partesDePago` = ingreso no monetario) | -- |
 | POST | `/caja/cerrar` | admin | `{ efectivoFisico }` | `{ data: Caja }` (arqueo + diferencia) | `FORBIDDEN`, `CONFLICT` |
 | POST | `/finanzas/ingresos` | vendedor/admin | `{ concepto, monto, metodo, cajaId, referenciaTipo?, referenciaId? }` | `201` | `VALIDATION_ERROR` |
 | POST | `/finanzas/egresos` | admin | `{ concepto, categoria, monto, metodo, proveedorId? }` | `201` | `FORBIDDEN`, `VALIDATION_ERROR` |

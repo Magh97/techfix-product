@@ -101,7 +101,8 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | Regla | Definición |
 |-------|------------|
 | BR-VEN-01 | La venta descuenta stock en el momento de completarse (SALIDA_VENTA). Bloqueada si no hay stock (BR-INV-01). |
-| BR-VEN-02 | Métodos de pago: `efectivo`, `tarjeta_credito`, `tarjeta_debito`, `transferencia`, `deposito`. Una venta puede tener pagos mixtos. |
+| BR-VEN-02 | Métodos de pago: `efectivo`, `tarjeta_credito`, `tarjeta_debito`, `transferencia`, `deposito`. Una venta de **contado** puede tener **pagos mixtos** (desglose en `pagos`, suma = total − parte de pago). |
+| BR-VEN-14 | Todo dinero recibido se registra en `pagos`: al crear una venta de contado se insertan las filas del desglose; los abonos a crédito se registran igual. El **corte de caja** solo cuenta dinero realmente recibido (Σ `pagos`); la parte de pago en especie se muestra aparte. |
 | BR-VEN-03 | En efectivo se calcula el cambio; el registro guarda monto recibido. |
 | BR-VEN-04 | El ticket se emite al completar la venta; formato térmico 80mm (mono, folio, desglose) imprimido por el navegador (`window.print()` con `@media print`); la reimpresión se marca "COPIA". |
 | BR-VEN-05 | **Descuentos:** vendedor puede aplicar hasta **10%** sin autorización. Descuentos >10% requieren rol **admin**. |
