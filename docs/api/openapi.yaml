@@ -1522,6 +1522,19 @@ components:
         metodoPago: { type: string, enum: [efectivo, tarjeta_credito, tarjeta_debito, transferencia, deposito] }
         plazoDias: { type: integer }
         montoRecibido: { type: number }
+        partesDePago:
+          type: array
+          description: Parte de pago en especie (equipo usado); solo ventas de contado
+          items:
+            type: object
+            required: [nombre, valor, precioVenta]
+            properties:
+              nombre: { type: string }
+              marca: { type: [string, "null"] }
+              modelo: { type: [string, "null"] }
+              valor: { type: number, minimum: 0 }
+              precioVenta: { type: number, minimum: 0.01 }
+              observaciones: { type: [string, "null"] }
 
     Venta:
       type: object
@@ -1548,6 +1561,20 @@ components:
               tipo: { type: string, enum: [producto_nuevo, usado] }
               inicio: { type: string, format: date }
               fin: { type: string, format: date }
+        parteDePago:
+          type: number
+          description: Valor aceptado como parte de pago en especie (reduce el efectivo a recibir)
+        totalAPagar:
+          type: number
+          description: total − parte_de_pago
+        usadosCreados:
+          type: array
+          items:
+            type: object
+            properties:
+              productoId: { type: integer }
+              nombre: { type: string }
+              valor: { type: number }
 
     Movimiento:
       type: object

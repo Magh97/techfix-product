@@ -108,6 +108,7 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | BR-VEN-06 | Todo descuento requiere motivo; queda registrado en la venta. |
 | BR-VEN-07 | Cancelación de venta: sólo del mismo día o con autorización admin; reversión de inventario; motivo obligatorio. |
 | BR-VEN-08 | Devolución: dentro de **15 días** desde la venta y con ticket; reembolso por método original o nota de crédito; restituye stock si producto completo/sellado; registra `DEVOLUCION`. |
+| BR-VEN-13 | **Parte de pago en especie (equipo usado):** en ventas de **contado** se puede aceptar un equipo usado como parte de pago (`ventas.parte_de_pago`, Σ valores ≤ total). El valor se acredita **contra el total (IVA incluido)**; el total de la venta no cambia y solo se reduce el efectivo/terminal a recibir. Cada usado se crea como producto (raíz "Usado", stock 1, precio de reventa obligatorio) vinculado a la venta (`equipos_usados.venta_id`, origen `parte_de_pago`). El **corte de caja** excluye el trade-in del efectivo y lo desglosa como ingreso no monetario. |
 
 ## 8. Crédito (Cuentas por Cobrar)
 

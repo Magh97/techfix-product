@@ -28,6 +28,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 - **Comparación de precios entre proveedores (US-COM-05):** `GET /compras/comparacion-precios?productoId=` (admin) con el último precio por proveedor (OCs enviadas/recibidas), precio de compra actual como referencia y flags favorito/más barato/inactivo/por debajo del actual; botón "Comparar" en Productos.
 - **Equipos usados (US-INV-07):** tabla `equipos_usados` (origen, cliente origen, valor de parte de pago); `POST/GET/PUT /usados` (admin) que crean el producto bajo la raíz "Usado" con movimiento `ENTRADA`; estado derivado del stock (disponible/vendido); página `/usados` con filtros. Migración `0013_equipos_usados`.
 - **Garantía automática por venta de producto (BR-GAR-06):** al vender con cliente se genera **una garantía por producto distinto** (`producto_nuevo` 30d / `usado` 15d, configurable vía `ventas.dias_garantia_producto`/`ventas.dias_garantia_usado`); la respuesta de la venta incluye `garantias` y el ticket las muestra en el pie. Ventas a mostrador sin garantía.
+- **Parte de pago en POS (BR-VEN-13):** aceptar un equipo usado como parte de pago en ventas de **contado** — crea el usado (raíz "Usado", stock 1, precio de reventa obligatorio, `equipos_usados.venta_id`) y reduce el efectivo/terminal a recibir (`ventas.parte_de_pago`); el **corte de caja** excluye el trade-in del efectivo y lo desglosa como ingreso no monetario. Migración `0014_trade_in`.
 
 ## [0.1.0] — 2026-08-03
 
