@@ -133,4 +133,17 @@ describe("ventasApi.cancelar / devolucion", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toEqual({ lineas: [{ productoId: 3, cantidad: 1 }] });
   });
+
+  it("pagar envía desglose mixto cuando se pasan pagos", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonRes({ data: { ventaId: 7, saldoPendiente: 0 } }));
+    vi.stubGlobal("fetch", fetchMock);
+    localStorage.setItem("ts_token", "t1");
+    localStorage.setItem("ts_refresh", "rt1");
+
+    await ventasApi.pagar(7, { pagos: [{ metodo: "efectivo", monto: 60 }, { metodo: "tarjeta_credito", monto: 56 }] });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toContain("/ventas/7/pagos");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ pagos: [{ metodo: "efectivo", monto: 60 }, { metodo: "tarjeta_credito", monto: 56 }] });
+  });
 });

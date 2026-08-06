@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, ShoppingCart } from "lucide-react";
+import DesglosePago from "@/components/DesglosePago";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +30,11 @@ export default function ClienteDetallePage() {
   const [tab, setTab] = useState<"historial" | "cxc">("historial");
   const [abono, setAbono] = useState<{ ventaId: number; folio: string; saldo: number } | null>(null);
   const [monto, setMonto] = useState("0");
+  const [pagosAbono, setPagosAbono] = useState<{ metodo: string; monto: string }[]>([]);
+
+  const desgloseAbonoOk =
+    pagosAbono.length === 0 ||
+    (pagosAbono.every((p) => (Number(p.monto) || 0) > 0) && Math.abs(pagosAbono.reduce((a, p) => a + (Number(p.monto) || 0), 0) - Number(monto)) < 0.01);
 
   const { data: cliente } = useQuery({ queryKey: ["cliente", clienteId], queryFn: () => clientesApi.get(clienteId) });
   const { data: historial } = useQuery({ queryKey: ["cliente-historial", clienteId], queryFn: () => clientesApi.historial(clienteId) });
@@ -37,10 +43,17 @@ export default function ClienteDetallePage() {
   const { data: notas } = useQuery({ queryKey: ["cliente-notas-credito", clienteId], queryFn: () => clientesApi.notasCredito(clienteId) });
 
   const pagar = useMutation({
-    mutationFn: () => ventasApi.pagar(abono!.ventaId, { monto: Number(monto), metodo: "efectivo" }),
+    mutationFn: () =>
+      ventasApi.pagar(
+        abono!.ventaId,
+        pagosAbono.length
+          ? { pagos: pagosAbono.map((p) => ({ metodo: p.metodo, monto: Number(p.monto) })) }
+          : { monto: Number(monto), metodo: "efectivo" }
+      ),
     onSuccess: () => {
       toast.success("Abono registrado");
       setAbono(null);
+      setPagosAbono([]);
       qc.invalidateQueries({ queryKey: ["cliente-cxc"] });
       qc.invalidateQueries({ queryKey: ["cliente", clienteId] });
     },
@@ -217,7 +230,7 @@ export default function ClienteDetallePage() {
                     </TD>
                     <TD className="text-right">
                       {i.saldo > 0 && (
-                        <Button size="sm" variant="outline" onClick={() => { setAbono({ ventaId: i.ventaId, folio: i.folio, saldo: i.saldo }); setMonto(String(i.saldo)); }}>
+                        <Button size="sm" variant="outline" onClick={() => { setAbono({ ventaId: i.ventaId, folio: i.folio, saldo: i.saldo }); setMonto(String(i.saldo)); setPagosAbono([]); }}>
                           Abonar
                         </Button>
                       )}
@@ -237,9 +250,15 @@ export default function ClienteDetallePage() {
             <Input type="number" min={0.01} max={abono?.saldo} value={monto} onChange={(e) => setMonto(e.target.value)} />
           </div>
           <p className="text-xs text-muted">Saldo pendiente: {abono ? mxn(abono.saldo) : ""}</p>
+          <DesglosePago pagos={pagosAbono} onChange={setPagosAbono} />
+          {abono && pagosAbono.length > 0 && Number(monto) > 0 && (
+            <p className="text-xs text-muted">
+              El desglose debe sumar el monto a abonar ({mxn(Number(monto))}).
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setAbono(null)}>Cancelar</Button>
-            <Button disabled={pagar.isPending || Number(monto) <= 0} onClick={() => pagar.mutate()}>Registrar abono</Button>
+            <Button disabled={pagar.isPending || Number(monto) <= 0 || desgloseAbonoOk === false} onClick={() => pagar.mutate()}>Registrar abono</Button>
           </div>
         </div>
       </Dialog>
