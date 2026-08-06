@@ -1625,6 +1625,9 @@ components:
         clienteOrigenId: { type: [integer, "null"] }
         clienteOrigenNombre: { type: [string, "null"] }
         ordenId: { type: [integer, "null"] }
+        ordenFolio: { type: [string, "null"] }
+        ventaId: { type: [integer, "null"] }
+        ventaFolio: { type: [string, "null"] }
         valorTradeIn: { type: number }
         origen: { type: string, enum: [parte_de_pago, reparacion, otro] }
         observaciones: { type: [string, "null"] }

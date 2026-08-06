@@ -202,6 +202,7 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | BR-US-04 | El stock inicial por defecto es **1** y es editable al registrar (a veces llegan varias unidades). |
 | BR-US-05 | Al registrar se genera un `Movimiento ENTRADA` con `referencia_tipo = 'usado'` (auditoría de inventario). Solo el **admin** puede registrar/editar; el listado lo ve cualquier rol autenticado. |
 | BR-US-06 | La venta de un usado no genera garantía automática por ahora (pendiente feature general de garantías por venta de producto). |
+| BR-US-07 | **Alta de usados desde órdenes (equipo abandonado):** en el detalle de una orden **no entregada** se puede registrar el equipo como usado (admin) con `origen='reparacion'`, `cliente_id` y `orden_id` de la orden; se escribe la nota "Equipo {nombre} registrado como usado" en el historial de la orden. El estado de la orden no cambia. |
 
 ## 13. Retención de Datos y Respaldo
 

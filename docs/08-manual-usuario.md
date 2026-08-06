@@ -84,6 +84,7 @@ Pendiente → Diagnóstico → Cotizado → En reparación → Listo → Entrega
 - Toda transición de estado se registra en el **historial** con usuario, fecha y nota.
 - Una orden **retrasada** (pasó la fecha prometida + 1 día) se marca automáticamente con insignia de retraso.
 - Las órdenes en `entregado`/`cancelado` son estados finales.
+- **Registrar equipo abandonado como usado** (admin, en órdenes no entregadas): botón **"Registrar usado"** en el detalle captura nombre, valor asignado/costo y precio de reventa; el equipo entra a **Equipos usados** con origen "Reparación", vinculado a la orden y con nota en su historial. La orden no cambia de estado.
 
 ### 6.1 Sustitución con validación del cliente (A1b)
 
@@ -101,7 +102,7 @@ Cuando una pieza no tiene stock suficiente, el **técnico** puede proponer un **
 ## 7. Clientes
 
 - **Registrar**: nombre, teléfono, correo, dirección, preferencia de contacto (WhatsApp/correo/llamada), **límite de crédito** (default $3,000) y **plazo** (default 15 días).
-- **Detalle**: historial (órdenes, ventas, cotizaciones) y **cuentas por cobrar** (saldo, vencidas, límite).
+- **Detalle**: historial (órdenes, ventas, cotizaciones, **equipos usados entregados**) y **cuentas por cobrar** (saldo, vencidas, límite).
 - **Etiquetas** (admin) para segmentar; filtro de deudores en el listado.
 
 ## 8. Productos y Catálogos
@@ -130,6 +131,7 @@ Refaccion · Usado · General  (raíces sin hijos)
 ### Equipos usados (`/usados`)
 - Lista los equipos usados con su **origen** (parte de pago / reparación / otro), **cliente que lo entregó**, **valor de parte de pago** (costo), precio de venta, stock y **estado** (Disponible si hay stock, Vendido si no). Filtra por estado, origen o búsqueda.
 - **Registrar usado** (admin): captura SKU/nombre, valor de parte de pago y precio de venta, stock (default 1), origen y cliente opcional. El sistema crea el producto bajo la categoría **"Usado"** y registra la entrada al inventario.
+- Los usados pueden venir de **ventas (parte de pago)** o de **órdenes (equipo abandonado)**; el listado muestra el folio de la orden o venta de origen.
 - Los usados se venden igual que cualquier producto (POS); la garantía automática al venderlos está pendiente como feature general.
 
 ## 9. Compras y Reabastecimiento
