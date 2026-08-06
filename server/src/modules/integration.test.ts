@@ -1536,6 +1536,58 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(sinUsados.rowCount).toBe(0);
   });
 
+  it("USADOS DESDE ORDEN: POST /usados con ordenId+clienteId liga el usado y escribe nota en historial", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const cliente = (await pool.query<{ id: number }>("INSERT INTO clientes (nombre, telefono) VALUES ($1,$2) RETURNING id", [`Cliente Abandono ${suf}`, `60${suf}`.slice(0, 10)])).rows[0]!.id;
+    const orden = (
+      await request(app)
+        .post("/api/v1/ordenes")
+        .set(auth)
+        .send({ clienteId: cliente, tipoEquipo: "laptop", marca: "HP", fallaReportada: "No enciende", fechaPrometida: todayPlus(3) })
+    ).body.data;
+
+    const res = await request(app)
+      .post("/api/v1/usados")
+      .set(auth)
+      .send({ sku: `UA-${suf}`, nombre: "Laptop abandonada", valorTradeIn: 200, precioVenta: 900, origen: "reparacion", clienteId: cliente, ordenId: orden.id });
+    expect(res.status).toBe(201);
+
+    const meta = await pool.query<{ orden_id: number; cliente_origen_id: number; origen: string }>(
+      "SELECT orden_id, cliente_origen_id, origen FROM equipos_usados WHERE producto_id = $1",
+      [res.body.data.productoId]
+    );
+    expect(meta.rows[0]?.orden_id).toBe(orden.id);
+    expect(meta.rows[0]?.cliente_origen_id).toBe(cliente);
+    expect(meta.rows[0]?.origen).toBe("reparacion");
+
+    const hist = await pool.query<{ nota: string }>("SELECT nota FROM historial_orden WHERE orden_id = $1 ORDER BY id DESC LIMIT 1", [orden.id]);
+    expect(String(hist.rows[0]?.nota ?? "")).toContain("registrado como usado");
+  });
+
+  it("USADOS CRM: GET /usados?clienteId devuelve con ordenFolio/ventaFolio", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const cliente = (await pool.query<{ id: number }>("INSERT INTO clientes (nombre, telefono) VALUES ($1,$2) RETURNING id", [`Cliente Usados CRM ${suf}`, `61${suf}`.slice(0, 10)])).rows[0]!.id;
+    const orden = (
+      await request(app)
+        .post("/api/v1/ordenes")
+        .set(auth)
+        .send({ clienteId: cliente, tipoEquipo: "desktop", fallaReportada: "No da video", fechaPrometida: todayPlus(3) })
+    ).body.data;
+    await request(app)
+      .post("/api/v1/usados")
+      .set(auth)
+      .send({ sku: `CR-${suf}`, nombre: "PC abandonada", valorTradeIn: 150, precioVenta: 700, origen: "reparacion", clienteId: cliente, ordenId: orden.id });
+
+    const res = await request(app).get(`/api/v1/usados?clienteId=${cliente}`).set(auth);
+    expect(res.status).toBe(200);
+    const item = res.body.data.find((u: { sku: string }) => u.sku === `CR-${suf}`);
+    expect(item).toBeTruthy();
+    expect(item.ordenFolio).toBe(orden.folio);
+    expect(item.clienteOrigenId).toBe(cliente);
+  });
+
   it("DASHBOARD: resumen devuelve la estructura esperada", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const res = await request(app).get("/api/v1/dashboard/resumen").set(auth);
