@@ -1,30 +1,36 @@
 import bcrypt from "bcryptjs";
 import { pool } from "../shared/db";
 
+// En producción (SEED_DEMO=false) se omiten usuarios demo, clientes, productos,
+// proveedores y kits. El bootstrap esencial (catálogo "Usado", IVA, plantillas) siempre corre.
+const seedDemo = process.env.SEED_DEMO !== "false";
+
 async function main() {
-  const hash = await bcrypt.hash("admin1234", 10);
-  await pool.query(
-    `INSERT INTO usuarios (nombre, usuario, password_hash, rol)
-     VALUES ('Administrador', 'admin', $1, 'admin')
-     ON CONFLICT (usuario) DO NOTHING`,
-    [hash]
-  );
+  if (seedDemo) {
+    const hash = await bcrypt.hash("admin1234", 10);
+    await pool.query(
+      `INSERT INTO usuarios (nombre, usuario, password_hash, rol)
+       VALUES ('Administrador', 'admin', $1, 'admin')
+       ON CONFLICT (usuario) DO NOTHING`,
+      [hash]
+    );
 
-  const hashV = await bcrypt.hash("vendedor1234", 10);
-  await pool.query(
-    `INSERT INTO usuarios (nombre, usuario, password_hash, rol)
-     VALUES ('Vendedor', 'vendedor', $1, 'vendedor')
-     ON CONFLICT (usuario) DO NOTHING`,
-    [hashV]
-  );
+    const hashV = await bcrypt.hash("vendedor1234", 10);
+    await pool.query(
+      `INSERT INTO usuarios (nombre, usuario, password_hash, rol)
+       VALUES ('Vendedor', 'vendedor', $1, 'vendedor')
+       ON CONFLICT (usuario) DO NOTHING`,
+      [hashV]
+    );
 
-  const hashT = await bcrypt.hash("tecnico1234", 10);
-  await pool.query(
-    `INSERT INTO usuarios (nombre, usuario, password_hash, rol)
-     VALUES ('Técnico', 'tecnico', $1, 'tecnico')
-     ON CONFLICT (usuario) DO NOTHING`,
-    [hashT]
-  );
+    const hashT = await bcrypt.hash("tecnico1234", 10);
+    await pool.query(
+      `INSERT INTO usuarios (nombre, usuario, password_hash, rol)
+       VALUES ('Técnico', 'tecnico', $1, 'tecnico')
+       ON CONFLICT (usuario) DO NOTHING`,
+      [hashT]
+    );
+  }
 
   // --- Taxonomía: categorías = raíces del árbol de catálogos ---
   // Demo de 4 niveles: PC → Componentes → RAM → DDR5 (tags como especificaciones)
@@ -151,6 +157,8 @@ async function main() {
     );
   }
 
+  // --- Datos demo (solo con SEED_DEMO != false) ---
+  if (seedDemo) {
   const clientes = [
     { nombre: "Ana Torres", telefono: "5512345678", correo: "ana.torres@mail.com" },
     { nombre: "Beto Sánchez", telefono: "5522334455", correo: "beto.sanchez@mail.com" },
@@ -244,8 +252,9 @@ async function main() {
       [favProv.rows[0].id, ["PROC-001", "RAM-001", "RAM-002", "SSD-001"]]
     );
   }
+  }
 
-  console.log("Seed completado. Usuarios: admin/admin1234 · vendedor/vendedor1234 · tecnico/tecnico1234");
+  console.log("Seed completado." + (seedDemo ? " Usuarios: admin/admin1234 · vendedor/vendedor1234 · tecnico/tecnico1234" : " (SEED_DEMO=false, sin datos demo)"));
   await pool.end();
 }
 
