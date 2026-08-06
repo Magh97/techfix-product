@@ -1288,6 +1288,104 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(Number(prod.rows[0]?.precio_compra)).toBeCloseTo(450, 2);
   });
 
+  it("GARANTÍA: venta con cliente y producto nuevo genera garantía producto_nuevo (30 días)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const cliente = (await pool.query<{ id: number }>("INSERT INTO clientes (nombre, telefono) VALUES ($1,$2) RETURNING id", [`Cliente Garantía ${suf}`, `56${suf}`.slice(0, 10)])).rows[0]!.id;
+    const prod = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `GAR-${suf}`, nombre: "Producto con garantía", precioCompra: 100, precioVenta: 200 })
+    ).body.data.id;
+    await pool.query("UPDATE productos SET stock = 5 WHERE id = $1", [prod]);
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId: cliente, lineas: [{ tipo: "producto", productoId: prod, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    expect(venta.status).toBe(201);
+    expect(venta.body.data.garantias).toHaveLength(1);
+    expect(venta.body.data.garantias[0].tipo).toBe("producto_nuevo");
+    expect(venta.body.data.garantias[0].fin).toBe(todayPlus(30));
+
+    const g = await pool.query<{ tipo: string; cliente_id: number; venta_id: number; fin: string }>(
+      "SELECT tipo, cliente_id, venta_id, to_char(fin, 'YYYY-MM-DD') AS fin FROM garantias WHERE venta_id = $1",
+      [venta.body.data.id]
+    );
+    expect(g.rows[0]?.tipo).toBe("producto_nuevo");
+    expect(g.rows[0]?.cliente_id).toBe(cliente);
+    expect(g.rows[0]?.fin).toBe(todayPlus(30));
+  });
+
+  it("GARANTÍA: venta con cliente y producto usado genera garantía usado (15 días)", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const cliente = (await pool.query<{ id: number }>("INSERT INTO clientes (nombre, telefono) VALUES ($1,$2) RETURNING id", [`Cliente GarUsado ${suf}`, `57${suf}`.slice(0, 10)])).rows[0]!.id;
+    const usado = (
+      await request(app).post("/api/v1/usados").set(auth).send({
+        sku: `USG-${suf}`,
+        nombre: "Monitor usado",
+        valorTradeIn: 300,
+        precioVenta: 700,
+        origen: "parte_de_pago",
+        clienteId: cliente,
+      })
+    ).body.data;
+
+    const venta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ clienteId: cliente, lineas: [{ tipo: "producto", productoId: usado.productoId, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    expect(venta.status).toBe(201);
+    expect(venta.body.data.garantias).toHaveLength(1);
+    expect(venta.body.data.garantias[0].tipo).toBe("usado");
+    expect(venta.body.data.garantias[0].fin).toBe(todayPlus(15));
+  });
+
+  it("GARANTÍA: venta a mostrador (sin cliente) no genera garantía; venta mixta genera 2", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const suf = Date.now();
+    const cliente = (await pool.query<{ id: number }>("INSERT INTO clientes (nombre, telefono) VALUES ($1,$2) RETURNING id", [`Cliente Mixta ${suf}`, `58${suf}`.slice(0, 10)])).rows[0]!.id;
+    const nuevo = (
+      await request(app)
+        .post("/api/v1/productos")
+        .set(auth)
+        .send({ categoriaId: 1, sku: `MIX-${suf}`, nombre: "Producto mixto", precioCompra: 50, precioVenta: 120 })
+    ).body.data.id;
+    const usado = (
+      await request(app).post("/api/v1/usados").set(auth).send({ sku: `USM-${suf}`, nombre: "Usado mixto", valorTradeIn: 40, precioVenta: 100, origen: "otro" })
+    ).body.data;
+    await pool.query("UPDATE productos SET stock = 3 WHERE id = $1", [nuevo]);
+
+    // Mostrador (sin cliente) → sin garantía
+    const mostrador = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({ lineas: [{ tipo: "producto", productoId: nuevo, cantidad: 1 }], tipoPago: "contado", metodoPago: "efectivo" });
+    expect(mostrador.status).toBe(201);
+    expect(mostrador.body.data.garantias).toHaveLength(0);
+    const sinGar = await pool.query("SELECT 1 FROM garantias WHERE venta_id = $1", [mostrador.body.data.id]);
+    expect(sinGar.rowCount).toBe(0);
+
+    // Mixta con cliente → 2 garantías con tipos correctos
+    const mixta = await request(app)
+      .post("/api/v1/ventas")
+      .set(auth)
+      .send({
+        clienteId: cliente,
+        lineas: [
+          { tipo: "producto", productoId: nuevo, cantidad: 1 },
+          { tipo: "producto", productoId: usado.productoId, cantidad: 1 },
+        ],
+        tipoPago: "contado",
+        metodoPago: "efectivo",
+      });
+    expect(mixta.status).toBe(201);
+    const tipos = mixta.body.data.garantias.map((g: { tipo: string }) => g.tipo).sort();
+    expect(tipos).toEqual(["producto_nuevo", "usado"]);
+  });
+
   it("DASHBOARD: resumen devuelve la estructura esperada", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const res = await request(app).get("/api/v1/dashboard/resumen").set(auth);
@@ -2237,7 +2335,7 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
       [clienteId]
     );
 
-    const res = await request(app).get("/api/v1/garantias?estado=vigente").set(auth);
+    const res = await request(app).get(`/api/v1/garantias?estado=vigente&clienteId=${clienteId}`).set(auth);
     expect(res.status).toBe(200);
     const item = res.body.data.find((g: { clienteId: number }) => g.clienteId === clienteId);
     expect(item).toBeTruthy();

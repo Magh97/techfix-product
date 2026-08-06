@@ -44,7 +44,7 @@ Muestra el resumen del día: ventas, órdenes en curso (incl. retrasadas), produ
 3. Si un producto está sin stock, el botón **Sustitutos** sugiere alternativas compatibles por tags; al usarlo, la línea se reemplaza por el sustituto.
 4. Aplica **descuento**: hasta 10% lo aplica cualquier vendedor; mayor a 10% requiere rol **admin** y motivo.
 5. Selecciona **contado** o **crédito** (para crédito necesitas cliente y respetar su límite/plazo).
-6. Registra el pago; se emite el **ticket** con formato térmico 80mm (Imprimir → elige la impresora).
+6. Registra el pago; se emite el **ticket** con formato térmico 80mm (Imprimir → elige la impresora). Si la venta es con **cliente**, el ticket indica la **garantía** de los productos vendidos.
 
 ### Ventas (`/ventas`)
 - Listado con filtros por fecha, vendedor, método de pago y estado.
@@ -177,7 +177,9 @@ Alta/edición de proveedores (nombre, contacto, condiciones de pago). El proveed
 
 ## 12. Garantías
 
-Consulta y registro de garantías generadas al entregar una reparación o al vender. Indican cobertura y vigencia.
+Consulta de garantías con su cobertura y vigencia. Se generan automáticamente:
+- Al **entregar una reparación**: garantía de servicio.
+- Al **vender productos a un cliente** (con cliente registrado): **una garantía por producto** — **producto nuevo 30 días** o **usado 15 días**. En el ticket de venta aparece "Garantía: {tipo} hasta {fin}". Las ventas a **mostrador (sin cliente)** no generan garantía.
 
 ## 13. Notificaciones
 

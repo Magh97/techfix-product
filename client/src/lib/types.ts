@@ -338,6 +338,7 @@ export interface Venta {
   estado: string;
   cambio?: number;
   createdAt?: string;
+  garantias?: { tipo: string; inicio: string; fin: string }[];
   lineas: VentaLinea[];
 }
 

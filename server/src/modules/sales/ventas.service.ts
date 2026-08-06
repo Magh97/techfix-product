@@ -5,6 +5,7 @@ import { getConfig } from "../../shared/config";
 import { calcMoney } from "../../shared/money";
 import { registrarAuditoria } from "../../shared/auditoria";
 import * as repo from "./ventas.repository";
+import * as garantiasRepo from "../garantias/garantias.repository";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -33,6 +34,7 @@ export interface VentaDTO {
   estado: string;
   cambio: number;
   lineas: { descripcion: string; cantidad: number; precio: number; productoId?: number | null }[];
+  garantias: { tipo: string; inicio: string; fin: string }[];
 }
 
 export async function registrarVenta(
@@ -161,6 +163,22 @@ export async function registrarVenta(
     if (!ventaId) throw AppError.business("INTERNAL_ERROR", "No se pudo registrar la venta");
     await repo.insertDetalleVenta(c, ventaId, lineasDetalle);
 
+    // Garantía por producto distinto cuando la venta tiene cliente
+    // (usado → dias_garantia_usado; resto → dias_garantia_producto). BR-GAR-06.
+    const garantias: { tipo: string; inicio: string; fin: string }[] = [];
+    if (input.clienteId) {
+      const usados = new Set(await garantiasRepo.productosUsadosDeVenta(c, ventaId));
+      const productosDistintos = [...new Set(lineasDetalle.filter((l) => l.productoId).map((l) => l.productoId!))];
+      const hoy = today();
+      for (const pid of productosDistintos) {
+        const tipo = usados.has(pid) ? "usado" : "producto_nuevo";
+        const dias = tipo === "usado" ? config.diasGarantiaUsado : config.diasGarantiaProducto;
+        const fin = addDays(hoy, dias);
+        await garantiasRepo.insertGarantiaVenta(c, { ventaId, clienteId: input.clienteId, tipo, inicio: hoy, fin });
+        garantias.push({ tipo, inicio: hoy, fin });
+      }
+    }
+
     return {
       id: ventaId,
       folio,
@@ -180,6 +198,7 @@ export async function registrarVenta(
           ? Math.max(0, (input.montoRecibido ?? mon.total) - mon.total)
           : 0,
       lineas: lineasDetalle,
+      garantias,
     };
   };
 

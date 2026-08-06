@@ -129,6 +129,7 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | BR-GAR-03 | La garantía cubre la reparación del defecto cubierto; las reparaciones en garantía no generan cargo por mano de obra ni piezas. |
 | BR-GAR-04 | Job diario: notifica (NOT-04) a 3 y 1 días antes del vencimiento, según canal preferido. |
 | BR-GAR-05 | Una reclamación de garantía se registra como queja (CRM-07) vinculada a la garantía. |
+| BR-GAR-06 | **Garantía automática por venta de producto:** al vender con **cliente**, se genera **una garantía por producto distinto** — `producto_nuevo` 30 días (`ventas.dias_garantia_producto`) o `usado` 15 días (`ventas.dias_garantia_usado`) según la categoría raíz del producto. Las ventas a **mostrador (sin cliente) no generan garantía**. La respuesta de la venta incluye `garantias`. |
 
 ## 10. Compras y Cuentas por Pagar
 

@@ -1539,6 +1539,15 @@ components:
         lineas:
           type: array
           items: { type: object }
+        garantias:
+          type: array
+          description: Garantías generadas al vender con cliente (una por producto distinto)
+          items:
+            type: object
+            properties:
+              tipo: { type: string, enum: [producto_nuevo, usado] }
+              inicio: { type: string, format: date }
+              fin: { type: string, format: date }
 
     Movimiento:
       type: object

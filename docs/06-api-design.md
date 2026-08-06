@@ -172,7 +172,7 @@
 
 | Method | Path | Auth | Request | Response | Errors |
 |--------|------|------|---------|----------|--------|
-| POST | `/ventas` | vendedor/admin | `{ clienteId?, lineas: [{ productoId?, cantidad?, servicioDescripcion?, precioNeto? }], descuento?, motivoDescuento?, tipoPago, metodoPago, plazoDias?, montoRecibido?, ordenId? }` | `201 { data: Venta + ticket }` | `INSUFFICIENT_STOCK`, `DISCOUNT_NOT_AUTHORIZED`, `CREDIT_LIMIT_EXCEEDED`, `VALIDATION_ERROR` |
+| POST | `/ventas` | vendedor/admin | `{ clienteId?, lineas: [{ productoId?, cantidad?, servicioDescripcion?, precioNeto? }], descuento?, motivoDescuento?, tipoPago, metodoPago, plazoDias?, montoRecibido?, ordenId? }` | `201 { data: Venta + ticket + garantias: [{ tipo, inicio, fin }] }` (garantía por producto distinto si hay cliente, BR-GAR-06) | `INSUFFICIENT_STOCK`, `DISCOUNT_NOT_AUTHORIZED`, `CREDIT_LIMIT_EXCEEDED`, `VALIDATION_ERROR` |
 | GET | `/ventas` | JWT | `?page&pageSize&fechaDesde&fechaHasta&vendedorId&metodoPago&estado` | `{ data, meta }` | -- |
 | GET | `/ventas/:id` | JWT | -- | `{ data: Venta + lineas + pagos }` | `NOT_FOUND` |
 | GET | `/ventas/por-folio/:folio` | JWT | -- | `{ data: Venta }` | `NOT_FOUND` (reimpresión VEN-10) |
