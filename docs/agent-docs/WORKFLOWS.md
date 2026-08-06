@@ -73,9 +73,19 @@ docker compose up --build      # db + api + web (producción local, web :8080)
 docker compose exec db psql -U techstore -d techstore
 ```
 
+## Producción
+```bash
+cp .env.production.example .env   # DOMAIN, CORS_ORIGIN, JWT_SECRET, POSTGRES_PASSWORD, SMTP_*
+docker compose -f docker-compose.prod.yml up -d --build   # db + api + web + caddy(TLS) + backup
+docker compose -f docker-compose.prod.yml exec backup sh -c 'ls -lh /backups'   # backups diarios
+./scripts/restore.sh techstore-YYYYMMDD-HHMM.sql.gz       # restaurar
+# Deploy automático: push a main → CI ejecuta git pull + compose up --build (secrets SSH_*)
+```
+
 ## CI Pipeline
 ```
 Lint → Typecheck → db:migrate (test DB) → db:seed → Test (RUN_DB_TESTS=true, Postgres 16 service) → Build
++ Deploy (solo push a main): SSH → git pull --ff-only → docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 ## Workers (server/src/index.ts, setInterval)

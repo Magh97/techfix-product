@@ -6,6 +6,7 @@
 React SPA ──REST/JSON──► Express API ──pg──► PostgreSQL 16
 Express API ──► Workers (setInterval: retrasos/hora, garantías/día, refresh-cleanup/día)
 Worker ──SMTP──► Correo (sin SMTP → simulado en consola)
+Producción (docker-compose.prod.yml): caddy (TLS) → web(nginx) → api → db · backup (pg_dump diario, BR-DAT-01)
 ```
 
 ## Server Modules
