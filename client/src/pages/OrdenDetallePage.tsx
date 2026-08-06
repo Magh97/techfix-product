@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Bell, CheckCircle2, PackagePlus, PenLine, Plus, RefreshCw, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, Archive, Bell, CheckCircle2, PackagePlus, PenLine, Plus, RefreshCw, Trash2, Wrench } from "lucide-react";
 import { SignatureCanvas } from "@/components/orden/SignatureCanvas";
 import { StatusBadge } from "@/components/orden/StatusBadge";
 import { Stepper } from "@/components/orden/Stepper";
@@ -15,7 +15,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { TD, TH, TR, Table, THead } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { getSessionUser } from "@/lib/auth";
-import { comprasApi, ordenesApi, productsApi } from "@/lib/api";
+import { comprasApi, ordenesApi, productsApi, usadosApi } from "@/lib/api";
 import { fechaCorta, mxn } from "@/lib/utils";
 import type { Sustitucion } from "@/lib/types";
 
@@ -30,6 +30,8 @@ export default function OrdenDetallePage() {
   const [dialog, setDialog] = useState<null | "diagnostico" | "cotizacion" | "consumo" | "manoObra" | "entrega" | "cancelar">(null);
   const [solicitarAbierto, setSolicitarAbierto] = useState(false);
   const [sustitucionLinea, setSustitucionLinea] = useState<{ lineaId: number; productoId: number; nombre: string } | null>(null);
+  const [usadoAbierto, setUsadoAbierto] = useState(false);
+  const [usadoForm, setUsadoForm] = useState({ nombre: "", marca: "", modelo: "", valor: "", precioVenta: "", observaciones: "" });
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["orden", ordenId],
@@ -61,6 +63,35 @@ export default function OrdenDetallePage() {
         solicitudes.refetch();
       })
       .catch((e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"));
+  }
+
+  const guardarUsado = useMutation({
+    mutationFn: () =>
+      usadosApi.create({
+        sku: `USO-${Date.now()}`,
+        nombre: usadoForm.nombre,
+        marca: usadoForm.marca || null,
+        modelo: usadoForm.modelo || null,
+        valorTradeIn: Number(usadoForm.valor),
+        precioVenta: Number(usadoForm.precioVenta),
+        origen: "reparacion",
+        clienteId: orden?.clienteId ?? null,
+        ordenId,
+        observaciones: usadoForm.observaciones || undefined,
+      }),
+    onSuccess: () => {
+      toast.success("Equipo registrado como usado");
+      setUsadoAbierto(false);
+      setUsadoForm({ nombre: "", marca: "", modelo: "", valor: "", precioVenta: "", observaciones: "" });
+      qc.invalidateQueries({ queryKey: ["orden", ordenId] });
+      qc.invalidateQueries({ queryKey: ["usados"] });
+    },
+    onError: (e) => toast.error("Error", e instanceof Error ? e.message : "Intenta de nuevo"),
+  });
+
+  function abrirRegistrarUsado() {
+    setUsadoForm({ nombre: "", marca: "", modelo: "", valor: "", precioVenta: "", observaciones: "" });
+    setUsadoAbierto(true);
   }
 
   function aceptarSustitucion(s: Sustitucion) {
@@ -146,6 +177,7 @@ export default function OrdenDetallePage() {
   const reservadas = orden.detalle.filter((d) => d.estadoLinea === "reservada");
   const esTecnico = rol === "tecnico";
   const esVendedor = rol === "vendedor" || rol === "admin";
+  const esAdmin = rol === "admin";
   const puedeSolicitar = esTecnico || rol === "admin";
   const puedeProponer = puedeSolicitar && (orden.estado === "cotizado" || orden.estado === "en_reparacion");
   const activo = !["entregado", "cancelado"].includes(orden.estado);
@@ -225,6 +257,11 @@ export default function OrdenDetallePage() {
               </>
             )}
             {esVendedor && <Button variant="outline" onClick={() => setDialog("cancelar")}>Cancelar</Button>}
+            {esAdmin && orden.estado !== "entregado" && (
+              <Button variant="outline" onClick={abrirRegistrarUsado}>
+                <Archive className="h-4 w-4" /> Registrar usado
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -495,6 +532,50 @@ export default function OrdenDetallePage() {
           }}
         />
       )}
+      <Dialog open={usadoAbierto} onClose={() => setUsadoAbierto(false)} title="Registrar equipo usado de la orden">
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            Registra el equipo abandonado como usado en inventario. El valor asignado será el costo del producto.
+          </p>
+          <div>
+            <Label>Nombre del equipo *</Label>
+            <Input required value={usadoForm.nombre} onChange={(e) => setUsadoForm((f) => ({ ...f, nombre: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Marca</Label>
+              <Input value={usadoForm.marca} onChange={(e) => setUsadoForm((f) => ({ ...f, marca: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Modelo</Label>
+              <Input value={usadoForm.modelo} onChange={(e) => setUsadoForm((f) => ({ ...f, modelo: e.target.value }))} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Valor asignado / costo *</Label>
+              <Input type="number" min={0} step="0.01" value={usadoForm.valor} onChange={(e) => setUsadoForm((f) => ({ ...f, valor: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Precio de reventa *</Label>
+              <Input type="number" min={0.01} step="0.01" value={usadoForm.precioVenta} onChange={(e) => setUsadoForm((f) => ({ ...f, precioVenta: e.target.value }))} />
+            </div>
+          </div>
+          <div>
+            <Label>Observaciones</Label>
+            <Input value={usadoForm.observaciones} onChange={(e) => setUsadoForm((f) => ({ ...f, observaciones: e.target.value }))} placeholder="Ej. cliente no recogió el equipo" />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setUsadoAbierto(false)}>Cancelar</Button>
+            <Button
+              disabled={guardarUsado.isPending || !usadoForm.nombre.trim() || !(Number(usadoForm.valor) >= 0) || !(Number(usadoForm.precioVenta) > 0)}
+              onClick={() => guardarUsado.mutate()}
+            >
+              {guardarUsado.isPending ? "Guardando…" : "Registrar"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
