@@ -223,6 +223,11 @@ paths:
               properties:
                 cantidad: { type: integer, example: -3 }
                 motivo: { type: string }
+                tipo:
+                  type: string
+                  enum: [ajuste, merma, dano]
+                  default: ajuste
+                  description: merma y dano solo con cantidad negativa
       responses:
         "200":
           description: Ajuste aplicado
@@ -231,7 +236,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  data: { $ref: "#/components/schemas/Movimiento" }
+                  data: { $ref: "#/components/schemas/Producto" }
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -401,6 +406,31 @@ paths:
                   data: { $ref: "#/components/schemas/Cliente" }
         "400":
           $ref: "#/components/responses/ValidationError"
+
+  /clientes/{clienteId}/notas-credito:
+    get:
+      tags: [Clientes]
+      summary: Notas de crédito activas de un cliente
+      operationId: listNotasCreditoCliente
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: clienteId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Notas de crédito con saldo > 0
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/NotaCredito" }
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /ordenes:
     post:
@@ -733,11 +763,12 @@ paths:
                     properties:
                       productoId: { type: integer }
                       cantidad: { type: integer, minimum: 1 }
-                reembolsoMetodo: { type: string }
-                notaCredito: { type: boolean, default: false }
+                motivo:
+                  type: string
+                  description: Motivo opcional (va a auditoría)
       responses:
-        "201":
-          description: Devolución registrada
+        "200":
+          description: Devolución registrada (si es contado con cliente genera una nota de crédito)
           content:
             application/json:
               schema:
@@ -745,7 +776,7 @@ paths:
                 properties:
                   data: { type: object }
         "422":
-          description: Fuera de ventana o venta cancelada
+          description: Fuera de ventana, venta procesada o crédito con abonos
           content:
             application/json:
               schema:
@@ -1634,13 +1665,16 @@ components:
         montoRecibido: { type: number }
         pagos:
           type: array
-          description: Desglose de pago mixto (solo ventas de contado; la suma debe dar total − parte de pago)
+          description: Desglose de pago mixto (solo ventas de contado; la suma debe dar total − parte de pago − nota de crédito)
           items:
             type: object
             required: [metodo, monto]
             properties:
               metodo: { type: string, enum: [efectivo, tarjeta_credito, tarjeta_debito, transferencia, deposito] }
               monto: { type: number, minimum: 0.01 }
+        notaCreditoId:
+          type: integer
+          description: Nota de crédito del cliente a aplicar (solo contado; reduce el total a pagar y consume saldo)
         partesDePago:
           type: array
           description: Parte de pago en especie (equipo usado); solo ventas de contado
@@ -1683,9 +1717,15 @@ components:
         parteDePago:
           type: number
           description: Valor aceptado como parte de pago en especie (reduce el efectivo a recibir)
+        notaCredito:
+          type: number
+          description: Monto de nota de crédito aplicado (reduce el total a pagar)
+        notaCreditoId:
+          type: [integer, "null"]
+          description: Nota de crédito usada en la venta (solo contado)
         totalAPagar:
           type: number
-          description: total − parte_de_pago
+          description: total − parte_de_pago − nota_credito
         usadosCreados:
           type: array
           items:
@@ -1779,6 +1819,17 @@ components:
         registradaPorNombre: { type: string }
         resueltaPorNombre: { type: [string, "null"] }
         resueltaAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    NotaCredito:
+      type: object
+      properties:
+        id: { type: integer }
+        folio: { type: string }
+        montoOriginal: { type: number }
+        saldo: { type: number }
+        ventaOrigenFolio: { type: [string, "null"] }
+        motivo: { type: [string, "null"] }
         createdAt: { type: string, format: date-time }
 
     ErrorResponse:

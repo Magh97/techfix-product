@@ -355,7 +355,7 @@ erDiagram
 
 ```
 rol:                  admin | vendedor | tecnico
-movimiento_tipo:      ENTRADA | SALIDA_VENTA | SALIDA_CONSUMO | AJUSTE | DEVOLUCION | RESERVA | LIBERACION
+movimiento_tipo:      ENTRADA | SALIDA_VENTA | SALIDA_CONSUMO | AJUSTE | DEVOLUCION | RESERVA | LIBERACION | MERMA | DANO
 estado_orden:         pendiente | en_diagnostico | cotizado | en_reparacion | sustitucion_pendiente | listo | entregado | cancelado
 estado_linea_orden:   cotizada | reservada | consumida | liberada
 estado_cotizacion:    emitida | aprobada | rechazada | expirada | convertida
@@ -579,6 +579,8 @@ TABLE ventas {
   fecha_vencimiento DATE
   monto_recibido  NUMERIC(19,4)
   parte_de_pago   NUMERIC(19,4) NOT NULL DEFAULT 0 CHECK(parte_de_pago >= 0)  -- trade-in en especie (reduce efectivo a recibir)
+  nota_credito    NUMERIC(19,4) NOT NULL DEFAULT 0 CHECK(nota_credito >= 0)    -- saldo a favor aplicado (reduce total a pagar)
+  nota_credito_id INTEGER FK→notas_credito.id ON DELETE SET NULL               -- nota usada (auditoría)
   estado          estado_venta NOT NULL DEFAULT 'completada'
   caja_id         INTEGER FK→cajas.id ON DELETE RESTRICT
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -735,6 +737,18 @@ TABLE quejas {
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 }
 
+TABLE notas_credito {
+  id              SERIAL PK
+  folio           VARCHAR(20) UNIQUE NOT NULL   -- NC-####
+  cliente_id      INTEGER NOT NULL FK→clientes.id ON DELETE RESTRICT
+  monto_original  NUMERIC(19,4) NOT NULL CHECK(monto_original > 0)
+  saldo           NUMERIC(19,4) NOT NULL CHECK(saldo >= 0)
+  venta_origen_id INTEGER FK→ventas.id ON DELETE RESTRICT   -- venta que se devolvió
+  motivo          TEXT
+  created_by      INTEGER NOT NULL FK→usuarios.id ON DELETE RESTRICT
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+}
+
 TABLE configuracion {
   clave   VARCHAR(60) PRIMARY KEY
   valor   JSONB NOT NULL
@@ -811,6 +825,8 @@ cajas                 idx_cajas_usuario_fecha            (usuario_id, fecha)    
 - **Parte de pago (trade-in):** `ventas.parte_de_pago` registra el valor aceptado en especie y `equipos_usados.venta_id` lo vincula a la venta; el corte de caja excluye el trade-in del efectivo (migración `0014`).
 - **Pagos mixtos (BR-VEN-02/14):** `pagos` registra todo el dinero recibido — filas del desglose al crear una venta de contado y abonos a crédito; el corte de caja suma `pagos` (solo dinero realmente recibido).
 - **Quejas (BR-CRM-08):** `quejas` da seguimiento abierta→en_proceso→resuelta con vínculo opcional a garantía/orden/venta (migración `0015`).
+- **Ajustes por merma/daño:** `movimiento_tipo` incluye `MERMA` y `DANO` (migración `0016`); `POST /productos/:id/ajustar` registra el tipo (merma/daño solo con cantidad negativa).
+- **Notas de crédito (BR-VEN-08):** `notas_credito` (migración `0017`) guarda el saldo a favor del cliente (folio `NC-`, sin vigencia) generado al devolver una venta de contado con cliente; `ventas.nota_credito`/`nota_credito_id` registran su aplicación en el POS (reduce `totalAPagar`, consume saldo). Las ventas a crédito devueltas se **excluyen de la CxC** (queries filtran `estado='devuelta'`).
 - **Límite de crédito default:** `clientes.limite_credito` = $3,000 MXN al crear el cliente; se amplía individualmente (BR-CRE-01).
 - **Firma de recepción:** `ordenes_servicio.firma_recepcion` guarda el PNG (base64) de la firma capturada en canvas táctil (BR-SER-01).
 - **Soft delete:** `is_active` en usuarios, clientes, productos, proveedores. Ordenes/ventas/movimientos nunca se eliminan (BR-DAT-02/03).
