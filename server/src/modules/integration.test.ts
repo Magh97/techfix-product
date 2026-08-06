@@ -2726,6 +2726,58 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(v.status).toBe(403);
   });
 
+  it("INVENTARIO: ajustes por tipo MERMA/DANO registran el movimiento correspondiente", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+    const prod = await request(app)
+      .post("/api/v1/productos")
+      .set(auth)
+      .send({ categoriaId: 1, sku: `MD-${Date.now()}`, nombre: "Prod merma daño", precioCompra: 5, precioVenta: 10 });
+    const productoId = prod.body.data.id;
+    await pool.query("UPDATE productos SET stock = 10 WHERE id = $1", [productoId]);
+
+    const merma = await request(app)
+      .post(`/api/v1/productos/${productoId}/ajustar`)
+      .set(auth)
+      .send({ cantidad: -2, motivo: "Merma por manejo", tipo: "merma" });
+    expect(merma.status).toBe(200);
+    expect(merma.body.data.stock).toBe(8);
+
+    const dano = await request(app)
+      .post(`/api/v1/productos/${productoId}/ajustar`)
+      .set(auth)
+      .send({ cantidad: -1, motivo: "Equipo dañado", tipo: "dano" });
+    expect(dano.status).toBe(200);
+    expect(dano.body.data.stock).toBe(7);
+
+    const mov = await pool.query<{ tipo: string }>(
+      "SELECT tipo FROM movimientos_inventario WHERE producto_id = $1 ORDER BY id",
+      [productoId]
+    );
+    expect(mov.rows.map((r) => r.tipo)).toEqual(["MERMA", "DANO"]);
+
+    // Merma con cantidad positiva → 400 (VALIDATION_ERROR)
+    const mal = await request(app)
+      .post(`/api/v1/productos/${productoId}/ajustar`)
+      .set(auth)
+      .send({ cantidad: 2, motivo: "Merma positiva inválida", tipo: "merma" });
+    expect(mal.status).toBe(400);
+    expect(mal.body.error.code).toBe("VALIDATION_ERROR");
+
+    // Daño con cantidad positiva → 400
+    const malD = await request(app)
+      .post(`/api/v1/productos/${productoId}/ajustar`)
+      .set(auth)
+      .send({ cantidad: 3, motivo: "Daño positivo inválido", tipo: "dano" });
+    expect(malD.status).toBe(400);
+
+    // Ajuste general sin tipo sigue funcionando como AJUSTE (±)
+    const gen = await request(app)
+      .post(`/api/v1/productos/${productoId}/ajustar`)
+      .set(auth)
+      .send({ cantidad: 4, motivo: "Inventario físico" });
+    expect(gen.status).toBe(200);
+  });
+
   it("INVENTARIO: historial de movimientos por producto", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const prod = await request(app)

@@ -216,7 +216,7 @@ export const productsApi = {
     api<{ data: Bom }>(`/productos/${id}/bom`, { method: "PUT", body: JSON.stringify(input) }),
   sugerencias: (id: number) => api<{ data: Sugerencias }>(`/productos/${id}/sugerencias`),
   porCodigo: (codigo: string) => api<{ data: Producto }>(`/productos/por-codigo/${encodeURIComponent(codigo)}`),
-  ajustar: (id: number, input: { cantidad: number; motivo: string }) =>
+  ajustar: (id: number, input: { cantidad: number; motivo: string; tipo?: "ajuste" | "merma" | "dano" }) =>
     api<{ data: Producto }>(`/productos/${id}/ajustar`, { method: "POST", body: JSON.stringify(input) }),
   movimientos: (id: number, params?: { page?: number; pageSize?: number }) => {
     const qs = new URLSearchParams();
