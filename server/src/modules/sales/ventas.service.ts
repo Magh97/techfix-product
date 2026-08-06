@@ -306,6 +306,15 @@ export async function registrarVenta(
 
 /* --- Lecturas --- */
 
+function mapVentaLinea(l: repo.VentaLineaRow) {
+  return {
+    descripcion: l.descripcion_servicio ?? l.nombre_producto ?? "Servicio",
+    cantidad: l.cantidad,
+    precio: Number(l.precio_neto),
+    productoId: l.producto_id,
+  };
+}
+
 export async function list(f: { desde?: string; hasta?: string; vendedorId?: number; metodoPago?: string; estado?: string; page: number; pageSize: number }) {
   const limit = f.pageSize;
   const offset = (f.page - 1) * limit;
@@ -328,7 +337,7 @@ export async function list(f: { desde?: string; hasta?: string; vendedorId?: num
       fechaVencimiento: v.fecha_vencimiento ? addDays(v.fecha_vencimiento, 0) : null,
       estado: v.estado,
       createdAt: v.created_at,
-      lineas: await repo.listVentaLineas(v.id),
+      lineas: (await repo.listVentaLineas(v.id)).map(mapVentaLinea),
     }))
   );
   return { data, meta: { page: f.page, pageSize: limit, totalItems, totalPages: Math.ceil(totalItems / limit) || 1 } };
@@ -355,7 +364,7 @@ export async function getById(id: number) {
     montoRecibido: v.monto_recibido ? Number(v.monto_recibido) : null,
     estado: v.estado,
     createdAt: v.created_at,
-    lineas: await repo.listVentaLineas(v.id),
+    lineas: (await repo.listVentaLineas(v.id)).map(mapVentaLinea),
     pagos: (await repo.listPagos(v.id)).map((p) => ({ id: p.id, monto: Number(p.monto), metodo: p.metodo, fecha: p.created_at })),
   };
 }
@@ -396,6 +405,10 @@ export async function cancelar(ventaId: number, motivo: string, user: { id: numb
   const venta = await repo.findVenta(ventaId);
   if (!venta) throw AppError.notFound("SALE_NOT_FOUND", "Venta no encontrada");
   if (venta.estado === "cancelada") throw AppError.conflict("SALE_ALREADY_CANCELLED", "La venta ya está cancelada");
+  if (venta.tipo_pago === "credito") {
+    const pagado = await repo.sumPagosVenta(ventaId);
+    if (pagado > 0) throw AppError.business("SALE_WITH_PAYMENTS", "No se puede cancelar una venta a crédito con abonos cobrados");
+  }
 
   await withTransaction(async (c) => {
     const lineas = await repo.listVentaLineas(ventaId);
@@ -411,6 +424,7 @@ export async function cancelar(ventaId: number, motivo: string, user: { id: numb
         });
       }
     }
+    await repo.reintegrarUsadosVenta(c, ventaId);
     await repo.updateVentaEstado(c, ventaId, "cancelada");
   });
   await registrarAuditoria({ usuarioId: user.id, accion: "CANCELAR", entidad: "venta", entidadId: ventaId, despues: { motivo } });
@@ -419,13 +433,17 @@ export async function cancelar(ventaId: number, motivo: string, user: { id: numb
 
 export async function devolucion(
   ventaId: number,
-  input: { lineas: { productoId: number; cantidad: number }[] },
+  input: { lineas: { productoId: number; cantidad: number }[]; motivo?: string },
   user: { id: number; rol: string }
 ) {
   const venta = await repo.findVenta(ventaId);
   if (!venta) throw AppError.notFound("SALE_NOT_FOUND", "Venta no encontrada");
   if (venta.estado === "devuelta" || venta.estado === "cancelada") {
     throw AppError.conflict("SALE_ALREADY_PROCESSED", "La venta ya fue devuelta o cancelada");
+  }
+  if (venta.tipo_pago === "credito") {
+    const pagado = await repo.sumPagosVenta(ventaId);
+    if (pagado > 0) throw AppError.business("SALE_WITH_PAYMENTS", "No se puede devolver una venta a crédito con abonos cobrados");
   }
   const config = await getConfig();
   const ventana = addDays(venta.created_at, config.diasDevolucion);
@@ -444,8 +462,15 @@ export async function devolucion(
         motivo: `Devolución venta ${venta.folio}`,
       });
     }
+    await repo.reintegrarUsadosVenta(c, ventaId);
     await repo.updateVentaEstado(c, ventaId, "devuelta");
   });
-  await registrarAuditoria({ usuarioId: user.id, accion: "DEVOLUCION", entidad: "venta", entidadId: ventaId, despues: { lineas: input.lineas } });
+  await registrarAuditoria({
+    usuarioId: user.id,
+    accion: "DEVOLUCION",
+    entidad: "venta",
+    entidadId: ventaId,
+    despues: { lineas: input.lineas, motivo: input.motivo ?? null },
+  });
   return getById(ventaId);
 }
