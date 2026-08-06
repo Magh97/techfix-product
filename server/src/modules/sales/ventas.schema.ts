@@ -44,6 +44,8 @@ export const crearVentaSchema = z.object({
     )
     .min(1)
     .optional(),
+  // Nota de crédito del cliente (saldo a favor). Solo ventas de contado.
+  notaCreditoId: z.number().int().positive().optional().nullable(),
 });
 
 export const listVentasQuery = z.object({

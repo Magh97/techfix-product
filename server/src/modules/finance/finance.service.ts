@@ -44,6 +44,7 @@ async function computarCaja(cajaId: number) {
   const abonos = await repo.sumAbonosPorMetodo(cajaId);
   const egresos = await repo.sumEgresosPorMetodo(cajaId);
   const partesDePago = await repo.sumPartesDePago(cajaId);
+  const notasCredito = await repo.sumNotasCredito(cajaId);
 
   const ingresosPorMetodo: Record<string, number> = {};
   for (const p of abonos) ingresosPorMetodo[p.metodo] = toNum(p.total);
@@ -62,6 +63,7 @@ async function computarCaja(cajaId: number) {
     egresos: totalEgresos,
     esperadoEfectivo,
     partesDePago: toNum(partesDePago?.total),
+    notasCredito: toNum(notasCredito?.total),
   };
 }
 
@@ -73,7 +75,7 @@ export async function corte(usuarioId: number) {
 }
 
 async function computarCajaVacio() {
-  return { ingresosPorMetodo: {}, egresosPorMetodo: {}, ingresos: 0, egresos: 0, esperadoEfectivo: 0, partesDePago: 0 };
+  return { ingresosPorMetodo: {}, egresosPorMetodo: {}, ingresos: 0, egresos: 0, esperadoEfectivo: 0, partesDePago: 0, notasCredito: 0 };
 }
 
 export async function cerrar(usuarioId: number, efectivoFisico: number) {

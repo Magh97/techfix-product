@@ -54,6 +54,14 @@ export function sumPartesDePago(cajaId: number) {
   ).then((r) => r.rows[0]);
 }
 
+export function sumNotasCredito(cajaId: number) {
+  return query<{ total: string }>(
+    `SELECT COALESCE(SUM(nota_credito),0)::numeric AS total FROM ventas
+     WHERE caja_id = $1 AND estado IN ('completada','credito_pendiente')`,
+    [cajaId]
+  ).then((r) => r.rows[0]);
+}
+
 export function sumAbonosPorMetodo(cajaId: number) {
   return query<{ metodo: string; total: string }>(
     `SELECT metodo, COALESCE(SUM(monto),0)::numeric AS total FROM pagos WHERE caja_id = $1 GROUP BY metodo`,
@@ -130,7 +138,7 @@ export function listVentasCreditoGlobal() {
   }>(
     `SELECT v.id, v.folio, v.cliente_id, c.nombre AS cliente_nombre, v.total, v.fecha_vencimiento
      FROM ventas v JOIN clientes c ON c.id = v.cliente_id
-     WHERE v.tipo_pago = 'credito' AND v.estado IN ('completada','credito_pendiente','devuelta')
+     WHERE v.tipo_pago = 'credito' AND v.estado IN ('completada','credito_pendiente')
      ORDER BY v.id DESC LIMIT 100`,
     []
   ).then((r) => r.rows);

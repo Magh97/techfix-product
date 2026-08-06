@@ -37,6 +37,7 @@ export interface VentaDTO {
   lineas: { descripcion: string; cantidad: number; precio: number; productoId?: number | null }[];
   garantias: { tipo: string; inicio: string; fin: string }[];
   parteDePago: number;
+  notaCredito: number;
   totalAPagar: number;
   usadosCreados: { productoId: number; nombre: string; valor: number }[];
   pagos: { metodo: string; monto: number }[];
@@ -143,7 +144,29 @@ export async function registrarVenta(
         throw AppError.business("PARTE_DE_PAGO_INVALIDA", `La parte de pago (${parteDePago}) supera el total (${mon.total})`);
       }
     }
-    const totalAPagar = Math.max(0, mon.total - parteDePago);
+
+    // Nota de crédito: saldo a favor del cliente aplicable a ventas de contado.
+    let notaCredito = 0;
+    let notaCreditoId: number | null = null;
+    if (input.notaCreditoId) {
+      if (input.tipoPago !== "contado") {
+        throw AppError.business("NOTA_CREDITO_INVALIDA", "La nota de crédito solo aplica en ventas de contado");
+      }
+      if (!input.clienteId) {
+        throw AppError.business("NOTA_CREDITO_INVALIDA", "La nota de crédito requiere un cliente");
+      }
+      const nota = await repo.findNotaCredito(input.notaCreditoId);
+      if (!nota) throw AppError.notFound("NOTA_CREDITO_NOT_FOUND", "Nota de crédito no encontrada");
+      if (nota.cliente_id !== input.clienteId) {
+        throw AppError.business("NOTA_CREDITO_INVALIDA", "La nota de crédito pertenece a otro cliente");
+      }
+      if (Number(nota.saldo) <= 0) {
+        throw AppError.business("NOTA_CREDITO_SIN_SALDO", "La nota de crédito no tiene saldo disponible");
+      }
+      notaCredito = Math.min(Number(nota.saldo), mon.total - parteDePago);
+      notaCreditoId = nota.id;
+    }
+    const totalAPagar = Math.max(0, mon.total - parteDePago - notaCredito);
 
     // Desglose de pago (pagos mixtos): todo dinero recibido se registra en `pagos`.
     if (input.pagos?.length && input.tipoPago !== "contado") {
@@ -151,7 +174,9 @@ export async function registrarVenta(
     }
     let detallePagos: { metodo: string; monto: number }[];
     if (input.tipoPago === "contado") {
-      if (input.pagos?.length) {
+      if (totalAPagar <= 0) {
+        detallePagos = [];
+      } else if (input.pagos?.length) {
         if (input.pagos.length > 5) throw AppError.business("PAGOS_INVALIDOS", "Máximo 5 métodos de pago por venta");
         const suma = input.pagos.reduce((a, p) => a + p.monto, 0);
         if (Math.abs(suma - totalAPagar) > 0.01) {
@@ -206,9 +231,17 @@ export async function registrarVenta(
       montoRecibido: recibido,
       parteDePago,
       cajaId,
+      notaCredito,
+      notaCreditoId,
     });
     if (!ventaId) throw AppError.business("INTERNAL_ERROR", "No se pudo registrar la venta");
     await repo.insertDetalleVenta(c, ventaId, lineasDetalle);
+
+    // Consumir el saldo de la nota de crédito aplicada
+    if (notaCreditoId && notaCredito > 0) {
+      const resNota = await repo.decrementarSaldoNota(c, notaCreditoId, notaCredito);
+      if (!resNota.rowCount) throw AppError.business("NOTA_CREDITO_SIN_SALDO", "La nota de crédito no tiene saldo suficiente");
+    }
 
     // Registrar el desglose de pagos (todo dinero recibido en la venta)
     for (const p of detallePagos) {
@@ -287,6 +320,7 @@ export async function registrarVenta(
       lineas: lineasDetalle,
       garantias,
       parteDePago,
+      notaCredito,
       totalAPagar,
       usadosCreados,
       pagos: detallePagos,
@@ -451,6 +485,16 @@ export async function devolucion(
     throw AppError.business("REFUND_WINDOW_EXPIRED", `Solo se aceptan devoluciones dentro de ${config.diasDevolucion} días (BR-VEN-08)`);
   }
 
+  // Total devuelto: suma del precio unitario de las líneas devueltas (BR-VEN-08).
+  const lineasVenta = await repo.listVentaLineas(ventaId);
+  const precioUnitarioPorProducto = new Map<number, number>();
+  for (const l of lineasVenta) {
+    if (l.producto_id && !precioUnitarioPorProducto.has(l.producto_id)) {
+      precioUnitarioPorProducto.set(l.producto_id, l.cantidad > 0 ? Number(l.precio_neto) / l.cantidad : 0);
+    }
+  }
+  const totalDevuelto = input.lineas.reduce((acc, l) => acc + (precioUnitarioPorProducto.get(l.productoId) ?? 0) * l.cantidad, 0);
+
   await withTransaction(async (c) => {
     for (const l of input.lineas) {
       await repo.incrementStock(c, l.productoId, l.cantidad);
@@ -463,6 +507,19 @@ export async function devolucion(
       });
     }
     await repo.reintegrarUsadosVenta(c, ventaId);
+    // Nota de crédito por el total devuelto: solo ventas de contado con cliente.
+    // (Una venta a crédito sin abonos se devuelve sin dinero cobrado; la CxC se excluye por estado devuelta.)
+    if (venta.tipo_pago === "contado" && venta.cliente_id && totalDevuelto > 0) {
+      const folioNota = await repo.nextNotaCreditoFolio(c);
+      await repo.insertNotaCredito(c, {
+        folio: folioNota,
+        clienteId: venta.cliente_id,
+        monto: totalDevuelto,
+        ventaId,
+        motivo: input.motivo ?? null,
+        createdBy: user.id,
+      });
+    }
     await repo.updateVentaEstado(c, ventaId, "devuelta");
   });
   await registrarAuditoria({
@@ -470,7 +527,7 @@ export async function devolucion(
     accion: "DEVOLUCION",
     entidad: "venta",
     entidadId: ventaId,
-    despues: { lineas: input.lineas, motivo: input.motivo ?? null },
+    despues: { lineas: input.lineas, motivo: input.motivo ?? null, notaCredito: totalDevuelto },
   });
   return getById(ventaId);
 }

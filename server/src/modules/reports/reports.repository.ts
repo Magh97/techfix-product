@@ -325,7 +325,7 @@ export function saldosDeudores() {
        FROM ventas v
        JOIN clientes c ON c.id = v.cliente_id
        LEFT JOIN pagos p ON p.venta_id = v.id
-       WHERE v.tipo_pago = 'credito' AND v.estado IN ('completada','credito_pendiente','devuelta')
+       WHERE v.tipo_pago = 'credito' AND v.estado IN ('completada','credito_pendiente')
        GROUP BY v.id, v.cliente_id, c.nombre, v.total
      ) x
      WHERE x.saldo > 0
