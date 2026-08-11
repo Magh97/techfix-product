@@ -1,8 +1,12 @@
 # ADR-0007: Notificaciones por correo primero; WhatsApp/Twilio diferido
 
 **Fecha:** 2026-08-03
-**Estado:** Aceptado
+**Estado:** Superseded por ADR-0006 (WhatsApp implementado 2026-08-11)
 **Decisores:** Equipo de desarrollo + dueño del negocio
+
+---
+
+> **Actualización (2026-08-11):** WhatsApp vía Twilio quedó implementado (NOT-01..04) con preferencia de canal automática (`preferencia_contacto`) y fallback a correo; sin credenciales Twilio el envío se simula (patrón SMTP). Ver `server/src/modules/notifications/whatsapp.ts` y `notifications.service.ts`.
 
 ---
 

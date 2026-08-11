@@ -61,7 +61,23 @@ SMTP_PASS=...
 SMTP_FROM=no-reply@midominio.com
 ```
 
-Se aplica al recrear el API (`docker compose -f docker-compose.prod.yml up -d api`). NOT-02/03/05/06 se envían por este canal. *(NOT-01, aviso automático de retraso, queda pendiente como feature funcional.)*
+Se aplica al recrear el API (`docker compose -f docker-compose.prod.yml up -d api`). NOT-02/03/05/06 se envían por este canal.
+
+### WhatsApp real (Twilio)
+
+Sin credenciales Twilio el envío se **simula** (logs del API + registra `enviado`). Para envío real setea en `.env`:
+
+```
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+TWILIO_DEFAULT_COUNTRY_CODE=52
+```
+
+- `TWILIO_WHATSAPP_FROM` es el número de Twilio (formato `whatsapp:+<E.164>`). En **sandbox** el número de prueba debe estar verificado y solo acepta plantillas de ejemplo; en producción los mensajes requieren **plantillas aprobadas por Meta** (el sistema envía el `body` de la plantilla configurada en Notificaciones).
+- Los teléfonos de clientes se normalizan a **E.164** anteponiendo `TWILIO_DEFAULT_COUNTRY_CODE` (default `52` México) cuando no traen código de país.
+- **Canal por preferencia** (ADR-0006): `whatsapp` → WhatsApp; si falta teléfono o falla → correo (si hay correo). `correo` → correo. `llamada` → se registra como pendiente de llamada manual. Aplica a NOT-01..04 (workers de retraso y garantía incluidos).
+- Se aplica al recrear el API (`docker compose -f docker-compose.prod.yml up -d api`).
 
 ## 5. Backups (BR-DAT-01)
 

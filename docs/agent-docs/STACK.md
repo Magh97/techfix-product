@@ -15,6 +15,7 @@
 | Auth | jsonwebtoken | ^9.0 | — |
 | Tests | Vitest + supertest + jsdom | ^3 | nodejs-testing |
 | Correo | nodemailer | ^9.0 | — |
+| WhatsApp | twilio | ^5.0 | notificaciones NOT-01..04 |
 | Excel | exceljs | ^4.4 | — |
 | Logs | pino | ^9.5 | — |
 | TS | TypeScript (strict) | 5.9 client / 5.7 server | — |
@@ -45,6 +46,10 @@ SMTP_HOST=            # vacío → correos simulados en consola
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
+TWILIO_ACCOUNT_SID=   # vacío → whatsapp simulado
+TWILIO_AUTH_TOKEN=
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+TWILIO_DEFAULT_COUNTRY_CODE=52
 ```
 
 ## Seed Users
