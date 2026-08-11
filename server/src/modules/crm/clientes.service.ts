@@ -1,6 +1,7 @@
 import { AppError } from "../../shared/errors";
 import { getConfig } from "../../shared/config";
 import * as repo from "./clientes.repository";
+import * as ventasRepo from "../sales/ventas.repository";
 import * as quejasService from "../quejas/quejas.service";
 
 export interface ClienteDTO {
@@ -132,4 +133,19 @@ export async function cxc(id: number) {
     saldoTotal,
     items,
   };
+}
+
+export async function notasCredito(clienteId: number) {
+  const row = await repo.findClienteById(clienteId);
+  if (!row) throw AppError.notFound("CUSTOMER_NOT_FOUND", "Cliente no encontrado");
+  const notas = await ventasRepo.listNotasCreditoCliente(clienteId);
+  return notas.map((n) => ({
+    id: n.id,
+    folio: n.folio,
+    montoOriginal: Number(n.monto_original),
+    saldo: Number(n.saldo),
+    ventaOrigenFolio: n.venta_origen_folio,
+    motivo: n.motivo,
+    createdAt: n.created_at,
+  }));
 }

@@ -8,6 +8,17 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-08-11
+
+### Added
+- **Reembolso en efectivo en devoluciones (US-VEN-08):** al devolver, el vendedor elige "Reembolso en efectivo" o "Nota de crédito" (nota solo con cliente; **mostrador siempre reembolsa en efectivo**). El reembolso se registra como **egreso** "Reembolso venta {folio}" (categoría `Reembolso`, método efectivo) en la **caja abierta del día** — el corte descuenta el efectivo esperado; se permite aunque quede negativo (el arqueo lo detecta). Solo aplica a ventas de contado; crédito sin abonos se devuelve sin dinero.
+- **Copia offsite automatizada del backup (BR-DAT-01):** servicio `offsite` (rclone/rclone) que espeja el volumen `pgbackups` a un remoto rclone cada hora (`rclone sync /backups RCLONE_REMOTE`); la retención local se replica al remoto. Requiere `rclone.conf` + `RCLONE_REMOTE`.
+- **Imprimir reportes a PDF (US-REP-07):** botón "PDF" en Reportes que imprime el reporte activo (con filtros) vía `window.print()`/`@media print` en área A4 (mismo patrón del ticket térmico, sin dependencias nuevas).
+- **Ajustes de inventario por tipo (US-INV-05):** `POST /productos/:id/ajustar` acepta `tipo: ajuste|merma|dano`; migración `0016_merma_dano` (`movimiento_tipo` + `MERMA`/`DANO`); merma y daño solo con cantidad negativa.
+- **Notas de crédito por devoluciones (US-VEN-08):** al devolver una venta de contado con cliente se genera una nota (`NC-####`, sin vigencia) por el total devuelto (precio unitario × cantidad); aplicable en el POS a ventas de contado del mismo cliente (`notaCreditoId` reduce `totalAPagar` y consume saldo; si cubre todo, la venta queda sin pago en efectivo). Migración `0017_notas_credito`. Las ventas a crédito devueltas **salen de la CxC** (estado `devuelta` excluido). El corte desglosa `notasCredito` como ingreso no monetario.
+- **Abonos mixtos en crédito (US-VEN-14):** `POST /ventas/:id/pagos` acepta `{ pagos: [{ metodo, monto }] }` (máx 5, Σ ≤ pendiente) además del formato simple; desglose de métodos en el diálogo de abono (Cliente y Finanzas).
+- **Proveedor más barato en reabastecimiento (US-COM-05):** favorito activo → proveedor de menor último precio activo → último proveedor; se saltan inactivos (favorito inactivo cae al más barato activo); flag `esMasBarato` y badge en Reabastecimiento; aplica a aprobación de solicitudes.
+
 ## [1.0.0] — 2026-08-06
 
 ### Added
@@ -35,15 +46,10 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 - **Fase producción:** seed **condicional** (`SEED_DEMO=false` no crea usuarios/datos demo; bootstrap esencial siempre), `docker-compose.prod.yml` con **Caddy** (TLS) y servicio **backup** (pg_dump diario con retención, BR-DAT-01), `scripts/backup-loop.sh`/`restore.sh`, `.env.production.example`, job **deploy** en CI para `main` (SSH + compose up --build) y runbook `docs/09-despliegue.md` (incl. notas YunoHost).
 - **Pagos mixtos en el POS (BR-VEN-02/14):** desglose de pago en ventas de contado (varios métodos, Σ = total − parte de pago) con `pagos` registrando todo el dinero recibido (venta y abonos); el **corte de caja** cuenta solo dinero realmente recibido (Σ `pagos`) y el ticket muestra el desglose.
 - **Quejas y reclamaciones (US-CRM-07/BR-CRM-08):** módulo `quejas` (abierta → en_proceso → resuelta) con vínculo opcional a garantía/orden/venta; reclamación de garantía exige garantía del cliente; resolución obligatoria al resolver; botón "Reclamar" en Garantías y tarjeta en el historial del cliente. Migración `0015_quejas`.
-- **Cancelación y devolución de ventas (US-VEN-11/12):** botones "Cancelar venta" (admin, motivo) y "Devolver" (cantidades por línea, motivo opcional) en el ticket de Ventas; bloqueo de ventas a crédito con abonos cobrados (`SALE_WITH_PAYMENTS`); reintegro del equipo usado de parte de pago al cancelar/devolver; corrección del mapeo de `lineas` en el historial (`productoId`/`descripcion`/`precio`). Reembolso/nota de crédito diferido.
+- **Cancelación y devolución de ventas (US-VEN-11/12):** botones "Cancelar venta" (admin, motivo) y "Devolver" (cantidades por línea, motivo opcional) en el ticket de Ventas; bloqueo de ventas a crédito con abonos cobrados (`SALE_WITH_PAYMENTS`); reintegro del equipo usado de parte de pago al cancelar/devolver; corrección del mapeo de `lineas` en el historial (`productoId`/`descripcion`/`precio`). Reembolso en efectivo y notas de crédito en v1.1.0.
 
 ### Limitaciones conocidas
 - Notificaciones solo por **correo** (nodemailer/SMTP); `preferencia_contacto=whatsapp` aún no envía por WhatsApp (ADR-0007: Twilio diferido).
-- **Export PDF** no disponible: los reportes exportan CSV y XLSX únicamente.
-- **Backup offsite** documentado (rclone) pero no automatizado; el respaldo diario queda en el volumen local del VPS.
-- **Nota de crédito / reembolso en devoluciones**: la devolución restituye inventario; el dinero se gestiona fuera del sistema.
-- **Abonos mixtos en crédito** (dividir un abono en varios métodos) no implementado.
-- **Proveedor más barato** en reabastecimiento no priorizado (la comparación de precios existe en Compras).
 - NOT-01 (aviso de retraso) notifica por el canal configurado; sin WhatsApp sigue siendo correo.
 - Empaquetado YunoHost sin realizar (ruta recomendada: VPS + Docker Compose + Caddy).
 

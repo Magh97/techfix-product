@@ -44,6 +44,8 @@ export const crearVentaSchema = z.object({
     )
     .min(1)
     .optional(),
+  // Nota de crédito del cliente (saldo a favor). Solo ventas de contado.
+  notaCreditoId: z.number().int().positive().optional().nullable(),
 });
 
 export const listVentasQuery = z.object({
@@ -58,10 +60,19 @@ export const listVentasQuery = z.object({
 
 export const ventaIdParams = z.object({ ventaId: z.coerce.number().int().positive() });
 
-export const pagoSchema = z.object({
-  monto: z.number().positive(),
-  metodo: z.enum(["efectivo", "tarjeta_credito", "tarjeta_debito", "transferencia", "deposito"]),
-});
+export const pagoSchema = z
+  .object({
+    monto: z.number().positive().optional(),
+    metodo: z.enum(["efectivo", "tarjeta_credito", "tarjeta_debito", "transferencia", "deposito"]).optional(),
+    pagos: z
+      .array(z.object({ metodo: z.enum(["efectivo", "tarjeta_credito", "tarjeta_debito", "transferencia", "deposito"]), monto: z.number().positive() }))
+      .min(1)
+      .max(5)
+      .optional(),
+  })
+  .refine((p) => (p.pagos ? p.monto === undefined && p.metodo === undefined : p.monto !== undefined && p.metodo !== undefined), {
+    message: "Envía { monto, metodo } o { pagos: [{ metodo, monto }] }",
+  });
 
 export const cancelarVentaSchema = z.object({ motivo: z.string().min(1) });
 
@@ -70,4 +81,5 @@ export const devolucionSchema = z.object({
     .array(z.object({ productoId: z.number().int().positive(), cantidad: z.number().int().positive() }))
     .min(1),
   motivo: z.string().max(500).optional(),
+  tipo: z.enum(["reembolso", "nota_credito"]).optional(),
 });

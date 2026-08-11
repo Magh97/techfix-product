@@ -80,6 +80,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Copia offsite (BR-DAT-01): espeja pgbackups a un remoto rclone cada hora.
+  # Requiere rclone.conf (generada con `rclone config` en el host) y RCLONE_REMOTE.
+  offsite:
+    image: rclone/rclone:latest
+    environment:
+      RCLONE_REMOTE: ${RCLONE_REMOTE:?RCLONE_REMOTE es obligatorio (ej. s3-backups:techstore)}
+      OFFSITE_INTERVAL_SECONDS: ${OFFSITE_INTERVAL_SECONDS:-3600}
+    volumes:
+      - pgbackups:/backups:ro
+      - ./scripts/offsite-loop.sh:/offsite-loop.sh:ro
+      - ./rclone.conf:/config/rclone/rclone.conf:ro
+    command: ["sh", "/offsite-loop.sh"]
+    depends_on:
+      - backup
+    restart: unless-stopped
+
 volumes:
   pgdata:
   pgbackups:

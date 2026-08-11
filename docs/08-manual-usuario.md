@@ -49,14 +49,16 @@ Muestra el resumen del día: ventas, órdenes en curso (incl. retrasadas), produ
 6. Registra el pago; se emite el **ticket** con formato térmico 80mm (Imprimir → elige la impresora). Si la venta es con **cliente**, el ticket indica la **garantía** de los productos vendidos.
 7. **Pagos mixtos**: en ventas de **contado** puedes dividir el pago en varios métodos (efectivo, tarjeta, transferencia, depósito) con el **Desglose de pago** — el ticket muestra cada método. Con fila de efectivo, captura el **efectivo entregado** para calcular el **cambio**. Atajos: "Todo efectivo" / "Todo tarjeta".
 7. **Parte de pago (equipo usado)**: en ventas de **contado** puedes aceptar un equipo usado como parte de pago desde el panel del carrito — captura nombre, valor que se acredita y precio de reventa. El **total a pagar** baja ese valor (contra el total con IVA); el usado entra a **Equipos usados** y el **corte de caja** lo excluye del efectivo (se muestra como "Partes de pago").
+8. **Nota de crédito**: si el cliente tiene saldo a favor (por una devolución), aparece la sección **"Nota de crédito"** — selecciónala y su monto se descuenta del total a pagar (el ticket la desglosa); si cubre todo, la venta se registra sin pago en efectivo.
 
 ### Ventas (`/ventas`)
 - Listado con filtros por fecha, vendedor, método de pago y estado.
 - Detalle de cada venta: líneas, pagos y saldo pendiente.
-- **Abono** a venta a crédito (botón en el detalle).
-- **Devolución** (botón en el ticket): solo dentro de **15 días** desde la venta; restituye el inventario por las cantidades indicadas por línea y marca la venta como **devuelta**. El motivo es opcional. El **reembolso / nota de crédito se gestiona fuera del sistema**. No se puede devolver una venta a **crédito con abonos ya cobrados**.
+- **Abono** a venta a crédito (botón en el detalle): con desglose puedes dividir el abono en varios métodos (efectivo, tarjeta, transferencia, depósito) cuya suma debe igualar el monto a abonar.
+- **Devolución** (botón en el ticket): solo dentro de **15 días** desde la venta; restituye el inventario por las cantidades indicadas por línea y marca la venta como **devuelta**. El motivo es opcional. **Forma de reembolso**: con cliente puedes elegir **"Nota de crédito"** (por el total devuelto, sin vigencia) o **"Reembolso en efectivo"** (se registra como egreso en la caja del día, que reduce el efectivo esperado del corte). En ventas a **mostrador** (sin cliente) el reembolso siempre es en **efectivo**. El reembolso exige **caja abierta**; se permite aunque deje el efectivo del corte en negativo (el arqueo al cerrar detecta la diferencia). No se puede devolver una venta a **crédito con abonos ya cobrados**.
 - **Cancelación** (botón en el ticket): solo admin, con motivo obligatorio; revierte el stock. No se puede cancelar una venta a **crédito con abonos cobrados**.
 - Al cancelar o devolver una venta que incluyó un **equipo usado como parte de pago**, el equipo regresa al inventario como **disponible** (si aún no se vendió).
+- **Nota de crédito**: en el POS, al vender a contado con un cliente que tiene saldo a favor (de una devolución), aparece la sección **"Nota de crédito"** — selecciónala y el monto se descuenta del total a pagar; si cubre todo, la venta se registra sin pago en efectivo. Las notas se ven en el detalle del cliente.
 
 ## 5. Cotizaciones
 
@@ -126,7 +128,7 @@ Refaccion · Usado · General  (raíces sin hijos)
 
 ### Productos (`/productos`)
 - **Crear/editar**: SKU, código de barras, precios, stock mínimo/máximo, categoría (raíz), catálogo y **tags (especificaciones)**.
-- **Ajustar stock** (admin): corrección con motivo (se registra en el historial del producto).
+- **Ajustar stock** (admin): corrección con **tipo** (Ajuste general ±, **Merma** −, **Daño** −) y motivo; merma y daño requieren cantidad negativa. Se registra en el historial del producto con su tipo.
 - **Importar/exportar** el catálogo (CSV/Excel).
 - **Sustitutos**: botón en cada producto que sugiere alternativas compatibles (por tags) y con stock — útil en POS y órdenes.
 - **Comparar precios** (admin): botón **Comparar** en cada producto abre la comparativa de **último precio por proveedor** (desde las OCs enviadas/recibidas), con el **precio de compra actual** como referencia y badges de **favorito**, **más barato**, **inactivo** y **↓ actual** (cotiza por debajo del precio actual) — útil para negociar el siguiente pedido.
@@ -152,9 +154,9 @@ Refaccion · Usado · General  (raíces sin hijos)
 
 Dos pestañas:
 
-**Sugerencias**: productos bajo el stock deseado, **agrupados por proveedor** (favorito → último proveedor → sin proveedor). Por cada línea:
+**Sugerencias**: productos bajo el stock deseado, **agrupados por proveedor** (favorito activo → proveedor de menor último precio activo → último proveedor → sin proveedor). Por cada línea:
 - **Cantidad sugerida** = `stock máximo − stock` (si hay máximo) o `stock mínimo × 2 − stock`; la puedes **editar**.
-- Insignia **"Ya en OC"** y folio si el producto ya tiene una orden de compra activa.
+- Insignia **"favorito"**, **"más barato"** (elegido por el menor precio del historial) o **"Ya en OC"** con folio.
 - Botón **Crear OC** agrupa las sugerencias del mismo proveedor (precio de compra actual); los kits no aparecen.
 
 **Solicitudes de técnicos**: refacciones que los técnicos pidieron (ver §6.1 y "Solicitar refacción").
@@ -219,7 +221,7 @@ Bitácora de **eventos críticos** (ventas, ajustes de inventario, cancelaciones
 
 ## 16. Reportes (solo admin)
 
-Pestañas: **Inventario, Ventas, Servicios, Rentabilidad, Clientes, Financiero**. Exporta cada reporte a **CSV o Excel**. Parámetros por rango de fechas, vendedor, técnico, etc.
+Pestañas: **Inventario, Ventas, Servicios, Rentabilidad, Clientes, Financiero**. Exporta cada reporte a **CSV, Excel o PDF** (el botón PDF imprime el reporte activo con sus filtros; en el diálogo elige "Guardar como PDF"). Parámetros por rango de fechas, vendedor, técnico, etc.
 
 ## 17. Configuración (solo admin)
 

@@ -46,12 +46,18 @@ export default function VentaPage() {
   const [codigoInput, setCodigoInput] = useState("");
   const [partesDePago, setPartesDePago] = useState<{ nombre: string; marca: string; modelo: string; valor: string; precioVenta: string; observaciones: string }[]>([]);
   const [usadoDraft, setUsadoDraft] = useState({ nombre: "", marca: "", modelo: "", valor: "", precioVenta: "" });
+  const [notaCreditoId, setNotaCreditoId] = useState("");
 
   const { data: productos, isLoading } = useQuery({
     queryKey: ["productos", "pos", busqueda],
     queryFn: () => productsApi.list({ q: busqueda || undefined, pageSize: 50 }),
   });
   const { data: clientes } = useQuery({ queryKey: ["clientes", "pos"], queryFn: () => clientesApi.list({ pageSize: 50 }) });
+  const { data: notas } = useQuery({
+    queryKey: ["cliente-notas-credito", clienteId],
+    queryFn: () => clientesApi.notasCredito(Number(clienteId)),
+    enabled: !!clienteId && tipoPago === "contado",
+  });
 
   const montos = useMemo(() => {
     const subtotal = cart.reduce((a, c) => a + c.precio * c.qty, 0);
@@ -62,15 +68,19 @@ export default function VentaPage() {
   }, [cart, descuento]);
 
   const parteDePago = partesDePago.reduce((a, p) => a + (Number(p.valor) || 0), 0);
-  const totalAPagar = Math.max(0, montos.total - parteDePago);
+  const notaSeleccionada = (notas?.data ?? []).find((n) => String(n.id) === notaCreditoId);
+  const notaCredito = notaSeleccionada ? Math.min(notaSeleccionada.saldo, Math.max(0, montos.total - parteDePago)) : 0;
+  const totalAPagar = Math.max(0, montos.total - parteDePago - notaCredito);
   const tradeInValido =
     partesDePago.every((p) => p.nombre.trim() && (Number(p.valor) || 0) > 0 && (Number(p.precioVenta) || 0) > 0) &&
     parteDePago <= montos.total;
 
   // Desglose efectivo: por defecto "todo en efectivo"; los pagos del usuario lo reemplazan
-  const pagosActuales = pagos.length ? pagos : cart.length > 0 ? [{ metodo: "efectivo", monto: String(totalAPagar) }] : [];
+  const pagosActuales = pagos.length ? pagos : cart.length > 0 && totalAPagar > 0 ? [{ metodo: "efectivo", monto: String(totalAPagar) }] : [];
   const sumaPagos = pagosActuales.reduce((a, p) => a + (Number(p.monto) || 0), 0);
-  const pagosOk = pagosActuales.length > 0 && pagosActuales.every((p) => (Number(p.monto) || 0) > 0) && Math.abs(sumaPagos - totalAPagar) < 0.01;
+  const pagosOk =
+    (totalAPagar <= 0 && pagosActuales.length === 0) ||
+    (pagosActuales.length > 0 && pagosActuales.every((p) => (Number(p.monto) || 0) > 0) && Math.abs(sumaPagos - totalAPagar) < 0.01);
   const efectivoPortion = pagosActuales.filter((p) => p.metodo === "efectivo").reduce((a, p) => a + (Number(p.monto) || 0), 0);
   const cambio = efectivoPortion > 0 ? Math.max(0, (Number(efectivoEntregado) || efectivoPortion) - efectivoPortion) : 0;
 
@@ -113,6 +123,7 @@ export default function VentaPage() {
               observaciones: p.observaciones || null,
             }))
           : undefined,
+        notaCreditoId: notaCreditoId ? Number(notaCreditoId) : undefined,
       }),
     onSuccess: (res) => {
       setTicket(res.data);
@@ -122,6 +133,7 @@ export default function VentaPage() {
       setPagos([]);
       setClienteId("");
       setPartesDePago([]);
+      setNotaCreditoId("");
       qc.invalidateQueries({ queryKey: ["productos"] });
       qc.invalidateQueries({ queryKey: ["clientes"] });
     },
@@ -317,10 +329,13 @@ export default function VentaPage() {
             <div className="flex justify-between"><span>IVA (16%)</span><span>{mxn(montos.iva)}</span></div>
             <div className="flex justify-between text-lg font-bold"><span>Total</span><span>{mxn(montos.total)}</span></div>
             {parteDePago > 0 && (
-              <>
-                <div className="flex justify-between text-warning"><span>Parte de pago (usados)</span><span>-{mxn(parteDePago)}</span></div>
-                <div className="flex justify-between font-semibold"><span>Total a pagar</span><span>{mxn(totalAPagar)}</span></div>
-              </>
+              <div className="flex justify-between text-warning"><span>Parte de pago (usados)</span><span>-{mxn(parteDePago)}</span></div>
+            )}
+            {notaCredito > 0 && (
+              <div className="flex justify-between text-primary"><span>Nota de crédito</span><span>-{mxn(notaCredito)}</span></div>
+            )}
+            {(parteDePago > 0 || notaCredito > 0) && (
+              <div className="flex justify-between font-semibold"><span>Total a pagar</span><span>{mxn(totalAPagar)}</span></div>
             )}
           </div>
 
@@ -358,6 +373,29 @@ export default function VentaPage() {
                   <Plus className="h-3.5 w-3.5" /> Agregar
                 </Button>
               </div>
+            </div>
+          )}
+
+          {tipoPago === "contado" && clienteId && (notas?.data?.length ?? 0) > 0 && (
+            <div className="space-y-2 rounded-md border border-border-line p-3">
+              <p className="text-sm font-semibold">Nota de crédito</p>
+              <select
+                value={notaCreditoId}
+                onChange={(e) => setNotaCreditoId(e.target.value)}
+                className="h-9 w-full rounded-md border border-border-line bg-surface px-2 text-sm"
+              >
+                <option value="">No usar nota de crédito</option>
+                {notas?.data?.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.folio} · saldo {mxn(n.saldo)}
+                  </option>
+                ))}
+              </select>
+              {notaCredito > 0 && (
+                <p className="text-xs text-muted">
+                  Se aplicarán <strong>{mxn(notaCredito)}</strong> al total.
+                </p>
+              )}
             </div>
           )}
 

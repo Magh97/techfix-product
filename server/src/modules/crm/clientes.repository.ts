@@ -139,7 +139,7 @@ export function listClienteCotizaciones(clienteId: number) {
 export function listClienteCxc(clienteId: number) {
   return query<{ id: number; folio: string; total: string; fecha_vencimiento: string | null }>(
     `SELECT id, folio, total, fecha_vencimiento FROM ventas
-     WHERE cliente_id = $1 AND tipo_pago = 'credito' AND estado IN ('completada','credito_pendiente','devuelta')
+     WHERE cliente_id = $1 AND tipo_pago = 'credito' AND estado IN ('completada','credito_pendiente')
      ORDER BY id DESC`,
     [clienteId]
   ).then((r) => r.rows);

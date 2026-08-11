@@ -41,7 +41,7 @@ export default function ProductosPage() {
   const [sustitutos, setSustitutos] = useState<Sugerencias | null>(null);
   const [sustitutosDe, setSustitutosDe] = useState("");
   const [ajustarProducto, setAjustarProducto] = useState<Producto | null>(null);
-  const [ajuste, setAjuste] = useState({ cantidad: "", motivo: "" });
+  const [ajuste, setAjuste] = useState({ cantidad: "", motivo: "", tipo: "ajuste" as "ajuste" | "merma" | "dano" });
   const [ajustando, setAjustando] = useState(false);
   const [movimientosProducto, setMovimientosProducto] = useState<Producto | null>(null);
   const [movimientos, setMovimientos] = useState<Movimiento[] | null>(null);
@@ -217,11 +217,11 @@ export default function ProductosPage() {
     if (!ajustarProducto) return;
     setAjustando(true);
     productsApi
-      .ajustar(ajustarProducto.id, { cantidad: Number(ajuste.cantidad), motivo: ajuste.motivo })
+      .ajustar(ajustarProducto.id, { cantidad: Number(ajuste.cantidad), motivo: ajuste.motivo, tipo: ajuste.tipo })
       .then(() => {
         toast.success("Inventario ajustado");
         setAjustarProducto(null);
-        setAjuste({ cantidad: "", motivo: "" });
+        setAjuste({ cantidad: "", motivo: "", tipo: "ajuste" });
         qc.invalidateQueries({ queryKey: ["productos"] });
       })
       .catch((e) => toast.error("Error al ajustar", e instanceof Error ? e.message : ""))
@@ -435,7 +435,7 @@ export default function ProductosPage() {
                         </Button>
                       )}
                       {esAdmin && (
-                        <Button size="sm" variant="outline" className="ml-1" onClick={() => { setAjustarProducto(p); setAjuste({ cantidad: "", motivo: "" }); }}>
+                        <Button size="sm" variant="outline" className="ml-1" onClick={() => { setAjustarProducto(p); setAjuste({ cantidad: "", motivo: "", tipo: "ajuste" }); }}>
                           Ajustar
                         </Button>
                       )}
@@ -951,9 +951,20 @@ export default function ProductosPage() {
       <Dialog open={!!ajustarProducto} onClose={() => setAjustarProducto(null)} title={`Ajustar inventario · ${ajustarProducto?.nombre ?? ""}`}>
         <div className="space-y-3">
           <p className="text-sm text-muted">
-            Cantidad positiva = alta por inventario físico; negativa = merma/daño. Stock actual:{" "}
-            <strong>{ajustarProducto?.stock ?? 0}</strong>.
+            Stock actual: <strong>{ajustarProducto?.stock ?? 0}</strong>. Merma y daño requieren cantidad negativa.
           </p>
+          <div>
+            <Label>Tipo</Label>
+            <select
+              value={ajuste.tipo}
+              onChange={(e) => setAjuste({ ...ajuste, tipo: e.target.value as "ajuste" | "merma" | "dano" })}
+              className="h-10 w-full rounded-md border border-border-line bg-surface px-2 text-sm"
+            >
+              <option value="ajuste">Ajuste general (±)</option>
+              <option value="merma">Merma (−)</option>
+              <option value="dano">Daño (−)</option>
+            </select>
+          </div>
           <div>
             <Label>Cantidad *</Label>
             <Input type="number" step={1} value={ajuste.cantidad} onChange={(e) => setAjuste({ ...ajuste, cantidad: e.target.value })} />

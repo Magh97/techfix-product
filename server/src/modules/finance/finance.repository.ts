@@ -1,4 +1,5 @@
 import { query } from "../../shared/db";
+import type { PoolClient } from "pg";
 
 export interface CajaRow {
   id: number;
@@ -54,6 +55,14 @@ export function sumPartesDePago(cajaId: number) {
   ).then((r) => r.rows[0]);
 }
 
+export function sumNotasCredito(cajaId: number) {
+  return query<{ total: string }>(
+    `SELECT COALESCE(SUM(nota_credito),0)::numeric AS total FROM ventas
+     WHERE caja_id = $1 AND estado IN ('completada','credito_pendiente')`,
+    [cajaId]
+  ).then((r) => r.rows[0]);
+}
+
 export function sumAbonosPorMetodo(cajaId: number) {
   return query<{ metodo: string; total: string }>(
     `SELECT metodo, COALESCE(SUM(monto),0)::numeric AS total FROM pagos WHERE caja_id = $1 GROUP BY metodo`,
@@ -103,6 +112,23 @@ export function insertEgreso(input: {
   );
 }
 
+export function insertEgresoClient(
+  client: PoolClient,
+  input: {
+    concepto: string;
+    categoria: string;
+    monto: number;
+    metodo: string;
+    usuarioId: number;
+    cajaId: number | null;
+  }
+) {
+  return client.query(
+    "INSERT INTO egresos (concepto, categoria, monto, metodo, usuario_id, caja_id) VALUES ($1,$2,$3,$4,$5,$6)",
+    [input.concepto, input.categoria, input.monto, input.metodo, input.usuarioId, input.cajaId]
+  );
+}
+
 export function listEgresos(f: { desde?: string; hasta?: string; limit: number; offset: number }) {
   const params: unknown[] = [];
   const where: string[] = [];
@@ -130,7 +156,7 @@ export function listVentasCreditoGlobal() {
   }>(
     `SELECT v.id, v.folio, v.cliente_id, c.nombre AS cliente_nombre, v.total, v.fecha_vencimiento
      FROM ventas v JOIN clientes c ON c.id = v.cliente_id
-     WHERE v.tipo_pago = 'credito' AND v.estado IN ('completada','credito_pendiente','devuelta')
+     WHERE v.tipo_pago = 'credito' AND v.estado IN ('completada','credito_pendiente')
      ORDER BY v.id DESC LIMIT 100`,
     []
   ).then((r) => r.rows);

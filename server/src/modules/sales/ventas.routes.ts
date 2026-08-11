@@ -63,7 +63,7 @@ ventasRouter.post(
   validate(pagoSchema),
   async (req: AuthedRequest, res) => {
     const { ventaId } = getValidated<{ ventaId: number }>(req, "params");
-    const body = getValidated<{ monto: number; metodo: string }>(req, "body");
+    const body = getValidated<{ monto?: number; metodo?: string; pagos?: { metodo: string; monto: number }[] }>(req, "body");
     ok(res, await service.registrarAbono(ventaId, body, req.user!));
   }
 );
@@ -87,7 +87,7 @@ ventasRouter.post(
   validate(devolucionSchema),
   async (req: AuthedRequest, res) => {
     const { ventaId } = getValidated<{ ventaId: number }>(req, "params");
-    const { lineas, motivo } = getValidated<{ lineas: { productoId: number; cantidad: number }[]; motivo?: string }>(req, "body");
-    ok(res, await service.devolucion(ventaId, { lineas, motivo }, req.user!));
+    const { lineas, motivo, tipo } = getValidated<{ lineas: { productoId: number; cantidad: number }[]; motivo?: string; tipo?: string }>(req, "body");
+    ok(res, await service.devolucion(ventaId, { lineas, motivo, tipo }, req.user!));
   }
 );

@@ -26,6 +26,7 @@ import type {
   ImportResult,
   LoginResponse,
   Movimiento,
+  NotaCredito,
   NotificacionHistorial,
   OrdenServicio,
   Paginated,
@@ -216,7 +217,7 @@ export const productsApi = {
     api<{ data: Bom }>(`/productos/${id}/bom`, { method: "PUT", body: JSON.stringify(input) }),
   sugerencias: (id: number) => api<{ data: Sugerencias }>(`/productos/${id}/sugerencias`),
   porCodigo: (codigo: string) => api<{ data: Producto }>(`/productos/por-codigo/${encodeURIComponent(codigo)}`),
-  ajustar: (id: number, input: { cantidad: number; motivo: string }) =>
+  ajustar: (id: number, input: { cantidad: number; motivo: string; tipo?: "ajuste" | "merma" | "dano" }) =>
     api<{ data: Producto }>(`/productos/${id}/ajustar`, { method: "POST", body: JSON.stringify(input) }),
   movimientos: (id: number, params?: { page?: number; pageSize?: number }) => {
     const qs = new URLSearchParams();
@@ -252,6 +253,7 @@ export const clientesApi = {
     }>(`/clientes/${id}/historial`),
   cxc: (id: number) =>
     api<{ data: { limiteCredito: number; saldoTotal: number; items: { ventaId: number; folio: string; total: number; saldo: number; fechaVencimiento: string | null; estado: string }[] } }>(`/clientes/${id}/cxc`),
+  notasCredito: (id: number) => api<{ data: NotaCredito[] }>(`/clientes/${id}/notas-credito`),
 };
 
 export const ventasApi = {
@@ -265,13 +267,13 @@ export const ventasApi = {
   },
   get: (id: number) => api<{ data: Venta }>(`/ventas/${id}`),
   getByFolio: (folio: string) => api<{ data: Venta }>(`/ventas/por-folio/${encodeURIComponent(folio)}`),
-  pagar: (id: number, input: { monto: number; metodo: string }) =>
+  pagar: (id: number, input: { monto: number; metodo: string } | { pagos: { metodo: string; monto: number }[] }) =>
     api<{ data: unknown }>(`/ventas/${id}/pagos`, { method: "POST", body: JSON.stringify(input) }),
   cancelar: (id: number, motivo: string) => api<{ data: Venta }>(`/ventas/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo }) }),
-  devolucion: (id: number, lineas: { productoId: number; cantidad: number }[], motivo?: string) =>
+  devolucion: (id: number, lineas: { productoId: number; cantidad: number }[], motivo?: string, tipo?: "reembolso" | "nota_credito") =>
     api<{ data: Venta }>(`/ventas/${id}/devolucion`, {
       method: "POST",
-      body: JSON.stringify({ lineas, ...(motivo ? { motivo } : {}) }),
+      body: JSON.stringify({ lineas, ...(motivo ? { motivo } : {}), ...(tipo ? { tipo } : {}) }),
     }),
 };
 

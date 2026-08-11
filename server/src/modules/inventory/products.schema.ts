@@ -31,10 +31,20 @@ export const productIdParams = z.object({
   productoId: z.coerce.number().int().positive(),
 });
 
-export const ajustarStockSchema = z.object({
-  cantidad: z.number().int().refine((v) => v !== 0, { message: "La cantidad debe ser distinta de 0" }),
-  motivo: z.string().min(1),
-});
+export const ajustarStockSchema = z
+  .object({
+    cantidad: z.number().int().refine((v) => v !== 0, { message: "La cantidad debe ser distinta de 0" }),
+    motivo: z.string().min(1),
+    tipo: z.enum(["ajuste", "merma", "dano"]).default("ajuste"),
+  })
+  .refine((v) => v.tipo !== "merma" || v.cantidad < 0, {
+    message: "La merma requiere cantidad negativa",
+    path: ["cantidad"],
+  })
+  .refine((v) => v.tipo !== "dano" || v.cantidad < 0, {
+    message: "El daño requiere cantidad negativa",
+    path: ["cantidad"],
+  });
 
 export const listMovimientosQuery = z.object({
   page: z.coerce.number().int().positive().default(1),

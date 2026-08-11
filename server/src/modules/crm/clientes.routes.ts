@@ -55,3 +55,8 @@ clientesRouter.get("/:clienteId/garantias", validate(clienteIdParams, "params"),
   const { clienteId } = getValidated<{ clienteId: number }>(req, "params");
   ok(res, await garantiasService.listCliente(clienteId));
 });
+
+clientesRouter.get("/:clienteId/notas-credito", validate(clienteIdParams, "params"), async (req: AuthedRequest, res) => {
+  const { clienteId } = getValidated<{ clienteId: number }>(req, "params");
+  ok(res, await service.notasCredito(clienteId));
+});

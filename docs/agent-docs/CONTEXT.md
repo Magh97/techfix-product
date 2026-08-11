@@ -23,7 +23,7 @@ root/
 │   │               dashboard, finance, garantias, inventory, notifications,
 │   │               quote, reports, sales, services, usuarios]
 │   ├── shared/    [db, AppError, zod, money, auditoria, jwt, export]
-│   ├── db/        [migraciones 0001..0011 + seed]
+│   ├── db/        [migraciones 0001..0017 + seed]
 │   └── index.ts   [workers: retrasos/hora, garantías/día, refresh-cleanup/día]
 ├── client/src/
 │   ├── pages/     [24 pantallas, ver ARCHITECTURE]

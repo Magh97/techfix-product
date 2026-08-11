@@ -34,12 +34,12 @@
 | Regla | Definición |
 |-------|------------|
 | BR-INV-01 | **No se permite stock negativo.** El sistema bloquea la venta/consumo si la cantidad excede el stock disponible. |
-| BR-INV-02 | Toda entrada o salida de inventario genera un `Movimiento` (tipo: `ENTRADA`, `SALIDA_VENTA`, `SALIDA_CONSUMO`, `AJUSTE`, `DEVOLUCION`, `RESERVA`, `LIBERACION`). |
+| BR-INV-02 | Toda entrada o salida de inventario genera un `Movimiento` (tipo: `ENTRADA`, `SALIDA_VENTA`, `SALIDA_CONSUMO`, `AJUSTE`, `DEVOLUCION`, `RESERVA`, `LIBERACION`, `MERMA`, `DANO`). |
 | BR-INV-03 | **Reserva al aprobar cotización:** al aprobarse una cotización de servicio, se reserva el stock de las piezas cotizadas. |
 | BR-INV-04 | **Descuento al consumir:** el inventario se descuenta cuando el técnico registra las piezas consumidas (no al reservar). |
 | BR-INV-05 | La reserva se mantiene mientras la orden esté en `en_reparacion`; al pasar a `listo` la reserva se convierte en consumo efectivo. |
 | BR-INV-06 | Si la orden se **cancela** o la cotización **expira**, las reservas se liberan (stock vuelve a disponible). |
-| BR-INV-07 | Un ajuste de inventario (`AJUSTE`) requiere motivo obligatorio y sólo lo ejecuta el **admin**. |
+| BR-INV-07 | Un ajuste de inventario requiere motivo obligatorio y sólo lo ejecuta el **admin**. El ajuste acepta tipo **`ajuste`** (±), **`merma`** (solo negativa) o **`dano`** (solo negativa); se registra el `Movimiento` con el tipo correspondiente. |
 | BR-INV-08 | Devolución con restitución de stock: al aceptar devolución de producto completo/sellado, `stock += cantidad`. |
 | BR-INV-09 | La venta de un ensamblado (BOM) descuenta el stock de **cada componente** del kit, no un item genérico. |
 
@@ -102,13 +102,13 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 |-------|------------|
 | BR-VEN-01 | La venta descuenta stock en el momento de completarse (SALIDA_VENTA). Bloqueada si no hay stock (BR-INV-01). |
 | BR-VEN-02 | Métodos de pago: `efectivo`, `tarjeta_credito`, `tarjeta_debito`, `transferencia`, `deposito`. Una venta de **contado** puede tener **pagos mixtos** (desglose en `pagos`, suma = total − parte de pago). |
-| BR-VEN-14 | Todo dinero recibido se registra en `pagos`: al crear una venta de contado se insertan las filas del desglose; los abonos a crédito se registran igual. El **corte de caja** solo cuenta dinero realmente recibido (Σ `pagos`); la parte de pago en especie se muestra aparte. |
+| BR-VEN-14 | Todo dinero recibido se registra en `pagos`: al crear una venta de contado se insertan las filas del desglose; los abonos a crédito se registran igual (formato simple o **desglose mixto** `{ pagos: [{ metodo, monto }] }`, máx 5, Σ ≤ pendiente). El **corte de caja** solo cuenta dinero realmente recibido (Σ `pagos`); la parte de pago en especie y las **notas de crédito aplicadas** se muestran aparte como ingreso no monetario. |
 | BR-VEN-03 | En efectivo se calcula el cambio; el registro guarda monto recibido. |
 | BR-VEN-04 | El ticket se emite al completar la venta; formato térmico 80mm (mono, folio, desglose) imprimido por el navegador (`window.print()` con `@media print`); la reimpresión se marca "COPIA". |
 | BR-VEN-05 | **Descuentos:** vendedor puede aplicar hasta **10%** sin autorización. Descuentos >10% requieren rol **admin**. |
 | BR-VEN-06 | Todo descuento requiere motivo; queda registrado en la venta. |
 | BR-VEN-07 | Cancelación de venta: sólo del mismo día o con autorización admin; reversión de inventario; motivo obligatorio. |
-| BR-VEN-08 | Devolución: dentro de **15 días** desde la venta y con ticket; reembolso por método original o nota de crédito; restituye stock si producto completo/sellado; registra `DEVOLUCION`. |
+| BR-VEN-08 | Devolución: dentro de **15 días** desde la venta y con ticket; **nota de crédito** por el total devuelto si la venta es de contado con cliente (sin vigencia, aplicable en el POS del mismo cliente; reduce `totalAPagar` y consume saldo); restituye stock; registra `DEVOLUCION`. Una venta a **crédito con abonos cobrados** no se puede devolver (`SALE_WITH_PAYMENTS`); una venta a crédito devuelta se **excluye de la CxC**. El reembolso en efectivo se gestiona fuera del sistema. |
 | BR-VEN-13 | **Parte de pago en especie (equipo usado):** en ventas de **contado** se puede aceptar un equipo usado como parte de pago (`ventas.parte_de_pago`, Σ valores ≤ total). El valor se acredita **contra el total (IVA incluido)**; el total de la venta no cambia y solo se reduce el efectivo/terminal a recibir. Cada usado se crea como producto (raíz "Usado", stock 1, precio de reventa obligatorio) vinculado a la venta (`equipos_usados.venta_id`, origen `parte_de_pago`). El **corte de caja** excluye el trade-in del efectivo y lo desglosa como ingreso no monetario. |
 
 ## 8. Crédito (Cuentas por Cobrar)
@@ -143,6 +143,7 @@ pendiente → en_diagnostico → cotizado → en_reparacion → listo → entreg
 | BR-COM-03 | La CxP se acumula **por lo recibido**: `compras.total_recibido` = Σ (cantidad recibida × precio unitario); el saldo = `total_recibido − Σ pagos`. Se puede pagar desde la primera recepción parcial (no hace falta que la OC esté `recibida`). |
 | BR-COM-04 | **Comparación de precios** (`GET /compras/comparacion-precios?productoId=`): toma el **último precio por proveedor** desde OCs `enviada`/`recibida`, ordenado asc; incluye el `precio_compra` actual como referencia y marca favorito, más barato, inactivo y proveedores por debajo del precio actual. |
 | BR-COM-05 | Solo el **admin** crea/recibe órdenes de compra. |
+| BR-COM-05b | **Proveedor en reabastecimiento:** favorito **activo** → si no, proveedor de menor último precio **activo** (de OCs enviadas/recibidas) → si no, último proveedor. Se **saltan proveedores inactivos**; un favorito inactivo cae al más barato activo. Aplica a sugerencias y a la aprobación de solicitudes. |
 | BR-COM-06 | **Solicitudes de reabastecimiento:** un técnico (o admin) crea una solicitud de un producto solo si `stock < cantidad` requerida (422 `STOCK_SUFICIENTE` en caso contrario). |
 | BR-COM-07 | Estados de solicitud: `pendiente → aprobada → entregada` (o `rechazada` / `cancelada`). El **admin** aprueba (crea la OC por proveedor) o rechaza con motivo. El técnico autor puede **cancelar** su solicitud solo en `pendiente`. |
 | BR-COM-08 | Al **recibir** una OC, las solicitudes **aprobadas** de cada producto pasan a `entregada` y se inserta en el historial de la orden: "Refacción {producto} llegó · OC {folio}". |
