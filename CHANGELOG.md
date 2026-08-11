@@ -8,6 +8,12 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-08-11
+
+### Added
+- **Paquete YunoHost (`Magh97/techstore_ynh`):** instalación nativa (Node 22 + systemd + PostgreSQL + nginx de YunoHost) con manifest v2, scripts install/upgrade/remove/backup/restore/change_url/config, SPA servida por nginx con proxy `/api`, `SEED_DEMO=false`, SMTP relay local y Twilio opcional. El repo `techfix-product` pasó a **público** para permitir la descarga del source (sha256 verificado).
+- **WhatsApp real (Twilio) (NOT-01..04):** envío por WhatsApp con **preferencia de canal automática** (`preferencia_contacto`): `whatsapp` → WhatsApp con fallback a correo; `correo` → correo; `llamada` → tarea manual. Teléfonos normalizados a **E.164** (`TWILIO_DEFAULT_COUNTRY_CODE`, default `52`). Sin credenciales `TWILIO_*` el envío se simula (patrón SMTP). Aplica a NOT-01 (retraso), NOT-02 (listo), NOT-03 (cotización) y NOT-04 (garantía).
+
 ## [1.1.0] — 2026-08-11
 
 ### Added
@@ -43,15 +49,10 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 - **Garantía automática por venta de producto (BR-GAR-06):** al vender con cliente se genera **una garantía por producto distinto** (`producto_nuevo` 30d / `usado` 15d, configurable vía `ventas.dias_garantia_producto`/`ventas.dias_garantia_usado`); la respuesta de la venta incluye `garantias` y el ticket las muestra en el pie. Ventas a mostrador sin garantía.
 - **Parte de pago en POS (BR-VEN-13):** aceptar un equipo usado como parte de pago en ventas de **contado** — crea el usado (raíz "Usado", stock 1, precio de reventa obligatorio, `equipos_usados.venta_id`) y reduce el efectivo/terminal a recibir (`ventas.parte_de_pago`); el **corte de caja** excluye el trade-in del efectivo y lo desglosa como ingreso no monetario. Migración `0014_trade_in`.
 - **Usados desde órdenes + historial CRM (BR-US-07):** botón "Registrar usado" en el detalle de órdenes no entregadas (admin) que vincula el equipo abandonado a la orden (`origen='reparacion'`, nota en `historial_orden`); el listado de usados expone `ordenFolio`/`ventaFolio` y el detalle del cliente muestra la tarjeta "Equipos usados entregados".
-- **Fase producción:** seed **condicional** (`SEED_DEMO=false` no crea usuarios/datos demo; bootstrap esencial siempre), `docker-compose.prod.yml` con **Caddy** (TLS) y servicio **backup** (pg_dump diario con retención, BR-DAT-01), `scripts/backup-loop.sh`/`restore.sh`, `.env.production.example`, job **deploy** en CI para `main` (SSH + compose up --build) y runbook `docs/09-despliegue.md` (incl. notas YunoHost).
+- **Fase producción:** seed **condicional** (`SEED_DEMO=false` no crea usuarios/datos demo; bootstrap esencial siempre), `docker-compose.prod.yml` con **Caddy** (TLS) y servicio **backup** (pg_dump diario con retención, BR-DAT-01), `scripts/backup-loop.sh`/`restore.sh`, `.env.production.example`, job **deploy** en CI para `main` (SSH + compose up --build) y runbook `docs/09-despliegue.md`. (Empaquetado YunoHost en v1.2.)
 - **Pagos mixtos en el POS (BR-VEN-02/14):** desglose de pago en ventas de contado (varios métodos, Σ = total − parte de pago) con `pagos` registrando todo el dinero recibido (venta y abonos); el **corte de caja** cuenta solo dinero realmente recibido (Σ `pagos`) y el ticket muestra el desglose.
 - **Quejas y reclamaciones (US-CRM-07/BR-CRM-08):** módulo `quejas` (abierta → en_proceso → resuelta) con vínculo opcional a garantía/orden/venta; reclamación de garantía exige garantía del cliente; resolución obligatoria al resolver; botón "Reclamar" en Garantías y tarjeta en el historial del cliente. Migración `0015_quejas`.
 - **Cancelación y devolución de ventas (US-VEN-11/12):** botones "Cancelar venta" (admin, motivo) y "Devolver" (cantidades por línea, motivo opcional) en el ticket de Ventas; bloqueo de ventas a crédito con abonos cobrados (`SALE_WITH_PAYMENTS`); reintegro del equipo usado de parte de pago al cancelar/devolver; corrección del mapeo de `lineas` en el historial (`productoId`/`descripcion`/`precio`). Reembolso en efectivo y notas de crédito en v1.1.0.
-
-### Limitaciones conocidas
-- Notificaciones solo por **correo** (nodemailer/SMTP); `preferencia_contacto=whatsapp` aún no envía por WhatsApp (ADR-0007: Twilio diferido).
-- NOT-01 (aviso de retraso) notifica por el canal configurado; sin WhatsApp sigue siendo correo.
-- Empaquetado YunoHost sin realizar (ruta recomendada: VPS + Docker Compose + Caddy).
 
 ## [0.1.0] — 2026-08-03
 

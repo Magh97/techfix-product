@@ -1,6 +1,6 @@
 # Despliegue a Producción — TechStore
 
-> Ruta principal: **VPS + Docker Compose + Caddy** (TLS automático). Documenta la puesta en marcha, SMTP real, backups (BR-DAT-01), restauración y actualización.
+> Ruta principal: **VPS + Docker Compose + Caddy** (TLS automático). Documenta la puesta en marcha, SMTP real, WhatsApp (Twilio), backups (BR-DAT-01), restauración y actualización. Alternativa empaquetada: **YunoHost** (ver sección final).
 
 ## 1. Requisitos del servidor
 
@@ -61,7 +61,23 @@ SMTP_PASS=...
 SMTP_FROM=no-reply@midominio.com
 ```
 
-Se aplica al recrear el API (`docker compose -f docker-compose.prod.yml up -d api`). NOT-02/03/05/06 se envían por este canal. *(NOT-01, aviso automático de retraso, queda pendiente como feature funcional.)*
+Se aplica al recrear el API (`docker compose -f docker-compose.prod.yml up -d api`). NOT-02/03/05/06 se envían por este canal.
+
+### WhatsApp real (Twilio)
+
+Sin credenciales Twilio el envío se **simula** (logs del API + registra `enviado`). Para envío real setea en `.env`:
+
+```
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+TWILIO_DEFAULT_COUNTRY_CODE=52
+```
+
+- `TWILIO_WHATSAPP_FROM` es el número de Twilio (formato `whatsapp:+<E.164>`). En **sandbox** el número de prueba debe estar verificado y solo acepta plantillas de ejemplo; en producción los mensajes requieren **plantillas aprobadas por Meta** (el sistema envía el `body` de la plantilla configurada en Notificaciones).
+- Los teléfonos de clientes se normalizan a **E.164** anteponiendo `TWILIO_DEFAULT_COUNTRY_CODE` (default `52` México) cuando no traen código de país.
+- **Canal por preferencia** (ADR-0006): `whatsapp` → WhatsApp; si falta teléfono o falla → correo (si hay correo). `correo` → correo. `llamada` → se registra como pendiente de llamada manual. Aplica a NOT-01..04 (workers de retraso y garantía incluidos).
+- Se aplica al recrear el API (`docker compose -f docker-compose.prod.yml up -d api`).
 
 ## 5. Backups (BR-DAT-01)
 
@@ -145,11 +161,27 @@ docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
 
 ---
 
-## Alternativa: YunoHost (notas, sin empaquetar)
+## Alternativa: YunoHost (empaquetado)
 
-YunoHost (Debian autogestionado) es viable pero **no está empaquetado** como app de YunoHost. Consideraciones si se opta por YunoHost:
+TechStore está **empaquetado para YunoHost** en el repo [`Magh97/techstore_ynh`](https://github.com/Magh97/techstore_ynh) (instalación **nativa**: Node 22 + systemd + PostgreSQL + nginx de YunoHost, sin Docker).
 
-- La app debe empaquetarse como **paquete YunoHost** (`manifest.toml`, scripts `install/remove/backup/restore`, integración con SSO, dominio y TLS gestionados por YunoHost).
-- El **backup** debe declararse en el manifiesto del paquete (YunoHost ejecuta sus propios backups de la BD y de los archivos).
-- El **SMTP** puede integrarse con el relay de correo de YunoHost.
-- Dado el esfuerzo de empaquetado, la ruta recomendada por ahora es **VPS + Docker Compose + Caddy** (secciones 1–8).
+### Instalación
+
+```bash
+sudo yunohost app install https://github.com/Magh97/techstore_ynh
+```
+
+- Requiere un **subdominio dedicado** (ej. `tienda.midominio.com`); el TLS lo gestiona YunoHost.
+- La app usa su **propio login (JWT)** y no integra el SSO de YunoHost.
+- Con `SEED_DEMO=false` **no se crean usuarios demo**; el primer admin se da de alta desde la pantalla **Usuarios** del sistema.
+
+### Configuración
+
+- **SMTP / WhatsApp (Twilio):** panel de configuración de la app en YunoHost, o editando `<install_dir>/.env` (SMTP relay local `localhost`; `TWILIO_*` opcional, vacío = WhatsApp simulado).
+- **Backups:** los gestiona YunoHost (base de datos + archivos) desde su panel.
+
+### Notas
+
+- El paquete descarga el source del tag `v1.1.0` de `techfix-product` (repo público, sha256 verificado en `manifest.toml`).
+- Para publicar en el catálogo oficial de YunoHost se trabaja en la rama `testing` del repo del paquete.
+- La ruta recomendada para instalación sin YunoHost sigue siendo **VPS + Docker Compose + Caddy** (secciones 1–8).

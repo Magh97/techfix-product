@@ -18,6 +18,10 @@ const schema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().default("no-reply@techstore.local"),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_WHATSAPP_FROM: z.string().optional(),
+  TWILIO_DEFAULT_COUNTRY_CODE: z.string().default("52"),
 });
 
 const parsed = schema.safeParse(process.env);
