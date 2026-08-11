@@ -76,19 +76,33 @@ docker compose -f docker-compose.prod.yml exec backup sh -c \
   'PGPASSWORD=$POSTGRES_PASSWORD pg_dump -h db -U $POSTGRES_USER -d $POSTGRES_DB | gzip > /backups/manual-$(date +%Y%m%d-%H%M).sql.gz'
 ```
 
-### Copia externa (offsite, recomendado)
+### Copia externa (offsite, automatizada)
 
-El volumen es local al VPS; para cumplir DR se debe **copiar fuera**. Opción con rclone (documentada, no automatizada):
+El volumen es local al VPS; para cumplir DR se debe **copiar fuera**. El servicio `offsite` (rclone) lo hace **automáticamente**:
 
 ```bash
-# en el host, con rclone configurado (S3/Drive/NAS)
-docker compose -f docker-compose.prod.yml exec backup sh -c 'ls /backups' \
-  | xargs -I{} docker compose -f docker-compose.prod.yml exec backup cat /backups/{} \
-  > /tmp/{}
-rclone copy /tmp/ backup-remoto:techstore/ && rm /tmp/*
+# 1. En el host, genera el remoto y su configuración (S3/Drive/NAS)
+rclone config   # crea un remoto, p. ej. `s3-backups`
+
+# 2. Copia el archivo de configuración junto a docker-compose.prod.yml
+rclone config file          # muestra la ruta del archivo de configuración
+cp ~/.config/rclone/rclone.conf ./
+
+# 3. Define el destino en .env y levanta el servicio
+#    .env: RCLONE_REMOTE=s3-backups:techstore
+docker compose -f docker-compose.prod.yml up -d offsite
+
+# Verificar que se copió (fuera del contenedor)
+rclone lsf s3-backups:techstore/
 ```
 
-Se recomienda programar esa copia (cron del host o job) al menos una vez al día.
+El servicio `offsite` ejecuta `rclone sync /backups "$RCLONE_REMOTE"` **cada hora** (`OFFSITE_INTERVAL_SECONDS`, default 3600). Al usar `sync`, la retención local (`BACKUP_RETENTION_DAYS`) se replica al remoto (espejo). Requiere que exista al menos un backup local; si no, espera al siguiente ciclo.
+
+Alternativa manual (sin el servicio):
+
+```bash
+rclone copy /backups backup-remoto:techstore/
+```
 
 ## 6. Restauración
 
