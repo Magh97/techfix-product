@@ -8,6 +8,11 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-08-11
+
+### Added
+- **Primer admin en producción (bootstrap):** con `SEED_DEMO=false` el seed crea un admin inicial (`admin`) con contraseña generada que se imprime en los logs del primer arranque (idempotente; nunca sobreescribe un usuario existente). Resuelve el primer acceso sin usuarios demo.
+
 ## [1.2.0] — 2026-08-11
 
 ### Added
