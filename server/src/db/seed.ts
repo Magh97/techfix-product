@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { pool } from "../shared/db";
+import { bootstrapAdmin } from "./bootstrapAdmin";
 
 // En producción (SEED_DEMO=false) se omiten usuarios demo, clientes, productos,
 // proveedores y kits. El bootstrap esencial (catálogo "Usado", IVA, plantillas) siempre corre.
@@ -252,6 +253,18 @@ async function main() {
       [favProv.rows[0].id, ["PROC-001", "RAM-001", "RAM-002", "SSD-001"]]
     );
   }
+  }
+
+  // --- Primer admin en producción (SEED_DEMO=false) ---
+  // Idempotente: solo crea el admin de arranque si no existe ninguno con ese usuario;
+  // la contraseña generada sale en los logs del primer arranque y debe cambiarse al entrar.
+  let bootstrapMsg = "";
+  if (!seedDemo) {
+    const admin = await bootstrapAdmin();
+    if (admin.created && admin.password) {
+      bootstrapMsg = ` PRIMER ADMIN — usuario: ${admin.usuario} · contraseña: ${admin.password}. Cámbiala al iniciar sesión.`;
+      console.log(bootstrapMsg);
+    }
   }
 
   console.log("Seed completado." + (seedDemo ? " Usuarios: admin/admin1234 · vendedor/vendedor1234 · tecnico/tecnico1234" : " (SEED_DEMO=false, sin datos demo)"));
