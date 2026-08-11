@@ -1,6 +1,6 @@
 # Despliegue a Producción — TechStore
 
-> Ruta principal: **VPS + Docker Compose + Caddy** (TLS automático). Documenta la puesta en marcha, SMTP real, backups (BR-DAT-01), restauración y actualización.
+> Ruta principal: **VPS + Docker Compose + Caddy** (TLS automático). Documenta la puesta en marcha, SMTP real, WhatsApp (Twilio), backups (BR-DAT-01), restauración y actualización. Alternativa empaquetada: **YunoHost** (ver sección final).
 
 ## 1. Requisitos del servidor
 
@@ -161,11 +161,27 @@ docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
 
 ---
 
-## Alternativa: YunoHost (notas, sin empaquetar)
+## Alternativa: YunoHost (empaquetado)
 
-YunoHost (Debian autogestionado) es viable pero **no está empaquetado** como app de YunoHost. Consideraciones si se opta por YunoHost:
+TechStore está **empaquetado para YunoHost** en el repo [`Magh97/techstore_ynh`](https://github.com/Magh97/techstore_ynh) (instalación **nativa**: Node 22 + systemd + PostgreSQL + nginx de YunoHost, sin Docker).
 
-- La app debe empaquetarse como **paquete YunoHost** (`manifest.toml`, scripts `install/remove/backup/restore`, integración con SSO, dominio y TLS gestionados por YunoHost).
-- El **backup** debe declararse en el manifiesto del paquete (YunoHost ejecuta sus propios backups de la BD y de los archivos).
-- El **SMTP** puede integrarse con el relay de correo de YunoHost.
-- Dado el esfuerzo de empaquetado, la ruta recomendada por ahora es **VPS + Docker Compose + Caddy** (secciones 1–8).
+### Instalación
+
+```bash
+sudo yunohost app install https://github.com/Magh97/techstore_ynh
+```
+
+- Requiere un **subdominio dedicado** (ej. `tienda.midominio.com`); el TLS lo gestiona YunoHost.
+- La app usa su **propio login (JWT)** y no integra el SSO de YunoHost.
+- Con `SEED_DEMO=false` **no se crean usuarios demo**; el primer admin se da de alta desde la pantalla **Usuarios** del sistema.
+
+### Configuración
+
+- **SMTP / WhatsApp (Twilio):** panel de configuración de la app en YunoHost, o editando `<install_dir>/.env` (SMTP relay local `localhost`; `TWILIO_*` opcional, vacío = WhatsApp simulado).
+- **Backups:** los gestiona YunoHost (base de datos + archivos) desde su panel.
+
+### Notas
+
+- El paquete descarga el source del tag `v1.1.0` de `techfix-product` (repo público, sha256 verificado en `manifest.toml`).
+- Para publicar en el catálogo oficial de YunoHost se trabaja en la rama `testing` del repo del paquete.
+- La ruta recomendada para instalación sin YunoHost sigue siendo **VPS + Docker Compose + Caddy** (secciones 1–8).
