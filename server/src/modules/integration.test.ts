@@ -233,7 +233,7 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(row.rows[0]?.tipo).toBe("NOT-02");
     expect(row.rows[0]?.canal).toBe("correo");
 
-    // Cliente sin correo → se registra fallido y no lanza error
+    // Cliente con preferencia whatsapp + teléfono → envío por WhatsApp (simulado sin credenciales)
     const sinCorreo = await request(app)
       .post("/api/v1/ordenes")
       .set(auth)
@@ -246,15 +246,87 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
       .set(auth)
       .send({ tipo: "listo" });
     expect(resSinCorreo.status).toBe(200);
-    expect(resSinCorreo.body.data.enviado).toBe(false);
-    expect(resSinCorreo.body.data.motivo).toBe("SIN_CORREO");
+    expect(resSinCorreo.body.data.enviado).toBe(true);
+    expect(resSinCorreo.body.data.canal).toBe("whatsapp");
+    expect(resSinCorreo.body.data.simulated).toBe(true);
+
+    const wa = await pool.query<{ estado: string; canal: string }>(
+      "SELECT estado, canal FROM notificaciones WHERE orden_id = $1 ORDER BY id DESC LIMIT 1",
+      [ordenSinCorreo]
+    );
+    expect(wa.rows[0]?.canal).toBe("whatsapp");
+    expect(wa.rows[0]?.estado).toBe("enviado");
+
+    // Cliente con preferencia correo SIN correo → se registra fallido SIN_CORREO
+    const sinContacto = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, preferencia_contacto) VALUES ('Cliente Solo Tel', '5522001122', 'correo') RETURNING id"
+    );
+    const ordenSinContactoRes = await request(app)
+      .post("/api/v1/ordenes")
+      .set(auth)
+      .send({ clienteId: sinContacto.rows[0]!.id, tipoEquipo: "laptop", fallaReportada: "X", fechaPrometida: todayPlus(2) });
+    const ordenSinContacto = ordenSinContactoRes.body.data.id;
+    await pool.query("UPDATE ordenes_servicio SET estado = 'listo' WHERE id = $1", [ordenSinContacto]);
+
+    const resSinContacto = await request(app)
+      .post(`/api/v1/ordenes/${ordenSinContacto}/notificar`)
+      .set(auth)
+      .send({ tipo: "listo" });
+    expect(resSinContacto.status).toBe(200);
+    expect(resSinContacto.body.data.enviado).toBe(false);
+    expect(resSinContacto.body.data.motivo).toBe("SIN_CORREO");
 
     const fallida = await pool.query<{ estado: string; error: string }>(
       "SELECT estado, error FROM notificaciones WHERE orden_id = $1 ORDER BY id DESC LIMIT 1",
-      [ordenSinCorreo]
+      [ordenSinContacto]
     );
     expect(fallida.rows[0]?.estado).toBe("fallido");
     expect(fallida.rows[0]?.error).toBe("cliente sin correo");
+  });
+
+  it("notificaciones: preferencia whatsapp sin teléfono cae a correo; llamada registra fallido", async () => {
+    const auth = { Authorization: `Bearer ${token}` };
+
+    // Preferencia whatsapp pero sin teléfono y con correo → fallback a correo
+    const cli = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, correo, preferencia_contacto) VALUES ('Cliente WA Sin Tel', '', 'wa.sintel@correo.test', 'whatsapp') RETURNING id"
+    );
+    const cId = cli.rows[0]!.id;
+    const creada = await request(app)
+      .post("/api/v1/ordenes")
+      .set(auth)
+      .send({ clienteId: cId, tipoEquipo: "laptop", fallaReportada: "Batería", fechaPrometida: todayPlus(2) });
+    const ordenId = creada.body.data.id;
+    await pool.query("UPDATE ordenes_servicio SET estado = 'listo' WHERE id = $1", [ordenId]);
+
+    const r = await request(app).post(`/api/v1/ordenes/${ordenId}/notificar`).set(auth).send({ tipo: "listo" });
+    expect(r.status).toBe(200);
+    expect(r.body.data.canal).toBe("correo");
+    expect(r.body.data.fallbackDeWhatsapp).toBe(true);
+    expect(r.body.data.motivoWhatsapp).toBe("SIN_TELEFONO_VALIDO");
+
+    // Preferencia llamada → se registra fallido "requiere llamada"
+    const cliLlamada = await pool.query<{ id: number }>(
+      "INSERT INTO clientes (nombre, telefono, preferencia_contacto) VALUES ('Cliente Llamada', '5550006666', 'llamada') RETURNING id"
+    );
+    const creadaL = await request(app)
+      .post("/api/v1/ordenes")
+      .set(auth)
+      .send({ clienteId: cliLlamada.rows[0]!.id, tipoEquipo: "desktop", fallaReportada: "Pantalla", fechaPrometida: todayPlus(2) });
+    const ordenL = creadaL.body.data.id;
+    await pool.query("UPDATE ordenes_servicio SET estado = 'listo' WHERE id = $1", [ordenL]);
+
+    const rL = await request(app).post(`/api/v1/ordenes/${ordenL}/notificar`).set(auth).send({ tipo: "listo" });
+    expect(rL.status).toBe(200);
+    expect(rL.body.data.enviado).toBe(false);
+    expect(rL.body.data.motivo).toBe("REQUIERE_LLAMADA");
+
+    const fila = await pool.query<{ canal: string; estado: string }>(
+      "SELECT canal, estado FROM notificaciones WHERE orden_id = $1 ORDER BY id DESC LIMIT 1",
+      [ordenL]
+    );
+    expect(fila.rows[0]?.canal).toBe("llamada");
+    expect(fila.rows[0]?.estado).toBe("fallido");
   });
 
   it("worker: marca como retrasada una orden con fecha prometida vencida", async () => {
@@ -3261,7 +3333,7 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
     expect(res.body.data[0].cantidad).toBe(2);
   });
 
-  it("NOTIFICACIONES: worker dispara NOT-01 (retraso) por correo simulado", async () => {
+  it("NOTIFICACIONES: worker dispara NOT-01 (retraso) por el canal preferido (whatsapp simulado)", async () => {
     const auth = { Authorization: `Bearer ${token}` };
     const c = await pool.query<{ id: number }>(
       "INSERT INTO clientes (nombre, telefono, correo) VALUES ('Cliente Retraso', '5522113344', 'retraso@correo.test') RETURNING id"
@@ -3280,7 +3352,7 @@ describe.skipIf(!runDb)("integración API (DB real)", () => {
       [ordenId]
     );
     expect(notif.rows[0]?.tipo).toBe("NOT-01");
-    expect(notif.rows[0]?.canal).toBe("correo");
+    expect(notif.rows[0]?.canal).toBe("whatsapp");
     expect(notif.rows[0]?.estado).toBe("enviado");
   });
 
