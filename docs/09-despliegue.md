@@ -32,7 +32,7 @@ Variables obligatorias (si faltan, `docker compose` falla rápido):
 
 Recomendadas: `SEED_DEMO=false` (no crear usuarios demo), `SMTP_*` (correo real), `BACKUP_RETENTION_DAYS=14`.
 
-> **Seguridad:** con `SEED_DEMO=false` el seed solo carga bootstrap esencial (catálogo "Usado", IVA, plantillas) y **no** crea `admin/admin1234` ni datos demo. El primer usuario se crea por la UI (módulo Usuarios). Cambia siempre los JWT secrets por defecto.
+> **Seguridad:** con `SEED_DEMO=false` el seed solo carga bootstrap esencial (catálogo "Usado", IVA, plantillas) y **no** crea `admin/admin1234` ni datos demo. En el primer arranque crea un **admin inicial** (`admin`) con una **contraseña generada que se imprime en los logs** del API (docker logs / journal de systemd); cámbiala al iniciar sesión (módulo Usuarios). Cambia siempre los JWT secrets por defecto.
 
 ## 3. Primer arranque
 
@@ -153,7 +153,7 @@ docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
 ## 8. Checklist post-deploy
 
 - [ ] `https://<DOMAIN>` responde (TLS válido).
-- [ ] Login funciona con el usuario real (creado por la UI; sin usuarios demo).
+- [ ] Login funciona con el **admin inicial** (usuario/contraseña de los logs del primer arranque; cambiar la contraseña).
 - [ ] Un correo de prueba (NOT-02) llega al destinatario (SMTP real).
 - [ ] `docker compose -f docker-compose.prod.yml ps` → todos los servicios `Up (healthy)`.
 - [ ] Existe al menos un backup en `/backups` y se puede listar.
@@ -173,7 +173,7 @@ sudo yunohost app install https://github.com/Magh97/techstore_ynh
 
 - Requiere un **subdominio dedicado** (ej. `tienda.midominio.com`); el TLS lo gestiona YunoHost.
 - La app usa su **propio login (JWT)** y no integra el SSO de YunoHost.
-- Con `SEED_DEMO=false` **no se crean usuarios demo**; el primer admin se da de alta desde la pantalla **Usuarios** del sistema.
+- Con `SEED_DEMO=false` **no se crean usuarios demo**; el primer arranque crea el **admin inicial** (`admin`) y su contraseña sale en los logs del servicio (`journalctl -u techstore` o los logs de la app en YunoHost).
 
 ### Configuración
 
