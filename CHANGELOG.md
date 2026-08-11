@@ -8,6 +8,8 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-08-11
+
 ### Added
 - **Paquete YunoHost (`Magh97/techstore_ynh`):** instalación nativa (Node 22 + systemd + PostgreSQL + nginx de YunoHost) con manifest v2, scripts install/upgrade/remove/backup/restore/change_url/config, SPA servida por nginx con proxy `/api`, `SEED_DEMO=false`, SMTP relay local y Twilio opcional. El repo `techfix-product` pasó a **público** para permitir la descarga del source (sha256 verificado).
 - **WhatsApp real (Twilio) (NOT-01..04):** envío por WhatsApp con **preferencia de canal automática** (`preferencia_contacto`): `whatsapp` → WhatsApp con fallback a correo; `correo` → correo; `llamada` → tarea manual. Teléfonos normalizados a **E.164** (`TWILIO_DEFAULT_COUNTRY_CODE`, default `52`). Sin credenciales `TWILIO_*` el envío se simula (patrón SMTP). Aplica a NOT-01 (retraso), NOT-02 (listo), NOT-03 (cotización) y NOT-04 (garantía).
