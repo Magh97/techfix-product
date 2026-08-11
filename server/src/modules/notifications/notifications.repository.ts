@@ -11,6 +11,7 @@ export interface ClienteNotif {
   id: number;
   nombre: string;
   correo: string | null;
+  telefono: string | null;
   preferencia_contacto: string;
 }
 
@@ -27,7 +28,7 @@ export function findOrdenById(ordenId: number) {
 
 export function findClienteById(clienteId: number) {
   return query<ClienteNotif>(
-    "SELECT id, nombre, correo, preferencia_contacto FROM clientes WHERE id = $1 AND is_active = true",
+    "SELECT id, nombre, correo, telefono, preferencia_contacto FROM clientes WHERE id = $1 AND is_active = true",
     [clienteId]
   ).then((r) => r.rows[0]);
 }
