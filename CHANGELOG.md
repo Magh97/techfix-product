@@ -8,6 +8,9 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 
 ## [Unreleased]
 
+### Added
+- **WhatsApp real (Twilio) (NOT-01..04):** envío por WhatsApp con **preferencia de canal automática** (`preferencia_contacto`): `whatsapp` → WhatsApp con fallback a correo; `correo` → correo; `llamada` → tarea manual. Teléfonos normalizados a **E.164** (`TWILIO_DEFAULT_COUNTRY_CODE`, default `52`). Sin credenciales `TWILIO_*` el envío se simula (patrón SMTP). Aplica a NOT-01 (retraso), NOT-02 (listo), NOT-03 (cotización) y NOT-04 (garantía).
+
 ## [1.1.0] — 2026-08-11
 
 ### Added
@@ -49,8 +52,6 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y
 - **Cancelación y devolución de ventas (US-VEN-11/12):** botones "Cancelar venta" (admin, motivo) y "Devolver" (cantidades por línea, motivo opcional) en el ticket de Ventas; bloqueo de ventas a crédito con abonos cobrados (`SALE_WITH_PAYMENTS`); reintegro del equipo usado de parte de pago al cancelar/devolver; corrección del mapeo de `lineas` en el historial (`productoId`/`descripcion`/`precio`). Reembolso en efectivo y notas de crédito en v1.1.0.
 
 ### Limitaciones conocidas
-- Notificaciones solo por **correo** (nodemailer/SMTP); `preferencia_contacto=whatsapp` aún no envía por WhatsApp (ADR-0007: Twilio diferido).
-- NOT-01 (aviso de retraso) notifica por el canal configurado; sin WhatsApp sigue siendo correo.
 - Empaquetado YunoHost sin realizar (ruta recomendada: VPS + Docker Compose + Caddy).
 
 ## [0.1.0] — 2026-08-03

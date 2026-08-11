@@ -199,15 +199,18 @@ Consulta de garantías con su cobertura y vigencia. Se generan automáticamente:
 
 - **Historial**: envíos por cliente, tipo, canal y estado (enviado/fallido/reintento).
 - **Plantillas** (admin): edita los textos de las notificaciones.
+- **Canal automático** según la **preferencia de contacto** del cliente (ADR-0006): si prefiere **WhatsApp**, se envía por WhatsApp (con teléfono válido) y si falla cae a correo; si prefiere **correo**, se envía por correo; si prefiere **llamada**, se registra como pendiente de llamada manual. NOT-01 (retraso), NOT-02, NOT-03 y NOT-04 (garantía) usan esta regla.
 
 | Tipo | Cuándo se envía |
 |------|-----------------|
+| NOT-01 | La orden se retrasó (automático, worker horario) |
 | NOT-02 | El equipo está listo para recogerse |
 | NOT-03 | La cotización de la orden está lista |
+| NOT-04 | La garantía está por vencer (automático, worker diario) |
 | NOT-05 | Se creó una solicitud de refacción (aviso al admin) |
 | NOT-06 | Se propuso una sustitución (aviso al admin) |
 
-> Si no hay SMTP configurado (desarrollo), el correo se **simula** en consola; en producción usa el servidor de correo configurado.
+> Si no hay **SMTP** configurado (desarrollo), el correo se **simula** en consola; sin credenciales **Twilio**, WhatsApp también se **simula** (registra "enviado"). En producción se usa el servidor de correo y/o Twilio configurados en `.env`.
 
 ## 14. Usuarios (solo admin)
 

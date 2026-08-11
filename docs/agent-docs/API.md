@@ -66,7 +66,7 @@ Paginación: `?page=1&pageSize=20` (máx 100; UI usa 10/25/50).
 | POST | /ordenes/:id/cotizaciones/:cid/aprobar · /rechazar | vendedor/admin | -- / {motivo} | reserva stock / -- |
 | POST | /ordenes/:id/consumo · /mano-obra | tecnico | {piezas[]} / {horas, tarifaHora} | orden |
 | POST | /ordenes/:id/entregar | vendedor/admin | {firma (PNG base64)} | {orden, venta?, garantia} |
-| POST | /ordenes/:id/notificar | vendedor/admin | {tipo: listo\|cotizacion} | notificación |
+| POST | /ordenes/:id/notificar | vendedor/admin | {tipo: listo\|cotizacion, canal?: whatsapp\|correo\|llamada} | notificación (sin canal: preferencia del cliente con fallback) |
 
 ### Sustituciones (técnico/admin)
 | Method | Path | Request | Response |
